@@ -1,5 +1,6 @@
 <?php
-// Admin page: list reservations, confirm received payments, cancel reservations.
+// Admin page: list reservations, confirm received payments, cancel reservations,
+// manage VIP guests (free entry, checked by name at the entrance).
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 
@@ -39,6 +40,34 @@ if ($action === 'logout' && $csrfOk) {
 }
 
 $flash = null;
+$view = ($_GET['view'] ?? '') === 'vip' ? 'vip' : 'reservations';
+
+if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-delete', 'vip-reset'], true)) {
+    $id = (int) ($_POST['id'] ?? 0);
+    if ($action === 'vip-add') {
+        $name = trim(preg_replace('/\s+/u', ' ', (string) ($_POST['name'] ?? '')));
+        $section = (string) ($_POST['section'] ?? '');
+        $persons = max(1, min(50, (int) ($_POST['persons'] ?? 1)));
+        $note = trim((string) ($_POST['note'] ?? ''));
+        if ($name === '' || mb_strlen($name) > 200 || !isset(SECTIONS[$section]) || mb_strlen($note) > 255) {
+            $flash = 'Vyplňte jméno a sekci.';
+        } else {
+            db()->prepare('INSERT INTO vip_guests (name, section, persons, note, created_at) VALUES (?, ?, ?, ?, ?)')
+                ->execute([$name, $section, $persons, $note, db_time(now_utc())]);
+            $flash = "VIP host {$name} přidán.";
+        }
+    } elseif ($action === 'vip-delete') {
+        db()->prepare('DELETE FROM vip_guests WHERE id = ?')->execute([$id]);
+        $flash = 'VIP host odstraněn.';
+    } else {
+        db()->prepare('UPDATE vip_guests SET checked_in_at = NULL WHERE id = ?')->execute([$id]);
+        $flash = 'Příchod zrušen.';
+    }
+    $_SESSION['flash'] = $flash;
+    header('Location: admin.php?view=vip');
+    exit;
+}
+
 if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'cancel', 'ticket'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     $now = db_time(now_utc());
@@ -121,6 +150,13 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .actions { display:flex; gap:6px; flex-wrap:wrap; } .actions form { margin:0; }
   .flash { margin-bottom:16px; padding:10px 14px; border-radius:10px; background:#dcefd9; color:#1f5a2c; }
   .error { color:#8f2a20; }
+  .tabs { display:flex; gap:4px; padding:4px; border-radius:999px; background:#efe9df; margin-right:auto; }
+  .tabs a { padding:6px 16px; border-radius:999px; color:var(--ink-2); text-decoration:none; font-weight:600; }
+  .tabs a.active { background:var(--surface); color:var(--ink); box-shadow:0 1px 4px rgba(60,45,25,.12); }
+  .vip-form { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
+  .vip-form label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; font-weight:600; color:var(--ink-2); }
+  .vip-form label.grow { flex:1 1 200px; }
+  .vip-form input[name=persons] { width:80px; }
   .login { max-width:340px; margin:15vh auto; display:flex; flex-direction:column; gap:12px; }
 </style>
 </head>
@@ -161,6 +197,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 ?>
   <header>
     <h1>Správa rezervací</h1>
+    <nav class="tabs">
+      <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
+      <a href="admin.php?view=vip" class="<?= $view === 'vip' ? 'active' : '' ?>">VIP</a>
+    </nav>
     <form method="post">
       <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
       <input type="hidden" name="action" value="logout">
@@ -169,6 +209,63 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   </header>
 
   <?php if ($flash): ?><div class="flash"><?= $h($flash) ?></div><?php endif ?>
+
+  <?php if ($view === 'vip'):
+      $vips = db()->query('SELECT * FROM vip_guests ORDER BY section, name')->fetchAll();
+      $vipPersons = array_sum(array_column($vips, 'persons'));
+      $vipArrived = array_sum(array_map(fn ($v) => $v['checked_in_at'] ? (int) $v['persons'] : 0, $vips));
+  ?>
+  <div class="stats">
+    <div class="card">VIP hosté<strong><?= count($vips) ?></strong><?= $vipPersons ?> osob</div>
+    <div class="card">Přišlo<strong><?= $vipArrived ?> / <?= $vipPersons ?></strong>osob</div>
+  </div>
+
+  <form class="card vip-form" method="post">
+    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+    <input type="hidden" name="action" value="vip-add">
+    <label>Jméno<input name="name" required maxlength="200" placeholder="Jméno a příjmení"></label>
+    <label>Sekce<select name="section" required>
+      <?php foreach (SECTIONS as $id => $def): ?><option value="<?= $h($id) ?>"><?= $h($def['name']) ?></option><?php endforeach ?>
+    </select></label>
+    <label>Osob<input name="persons" type="number" min="1" max="50" value="1" required></label>
+    <label class="grow">Poznámka<input name="note" maxlength="255" placeholder="nepovinné"></label>
+    <button>Přidat VIP</button>
+  </form>
+
+  <div class="card table">
+    <table>
+      <thead><tr><th>Jméno</th><th>Sekce</th><th>Osob</th><th>Poznámka</th><th>Příchod</th><th></th></tr></thead>
+      <tbody>
+      <?php foreach ($vips as $v): ?>
+        <tr>
+          <td><strong><?= $h($v['name']) ?></strong></td>
+          <td><?= $h(SECTIONS[$v['section']]['name'] ?? $v['section']) ?></td>
+          <td><?= (int) $v['persons'] ?></td>
+          <td><?= $h($v['note']) ?></td>
+          <td><?= $v['checked_in_at'] ? '<span class="badge s-paid">' . $h($fmt($v['checked_in_at'])) . '</span>' : '' ?></td>
+          <td>
+            <div class="actions">
+              <?php if ($v['checked_in_at']): ?>
+                <form method="post">
+                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                  <input type="hidden" name="id" value="<?= (int) $v['id'] ?>">
+                  <button class="secondary" name="action" value="vip-reset">Zrušit příchod</button>
+                </form>
+              <?php endif ?>
+              <form method="post" onsubmit="return confirm('Odstranit VIP hosta?')">
+                <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                <input type="hidden" name="id" value="<?= (int) $v['id'] ?>">
+                <button class="danger" name="action" value="vip-delete">Odstranit</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+      <?php endforeach ?>
+      <?php if (!$vips): ?><tr><td colspan="6">Žádní VIP hosté.</td></tr><?php endif ?>
+      </tbody>
+    </table>
+  </div>
+  <?php else: ?>
 
   <div class="stats">
     <?php foreach (['pending', 'paid'] as $s): $t = $totals[$s] ?? ['n' => 0, 'seats' => 0, 'amount' => 0]; ?>
@@ -234,6 +331,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       </tbody>
     </table>
   </div>
+  <?php endif ?>
 <?php endif ?>
 </main>
 </body>

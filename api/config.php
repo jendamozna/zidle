@@ -20,6 +20,7 @@ return (static function (): array {
         'BANK_ACCOUNT_DISPLAY' => '',   // e.g. 19-2000145399/0800
         'PAYMENT_RECIPIENT' => 'Farnost',
         'PAYMENT_MESSAGE' => 'Moje zidle 2026',
+        'PAYMENT_SPECIFIC_SYMBOL' => '', // specific symbol (SS) used for all payments, max 10 digits
 
         // Admin page (admin.php) – used by the accountant to confirm payments
         'ADMIN_PASSWORD' => '',

@@ -9,6 +9,7 @@ return [
     'BANK_IBAN' => 'CZ0000000000000000000000',
     'BANK_ACCOUNT_DISPLAY' => '000000000/0000',
     'PAYMENT_RECIPIENT' => 'Farnost',
+    'PAYMENT_SPECIFIC_SYMBOL' => '2026',
 
     'ADMIN_PASSWORD' => 'change-me',
     'ORGANIZER_PASSWORD' => 'change-me-too',

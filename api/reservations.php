@@ -95,8 +95,8 @@ function create_reservation(): void
             db_time($now), db_time($expires),
         ]);
         $id = (int) $pdo->lastInsertId();
-        $vs = $now->format('y') . str_pad((string) $id, 8, '0', STR_PAD_LEFT);
-        $pdo->prepare('UPDATE reservations SET variable_symbol = ? WHERE id = ?')->execute([$vs, $id]);
+        $pdo->prepare('UPDATE reservations SET variable_symbol = ? WHERE id = ?')
+            ->execute([generate_variable_symbol($pdo), $id]);
 
         $insertSeat = $pdo->prepare('INSERT INTO reservation_seats (seat_id, reservation_id) VALUES (?, ?)');
         foreach ($seats as $seatId) {
@@ -117,4 +117,22 @@ function create_reservation(): void
     $r = find_reservation_by_token($token);
     send_payment_email($r);
     json_response(reservation_payload($r), 201);
+}
+
+/**
+ * Random 10-digit variable symbol that is not used by any reservation yet.
+ * Random instead of sequential so it does not reveal the number of
+ * reservations and cannot be guessed; uq_vs guarantees uniqueness.
+ */
+function generate_variable_symbol(PDO $pdo): string
+{
+    $check = $pdo->prepare('SELECT 1 FROM reservations WHERE variable_symbol = ?');
+    for ($i = 0; $i < 20; $i++) {
+        $vs = (string) random_int(1_000_000_000, 9_999_999_999);
+        $check->execute([$vs]);
+        if (!$check->fetchColumn()) {
+            return $vs;
+        }
+    }
+    throw new RuntimeException('Could not generate a unique variable symbol.');
 }

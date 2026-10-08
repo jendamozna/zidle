@@ -4,6 +4,7 @@ import { seatsLabel } from '../plural.js';
 import { decodeTicket } from './ticket.js';
 import { getSession, login, logout, verifyTicket } from './api.js';
 import { useQrCamera } from './useQrCamera.js';
+import VipView from './VipView.jsx';
 
 const RESULT = {
   valid: { tone: 'ok', title: 'Platná vstupenka' },
@@ -135,6 +136,7 @@ function ResultCard({ scan, onNext }) {
 }
 
 function Scanner({ onLogout }) {
+  const [mode, setMode] = useState('scan'); // scan | vip
   const [scan, setScan] = useState(null);
 
   const handleCode = useCallback(
@@ -156,11 +158,17 @@ function Scanner({ onLogout }) {
     [onLogout],
   );
 
-  const camera = useQrCamera(handleCode, true);
+  const camera = useQrCamera(handleCode, mode === 'scan');
 
   const next = () => {
     setScan(null);
     camera.resume();
+  };
+
+  const switchMode = (value) => {
+    if (value === mode) return;
+    setScan(null);
+    setMode(value);
   };
 
   return (
@@ -170,7 +178,7 @@ function Scanner({ onLogout }) {
           Odbavení <span>2026</span>
         </h1>
         <div className="scan-bar-actions">
-          {camera.torch.supported && (
+          {mode === 'scan' && camera.torch.supported && (
             <button
               type="button"
               className={`icon-btn ${camera.torch.on ? 'is-on' : ''}`}
@@ -187,22 +195,35 @@ function Scanner({ onLogout }) {
         </div>
       </header>
 
-      <div className={`scan-view ${scan ? 'has-result' : ''}`}>
-        <video ref={camera.videoRef} className="scan-video" playsInline muted autoPlay />
-        {camera.status !== 'error' && <div className="scan-frame" aria-hidden="true" />}
-        {camera.status === 'starting' && <p className="scan-hint">Spouštím kameru…</p>}
-        {camera.status === 'scanning' && !scan && <p className="scan-hint">Namiřte na QR kód vstupenky</p>}
-        {camera.status === 'error' && (
-          <div className="scan-error">
-            <p>{camera.error}</p>
-            <button type="button" className="btn btn-primary" onClick={camera.retry}>
-              Zkusit znovu
-            </button>
-          </div>
-        )}
+      <div className="mode-switch" role="tablist">
+        <button type="button" role="tab" aria-selected={mode === 'scan'} onClick={() => switchMode('scan')}>
+          Vstupenky
+        </button>
+        <button type="button" role="tab" aria-selected={mode === 'vip'} onClick={() => switchMode('vip')}>
+          VIP
+        </button>
       </div>
 
-      {scan && <ResultCard scan={scan} onNext={next} />}
+      {mode === 'vip' ? (
+        <VipView onUnauthorized={onLogout} />
+      ) : (
+        <div className={`scan-view ${scan ? 'has-result' : ''}`}>
+          <video ref={camera.videoRef} className="scan-video" playsInline muted autoPlay />
+          {camera.status !== 'error' && <div className="scan-frame" aria-hidden="true" />}
+          {camera.status === 'starting' && <p className="scan-hint">Spouštím kameru…</p>}
+          {camera.status === 'scanning' && !scan && <p className="scan-hint">Namiřte na QR kód vstupenky</p>}
+          {camera.status === 'error' && (
+            <div className="scan-error">
+              <p>{camera.error}</p>
+              <button type="button" className="btn btn-primary" onClick={camera.retry}>
+                Zkusit znovu
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === 'scan' && scan && <ResultCard scan={scan} onNext={next} />}
     </div>
   );
 }

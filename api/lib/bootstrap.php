@@ -142,6 +142,12 @@ function strip_diacritics(string $text): string
     return (string) $converted;
 }
 
+/** Specific symbol from config, digits only (max 10), '' when not set. */
+function specific_symbol(): string
+{
+    return substr(preg_replace('/\D/', '', (string) config('PAYMENT_SPECIFIC_SYMBOL')), 0, 10);
+}
+
 /** Czech QR payment string (Short Payment Descriptor, "QR Platba"). */
 function spd_string(array $r): string
 {
@@ -161,6 +167,10 @@ function spd_string(array $r): string
             ->setTimezone(new DateTimeZone('Europe/Prague'))->format('Ymd'),
         'MSG:' . $clean(config('PAYMENT_MESSAGE') . ' ' . $r['last_name'], 60),
     ];
+    $ss = specific_symbol();
+    if ($ss !== '') {
+        $parts[] = 'X-SS:' . $ss;
+    }
     $recipient = $clean((string) config('PAYMENT_RECIPIENT'), 35);
     if ($recipient !== '') {
         $parts[] = 'RN:' . $recipient;
@@ -188,6 +198,7 @@ function reservation_payload(array $r): array
             'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
             'recipient' => (string) config('PAYMENT_RECIPIENT'),
             'variableSymbol' => $r['variable_symbol'],
+            'specificSymbol' => specific_symbol() ?: null,
             'amount' => (int) $r['amount'],
             'currency' => 'CZK',
             'spd' => spd_string($r),
@@ -220,6 +231,7 @@ function send_payment_email(array $r): void
         'Částka: ' . number_format((int) $r['amount'], 0, ',', ' ') . ' Kč',
         'Účet: ' . config('BANK_ACCOUNT_DISPLAY') . ' (IBAN ' . config('BANK_IBAN') . ')',
         'Variabilní symbol: ' . $r['variable_symbol'],
+        ...(specific_symbol() !== '' ? ['Specifický symbol: ' . specific_symbol()] : []),
         "Splatnost: {$deadline}",
         '',
         'Pokud platba nedorazí do data splatnosti, rezervace bude zrušena a místa uvolněna.',

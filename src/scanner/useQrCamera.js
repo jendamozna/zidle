@@ -62,6 +62,7 @@ export function useQrCamera(onCode, enabled) {
   // Start/stop with `enabled`; release the camera while the page is hidden.
   useEffect(() => {
     if (!enabled) return undefined;
+    pausedRef.current = false;
     start();
     const onVisibility = () => (document.hidden ? stop() : start());
     document.addEventListener('visibilitychange', onVisibility);

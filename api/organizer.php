@@ -4,6 +4,9 @@
 //   POST organizer.php {action: "login", password}      → {loggedIn}
 //   POST organizer.php {action: "logout"}
 //   POST organizer.php {action: "verify", code}         → ticket check result, records first check-in
+//   POST organizer.php {action: "vip-list"}             → {vips: [...]}
+//   POST organizer.php {action: "vip-checkin", id}      → records VIP arrival
+//   POST organizer.php {action: "vip-undo", id}         → clears VIP arrival (mistake)
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 
@@ -46,15 +49,50 @@ run_api(function (): void {
             json_response(['loggedIn' => false]);
             // no break
         case 'verify':
-            if (empty($_SESSION['organizer'])) {
-                json_error('Přihlaste se.', 401);
-            }
+            require_organizer();
             verify_ticket((string) ($body['code'] ?? ''));
+            // no break
+        case 'vip-list':
+            require_organizer();
+            json_response(['vips' => vip_list()]);
+            // no break
+        case 'vip-checkin':
+        case 'vip-undo':
+            require_organizer();
+            $id = (int) ($body['id'] ?? 0);
+            if ($body['action'] === 'vip-checkin') {
+                // COALESCE keeps the first arrival time when two organizers tap at once.
+                db()->prepare('UPDATE vip_guests SET checked_in_at = COALESCE(checked_in_at, ?) WHERE id = ?')
+                    ->execute([db_time(now_utc()), $id]);
+            } else {
+                db()->prepare('UPDATE vip_guests SET checked_in_at = NULL WHERE id = ?')->execute([$id]);
+            }
+            json_response(['vips' => vip_list()]);
             // no break
         default:
             json_error('Neznámá akce.', 400);
     }
 });
+
+function require_organizer(): void
+{
+    if (empty($_SESSION['organizer'])) {
+        json_error('Přihlaste se.', 401);
+    }
+}
+
+function vip_list(): array
+{
+    $rows = db()->query('SELECT id, name, section, persons, note, checked_in_at FROM vip_guests ORDER BY name')->fetchAll();
+    return array_map(static fn ($v) => [
+        'id' => (int) $v['id'],
+        'name' => $v['name'],
+        'section' => $v['section'],
+        'persons' => (int) $v['persons'],
+        'note' => $v['note'],
+        'checkedInAt' => iso_time($v['checked_in_at']),
+    ], $rows);
+}
 
 /**
  * result: valid       – paid, first scan (check-in recorded now)
