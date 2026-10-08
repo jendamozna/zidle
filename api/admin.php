@@ -76,6 +76,7 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run
         } else {
             db()->prepare('DELETE FROM runs WHERE id = ?')->execute([$id]);
             db()->prepare('DELETE FROM scanner_invite_runs WHERE run_id = ?')->execute([$id]);
+            db()->prepare('DELETE FROM scan_conflicts WHERE run_id = ?')->execute([$id]);
             $_SESSION['flash'] = 'Termín smazán.';
         }
     } else {
@@ -277,6 +278,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .hint.locked { padding:8px 12px; border-radius:10px; background:#f9e4b7; color:#6d4a04; font-weight:600; }
   input:disabled { background:#efe9df; color:var(--ink-2); }
   .card.settings { margin-bottom:16px; }
+  .tab-alert { display:inline-block; min-width:1.4em; padding:0 6px; margin-left:4px; border-radius:999px; background:#c0392b; color:#fff; font-size:.75rem; text-align:center; }
+  .section-title { margin:28px 0 6px; font:600 1.15rem Georgia, serif; }
   .checks { display:flex; flex-wrap:wrap; gap:6px 16px; }
   .check { display:inline-flex !important; flex-direction:row !important; align-items:center; gap:6px; font-weight:500 !important; color:var(--ink) !important; max-width:none !important; }
   .invite-new { display:flex; gap:20px; align-items:center; flex-wrap:wrap; margin-bottom:16px; border:2px solid var(--accent); }
@@ -348,7 +351,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
       <a href="admin.php?view=vip" class="<?= $view === 'vip' ? 'active' : '' ?>">VIP</a>
-      <a href="admin.php?view=scanners" class="<?= $view === 'scanners' ? 'active' : '' ?>">Pořadatelé</a>
+      <?php $conflictCount = (int) db_query('SELECT COUNT(*) FROM scan_conflicts')->fetchColumn(); ?>
+      <a href="admin.php?view=scanners" class="<?= $view === 'scanners' ? 'active' : '' ?>">Pořadatelé<?= $conflictCount ? ' <span class="tab-alert" title="Konflikty z odbavení bez spojení">' . $conflictCount . '</span>' : '' ?></a>
       <a href="admin.php?view=settings" class="<?= $view === 'settings' ? 'active' : '' ?>">Nastavení</a>
     </nav>
     <form method="post">
@@ -436,6 +440,30 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         </tr>
       <?php endforeach ?>
       <?php if (!$invites): ?><tr><td colspan="6">Zatím žádné pozvánky.</td></tr><?php endif ?>
+      </tbody>
+    </table>
+  </div>
+
+  <?php $conflicts = db_query('SELECT * FROM scan_conflicts ORDER BY scanned_at DESC LIMIT 500')->fetchAll(); ?>
+  <h2 class="section-title" id="konflikty">Odbavení bez spojení – konflikty<?= $conflicts ? ' (' . count($conflicts) . ')' : '' ?></h2>
+  <p class="hint settings-intro">Scanner bez internetu ověřuje vstupenky podle seznamu staženého předem a odbavení odešle,
+    jakmile se spojení vrátí. Platí první odbavení. Sem se zapíše, co se pak nedalo přijmout – typicky stejná vstupenka
+    puštěná na dvou mobilech.</p>
+  <div class="card table">
+    <table>
+      <thead><tr><th>Načteno</th><th>Termín</th><th>Vstupenka / host</th><th>Problém</th><th>Kdo</th><th>Dříve odbaveno</th></tr></thead>
+      <tbody>
+      <?php foreach ($conflicts as $c): ?>
+        <tr>
+          <td><?= $h($fmt($c['scanned_at'])) ?></td>
+          <td class="seats"><?= ($cr = run_by_id((int) $c['run_id'])) ? $h(run_label($cr)) : '–' ?></td>
+          <td><strong><?= $h($c['label']) ?></strong></td>
+          <td><span class="badge <?= $c['reason'] === 'already_checked_in' ? 's-pending' : 's-expired' ?>"><?= $h(CONFLICT_REASONS[$c['reason']] ?? $c['reason']) ?></span></td>
+          <td><?= $h($c['scanned_by']) ?></td>
+          <td><?= $c['other_at'] ? $h($fmt($c['other_at'])) . ($c['other_by'] ? '<br><small>' . $h($c['other_by']) . '</small>' : '') : '' ?></td>
+        </tr>
+      <?php endforeach ?>
+      <?php if (!$conflicts): ?><tr><td colspan="6">Žádné konflikty.</td></tr><?php endif ?>
       </tbody>
     </table>
   </div>

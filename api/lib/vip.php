@@ -39,3 +39,20 @@ function add_vip_guest(int $runId, string $name, array $seats, string $note): st
     }
     return "VIP host {$name} přidán (" . count($seats) . ' ' . (count($seats) === 1 ? 'místo' : (count($seats) < 5 ? 'místa' : 'míst')) . ').';
 }
+
+/** VIP guests of a run for the scanner. */
+function vip_list(int $runId): array
+{
+    $stmt = db()->prepare('SELECT id, name, section, seats, persons, note, checked_in_at, checked_in_by FROM vip_guests WHERE run_id = ? ORDER BY name');
+    $stmt->execute([$runId]);
+    return array_map(static fn ($v) => [
+        'id' => (int) $v['id'],
+        'name' => $v['name'],
+        'section' => $v['section'],
+        'persons' => (int) $v['persons'],
+        'seats' => seat_labels($v['seats']),
+        'note' => $v['note'],
+        'checkedInAt' => iso_time($v['checked_in_at']),
+        'checkedInBy' => $v['checked_in_by'],
+    ], $stmt->fetchAll());
+}

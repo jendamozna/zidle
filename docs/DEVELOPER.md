@@ -64,14 +64,15 @@ api/
   lib/settings.php     runs: loading, times, storno rules, check-in window, run_public()
   lib/cancellation.php cancellation_terms(), cancel_seats(), notices, reminders, GDPR purge
   lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
-  lib/vip.php          add_vip_guest() (VIP guest with seats)
+  lib/vip.php          add_vip_guest() (VIP guest with seats), vip_list() (scanner)
+  lib/offline.php      scanning without a connection: scanner_snapshot(), apply_offline_scans(), conflicts
   lib/ticket.php       ticket QR code (sign/parse), qr_png(), ticket e-mail, seat_labels()
   lib/antispam.php     form token, rate limits, login limits
   lib/altcha.php       invisible ALTCHA: challenge, verification, replay protection
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
   lib/scanner_access.php  scanner invites, device cookie, app_base_url()
 db/schema.sql          full schema for a new database
-db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–010)
+db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–011)
 src/                   customer app
   App.jsx              views: run picker / map / section / reservation page; form; toasts
   hooks/useSeats.js    seat state of one run, polling, reserve()
@@ -81,7 +82,9 @@ src/                   customer app
                        ReservationForm, PaymentView
   altcha.js            invisible ALTCHA solver (altcha-lib, WebCrypto PBKDF2)
   runs.js, storno.js, plural.js   formatting helpers
-src/scanner/           organizer scanner (ScannerApp, VipView, useQrCamera, ticket.js, api.js)
+src/scanner/           organizer scanner (ScannerApp, VipView, useQrCamera, ticket.js, api.js,
+                       offline.js + useOffline.js = offline mode)
+public/sw.js           service worker: keeps the scanner on the device for offline start
 docs/DEVELOPER.md      this file
 docs/prehled/          stakeholder overview (Czech, index.html + screenshots), published as an Artifact
 tests/php/run.php      PHP integration tests (needs a *_test database); fixtures.php = shared helpers
@@ -221,6 +224,7 @@ All `DATETIME` columns and JSON dates are UTC.
 | `vip_guests` | `run_id`, `name`, `section` (section of the first seat), `seats` (CSV; `''` for guests added before migration 010), `persons` (= number of seats), `note`, `created_at`, `checked_in_at`, `checked_in_by` |
 | `scanner_invites` | `name`, `token_hash` (sha256, unique), `created_at`, `last_used_at`, `revoked_at` |
 | `scanner_invite_runs` | PK (`invite_id`, `run_id`) |
+| `scan_conflicts` | offline check-ins that could not be applied (§11): `run_id`, `reservation_id` / `vip_guest_id` (NULL when unknown), `label` (VS + name / VIP name), `reason` (`already_checked_in` / `not_paid` / `unknown`), `scanned_at` (device time), `scanned_by`, `other_at` / `other_by` (the check-in that won), `created_at` |
 | `rate_limits` | `bucket` (sha256 of key), `hits`, `window_start` |
 | `settings` | reserved (unused) |
 
@@ -411,8 +415,11 @@ platba přišla.“*
 - **Scanner UI** results: `Platná vstupenka`, `Už odbaveno` (+ first time),
   `Nezaplaceno`, `Rezervace zrušena`, `Neplatný kód`, `To je platební QR kód`
   (code starts with `SPD*`), `Jiný termín` (+ ticket run),
-  `Mimo čas odbavení – neodbaveno`, `Neověřeno – bez spojení` (offline).
-  Camera: rear camera, centre square decoded by `jsqr` every 120 ms, torch
+  `Mimo čas odbavení – neodbaveno`, `Není v seznamu termínu` (offline, see
+  below), `Neověřeno – bez spojení` (no connection and no list). Ticket
+  footnote: *„aktuální stav ze systému“*, *„bez spojení, podle seznamu z
+  HH:MM“* (+ *„Odbavení se odešle, jakmile bude spojení.“* for a valid one) or
+  *„údaje z QR kódu, neověřeno“*. Camera: rear camera, centre square decoded by `jsqr` every 120 ms, torch
   when supported, stopped while the page is hidden.
 - **Check-in window**: `run_scan_window()` = start − BEFORE … start + AFTER.
   Default run in the scanner: run whose window is open, else remembered
@@ -420,6 +427,66 @@ platba přišla.“*
   the window the camera is off and `WindowWarning` offers switching to an
   open run or **Přesto odbavovat tento termín** (confirmation kept until
   reload; state re-checked every 30 s); the server enforces the same.
+
+### Scanning without a connection
+
+- **No connection** = `fetch` fails, HTTP 5xx or a non-JSON answer
+  (`src/scanner/api.js` sets `error.offline`); 401 signs the device out.
+- **Offline start**: `public/sw.js` (registered by `scanner/main.jsx` in
+  production builds, scope = app directory) caches `scanner.html` and the
+  `assets/` it references on install; `scanner.html` network-first (cached
+  copy offline, the cache is refreshed and assets of older builds removed on
+  every online load), `assets/*` cache-first; API, customer pages and fonts
+  are not touched. `getSession` failing offline → the last session from
+  localStorage (`saveSession()` on every online load); without one *„Bez
+  spojení. Poprvé se scanner musí přihlásit s internetem.“*
+- **Snapshot** (`organizer.php` `snapshot {runId}` → `scanner_snapshot()`):
+  `{runId, at, tickets: [{id, variableSymbol, name, seats, status,
+  checkedInAt, checkedInBy}], vips: vip_list()}` – all reservations of the
+  run (any status), no e-mails or money. `useOffline(runId)` loads it for the
+  selected run on start, every 60 s and on the browser `online` event, and
+  keeps it in localStorage key `zidle-scanner-offline` (`src/scanner/offline.js`:
+  `session`, `snapshots` per run, `queue`). An online `valid` result also
+  marks the ticket checked in in the stored snapshot.
+- **Offline ticket check** (`verifyOffline()`): find by id (legacy: VS), VS
+  must match → not found `unknown` (*„Vstupenka není v seznamu tohoto termínu
+  – může být na jiný termín, nebo neplatná.“*); pending `unpaid`;
+  cancelled/expired `cancelled`; paid and checked in (snapshot or this
+  device's queue) `used` with the time; else `valid` and an event
+  `{uid, runId, type: "ticket", id, variableSymbol, at}` is queued. Seats come
+  from the snapshot (`changed` as online). The check-in window works as
+  online (run times from the cached session).
+- **Offline VIP** (`VipView`): list from the snapshot when `vip-list` fails;
+  **Vpustit** queues `vip-checkin {id, at}`; **Vrátit** removes a queued
+  arrival, otherwise queues `vip-undo {id}`; queued events are applied over
+  the shown list (`applyVipQueue()`) until sent.
+- **Sending** (`sync {runId, events}` → `apply_offline_scans()`, max 1000
+  events): run by run when the server is reachable again (any successful
+  request, snapshot refresh, `online` event); sent events leave the queue;
+  403 for a run drops its events. Server, in order, each in a transaction:
+  `ticket` – reservation by id + VS + run `FOR UPDATE`: not found → conflict
+  `unknown`; not paid → `not_paid`; not checked in → `checked_in_at` = device
+  time, `checked_in_by` = `<device name> (offline)`; the same time and device
+  again → ok (resend); otherwise → `already_checked_in` (the first check-in
+  stays). `vip-checkin` likewise (`unknown`, `already_checked_in`);
+  `vip-undo` clears the arrival. Device time is limited to the last 48 hours
+  (`OFFLINE_MAX_AGE_HOURS`) and never later than now. Conflicts go to
+  `scan_conflicts` (the same conflict only once). Response
+  `{results: [{status: "ok"|"conflict", reason?}], conflicts}`.
+- **Strip** (`OfflineStrip`, hidden when online with nothing to send):
+  offline *„Bez spojení – ověřuji podle seznamu z HH:MM“* (+ *„(starší než 30
+  min)“*, + *„· k odeslání: N“*), red without a list (*„Bez spojení a bez
+  staženého seznamu – vstupenky nelze ověřit.“*) or when stale; online with a
+  queue *„Odesílám odbavení bez spojení: N…“*; after sending for 8 s
+  *„Odesláno N odbavení bez spojení.“* (+ *„Konflikty: K – uvidí je
+  správce.“*).
+- **Logout** asks *„N odbavení bez spojení ještě nebylo odesláno. Odhlášením
+  se ztratí. Přesto odhlásit?“* when the queue is not empty, then removes all
+  stored data; a 401 removes it too. Snapshots of runs no longer in the
+  session or ended more than a day ago are removed on the next online start.
+- Limit: devices offline at the same time do not see each other's
+  check-ins; the same ticket shown at two such entrances passes both and
+  appears as a conflict after sending.
 
 ## 12. Scanner access (invites)
 
@@ -457,7 +524,7 @@ a přidejte znovu“*. **Odstranit** deletes the guest and frees the seats (FK
 cascade): *„VIP host odstraněn, jeho místa jsou volná.“* **Zrušit příchod**
 resets arrival.
 
-Scanner VIP mode: list of the selected run (refresh 20 s) with section,
+Scanner VIP mode (offline: §11): list of the selected run (refresh 20 s) with section,
 persons and seats (`seats` = `seat_labels()`; for one section without the
 repeated section name), diacritics/word-order-insensitive search over name +
 note, section filter, **Vpustit** (records `checked_in_at`/`by`; first wins),
@@ -481,10 +548,14 @@ POST, login rate-limited). Tabs:
   „Vráceno“.“*
 - **VIP** – `vip-add` (with `seats[]`), `vip-delete`, `vip-reset` (§13).
 - **Pořadatelé** – `invite-save` (create / edit name+runs / new link),
-  `invite-revoke`.
+  `invite-revoke`; below the invites *Odbavení bez spojení – konflikty*
+  (last 500 `scan_conflicts`: time, run, label, reason *už odbaveno jinde* /
+  *vstupenka neplatila (nezaplaceno / zrušeno)* / *neznámá vstupenka*
+  (`CONFLICT_REASONS`), device, earlier check-in). The tab shows the number
+  of conflicts in a red badge.
 - **Nastavení** – runs: `run-save` (start required, label, booking cut-off
   before start, storno rows), `run-delete` (only without reservations/VIP;
-  removes invite links to the run). Shows the GDPR deletion date.
+  removes invite links and offline scan conflicts of the run). Shows the GDPR deletion date.
   **Lock:** once a run has any reservation (`run_has_reservations()`, any
   status), its start and storno rules can no longer be changed – the form
   shows them disabled with *„Představení už má rezervace – začátek a storno
@@ -529,7 +600,8 @@ QR as inline image `cid:ticket-qr`). All contain `Termín: <run>`.
 Purge after `last_run_start() + DATA_RETENTION_DAYS`: empties first/last
 name and e-mail of all reservations except those with money still to return
 (`refund_amount > refunded_amount`; they are emptied by the first cron run
-after **Vráceno**), deletes all VIP guests (their seat rows cascade); VS,
+after **Vráceno**), deletes all VIP guests (their seat rows cascade) and
+all `scan_conflicts`; VS,
 amounts, seats and statuses stay.
 
 ## 17. Spam and abuse protection
@@ -563,7 +635,7 @@ amounts, seats and statuses stay.
 | GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, ticket, cancellation, refunds) |
 | POST | `cancel.php` | `token, seats?` | reservation payload |
 | GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`) |
-| POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `vip-list {runId}`, `vip-checkin {id, runId, confirmOutside?}`, `vip-undo {id, runId}` | see §11–13 |
+| POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `vip-list {runId}`, `vip-checkin {id, runId, confirmOutside?}`, `vip-undo {id, runId}`, `snapshot {runId}`, `sync {runId, events}` | see §11–13 |
 
 Errors: `{"error": "<Czech message>", …}` with HTTP status; uncaught
 exceptions are logged (`[zidle]`) and return 500 `Chyba serveru. Zkuste to
@@ -619,7 +691,11 @@ customer storno fee; admin full refund; cancelling a partly paid pending
 reservation; partial cancellation completing a covered reservation; double
 booking rejected by the primary key; VIP seats (conflict, sorting, freeing
 on delete); GDPR purge keeping contacts while a refund is due; ticket code
-round trip and tamper detection. Locally:
+round trip and tamper detection; offline: snapshot content (no e-mails,
+VIP included), offline check-ins with device time and first-wins, resend
+without a new conflict, second device → `already_checked_in` recorded once,
+unpaid / unknown / other-run tickets → conflicts, device time limits, VIP
+arrival conflict and undo. Locally:
 `DB_NAME=zidle_test MAIL_ENABLED=0 php tests/php/run.php` (values in
 `config.local.php` take precedence over the environment).
 
@@ -637,7 +713,8 @@ desktop viewport. Web servers: `php -S 127.0.0.1:8000 -t .` with `ENV`
 && vite preview` on 127.0.0.1:4173 (proxies `/api`). `global-setup.js` runs
 `tests/e2e/seed.php` (fresh database: run 1 *Premiéra* in 30 days with a
 pending reservation, run 2 *Dnes* in 20 minutes with a paid ticket and a VIP
-guest on ML-1-1/2) and stores its JSON output in `tests/e2e/.seed.json`.
+guest on ML-1-1/2, plus a second paid ticket and VIP *Paní Offline* for the
+offline test) and stores its JSON output in `tests/e2e/.seed.json`.
 Tests:
 
 - `customer.spec.js` – choose *Premiéra*, two seats, form (waits for
@@ -650,7 +727,12 @@ Tests:
 - `scanner.spec.js` – password login; the camera is replaced by a canvas
   stream showing the seeded ticket QR (`getUserMedia` stub) → *Platná
   vstupenka*, next scan *Už odbaveno*; VIP tab shows the seats, **Vpustit**
-  records the arrival.
+  records the arrival; offline (`context.setOffline`, after the snapshot was
+  loaded): ticket *Platná vstupenka* *„bez spojení, podle seznamu z“*, strip
+  *k odeslání: 1*, next scan *Už odbaveno*, VIP arrival, *k odeslání: 2*;
+  back online → *„Odesláno 2 odbavení bez spojení.“* and both check-ins are on
+  the server (`(offline)`); the scanner opens offline after one online visit
+  (service worker) with the cached session and the offline strip.
 
 Locally `npm run test:e2e` needs PHP, MariaDB with a `zidle_test` database
 and the `DB_*` variables; move `api/config.local.php` aside or make sure it

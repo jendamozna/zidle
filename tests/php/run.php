@@ -238,6 +238,88 @@ test('ticket code round-trips and rejects tampering', function (): void {
     same(null, parse_ticket_code(str_replace('BC-1-2', 'BC-1-3', $code)), 'tampered');
 });
 
+// ------------------------------------------------------------------ offline
+
+/** Scanner access as scanner_access() returns it. */
+function device(string $name): array
+{
+    return ['type' => 'invite', 'id' => 1, 'name' => $name, 'runIds' => null];
+}
+
+function conflicts(): array
+{
+    return db_query('SELECT reason, label, scanned_by, other_by FROM scan_conflicts ORDER BY id')->fetchAll();
+}
+
+test('snapshot lists the run\'s tickets without e-mails and with VIP guests', function (): void {
+    $paid = reservation(['BR-1-1', 'BR-1-2'], 'paid', 1, 'Seznamová');
+    add_vip_guest(1, 'VIP Seznam', ['BR-2-1'], '');
+    $snapshot = scanner_snapshot(run_by_id(1) ?? []);
+    $ticket = array_values(array_filter($snapshot['tickets'], fn ($t) => $t['id'] === $paid))[0] ?? null;
+    same(['Test Seznamová', ['BR-1-1', 'BR-1-2'], 'paid', null], [$ticket['name'] ?? null, $ticket['seats'] ?? null, $ticket['status'] ?? null, $ticket['checkedInAt'] ?? null], 'ticket');
+    same(false, array_key_exists('email', $ticket ?? []), 'no e-mail');
+    same(true, in_array('VIP Seznam', array_column($snapshot['vips'], 'name'), true), 'VIP included');
+});
+
+test('offline check-ins are applied with the device time; the first one wins', function (): void {
+    db()->exec('DELETE FROM scan_conflicts');
+    $id = reservation(['BR-1-3'], 'paid');
+    $vs = row($id)['variable_symbol'];
+    $at = now_utc()->modify('-10 minutes');
+    $event = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'at' => iso_utc($at)];
+    $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event]);
+    same([['status' => 'ok']], $res['results'], 'applied');
+    same([db_time($at), 'Vchod A (offline)'], [row($id)['checked_in_at'], row($id)['checked_in_by']], 'stored');
+    // The same event sent again (response lost) is not a conflict.
+    same(0, apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event])['conflicts'], 'resend');
+    // Another device let the same ticket in offline too.
+    $other = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'at' => iso_utc($at->modify('+2 minutes'))];
+    $res = apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [$other]);
+    same([1, 'already_checked_in'], [$res['conflicts'], $res['results'][0]['reason'] ?? null], 'conflict');
+    same(db_time($at), row($id)['checked_in_at'], 'first check-in kept');
+    $c = conflicts();
+    same(['already_checked_in', 'Vchod B (offline)', 'Vchod A (offline)'], [$c[0]['reason'], $c[0]['scanned_by'], $c[0]['other_by']], 'conflict row');
+    apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [$other]);
+    same(1, count(conflicts()), 'conflict recorded once');
+});
+
+test('offline scans of unpaid, unknown or other-run tickets become conflicts', function (): void {
+    db()->exec('DELETE FROM scan_conflicts');
+    $pending = reservation(['BR-1-4']);
+    $otherRun = reservation(['BR-1-5'], 'paid', 2);
+    $events = [
+        ['type' => 'ticket', 'id' => $pending, 'variableSymbol' => row($pending)['variable_symbol'], 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => $otherRun, 'variableSymbol' => row($otherRun)['variable_symbol'], 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => 999999, 'variableSymbol' => '1', 'at' => iso_utc(now_utc())],
+    ];
+    $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], $events);
+    same(['not_paid', 'unknown', 'unknown'], array_column($res['results'], 'reason'), 'reasons');
+    same(null, row($otherRun)['checked_in_at'], 'other run untouched');
+});
+
+test('device time is limited to the last 48 hours and never in the future', function (): void {
+    $future = reservation(['BR-2-2'], 'paid');
+    $old = reservation(['BR-2-3'], 'paid');
+    apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [
+        ['type' => 'ticket', 'id' => $future, 'variableSymbol' => row($future)['variable_symbol'], 'at' => iso_utc(now_utc()->modify('+3 hours'))],
+        ['type' => 'ticket', 'id' => $old, 'variableSymbol' => row($old)['variable_symbol'], 'at' => '2001-01-01T00:00:00Z'],
+    ]);
+    same(true, row($future)['checked_in_at'] <= db_time(now_utc()), 'not in the future');
+    same(true, row($old)['checked_in_at'] >= db_time(now_utc()->modify('-49 hours')), 'not older than 48 h');
+});
+
+test('offline VIP arrivals: first wins, undo takes an arrival back', function (): void {
+    db()->exec('DELETE FROM scan_conflicts');
+    add_vip_guest(1, 'VIP Offline', ['BR-2-4'], '');
+    $vip = (int) db_query("SELECT id FROM vip_guests WHERE name = 'VIP Offline'")->fetchColumn();
+    $at = iso_utc(now_utc()->modify('-5 minutes'));
+    same('ok', apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [['type' => 'vip-checkin', 'id' => $vip, 'at' => $at]])['results'][0]['status'], 'arrival');
+    $res = apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [['type' => 'vip-checkin', 'id' => $vip, 'at' => iso_utc(now_utc())]]);
+    same('already_checked_in', $res['results'][0]['reason'] ?? null, 'second device');
+    apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [['type' => 'vip-undo', 'id' => $vip]]);
+    same(null, db_query("SELECT checked_in_at FROM vip_guests WHERE id = {$vip}")->fetchColumn(), 'undone');
+});
+
 // ---------------------------------------------------------------------- run
 
 reset_database();

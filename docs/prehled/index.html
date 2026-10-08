@@ -140,6 +140,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
           <li>načítá vstupenky kamerou telefonu</li>
           <li>vpouští VIP hosty podle jména</li>
           <li>vidí jen představení, na která dostal pozvánku</li>
+          <li>odbavuje i při výpadku internetu (podle staženého seznamu)</li>
         </ul>
       </article>
       <article class="role">
@@ -187,6 +188,8 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <figcaption><strong>Už odbaveno</strong>Druhé načtení stejné vstupenky ukáže, kdy prošla poprvé.</figcaption></figure>
       <figure><div class="phone"><img src="12-scanner-vip.jpg" alt="Seznam VIP hostů" width="585" height="1266" loading="lazy"></div>
         <figcaption><strong>VIP hosté</strong>Vyhledání podle jména, u každého hosta jeho místa a tlačítko Vpustit.</figcaption></figure>
+      <figure><div class="phone"><img src="17-scanner-offline.jpg" alt="Odbavení bez internetu" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>Bez internetu</strong>Scanner ověřuje podle seznamu staženého předem. Žlutý pruh ukazuje, odkdy je seznam a kolik odbavení čeká na odeslání.</figcaption></figure>
     </div>
 
     <div class="group-head"><h3>Účetní / správce</h3><span class="where">počítač · správa</span></div>
@@ -195,6 +198,8 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <figcaption><strong>Rezervace</strong>Obsazenost představení, vyhledávání podle VS nebo jména, zápis přijaté částky, zrušení, vracení peněz.</figcaption></figure>
       <figure><div class="desktop"><img src="15-admin-poradatele.jpg" alt="Pozvánky pořadatelů" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>Pořadatelé</strong>Pozvánky pro mobily u vchodu, vždy jen na vybraná představení. Přístup lze kdykoli zrušit.</figcaption></figure>
+      <figure><div class="desktop"><img src="18-admin-konflikty.jpg" alt="Konflikty z odbavení bez internetu" width="1360" height="860" loading="lazy"></div>
+        <figcaption><strong>Konflikty z odbavení bez internetu</strong>Co scanner bez spojení pustil, ale už to neplatilo – typicky stejná vstupenka na dvou mobilech. Počet svítí červeně v záložce Pořadatelé.</figcaption></figure>
       <figure><div class="desktop"><img src="14-admin-vip.jpg" alt="VIP hosté" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>VIP hosté</strong>Hosté zdarma pro každé představení. Místa se vybírají na plánku – šedá obsadily rezervace, zlatá jiní VIP. Je vidět, kdo už přišel.</figcaption></figure>
       <figure><div class="desktop"><img src="16-admin-terminy.jpg" alt="Nastavení představení" width="1360" height="860" loading="lazy"></div>
@@ -211,6 +216,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <div class="rule"><strong>Zrušení a storno</strong><p>Návštěvník ruší sám přes odkaz z e-mailu, celou rezervaci i jednotlivá místa. Poplatek podle storno podmínek představení, zbytek se do 14 dnů vrátí na účet, ze kterého platba přišla.</p></div>
       <div class="rule"><strong>Vstupenku nejde padělat</strong><p>QR kód je elektronicky podepsaný. Pořadatel vždy vidí aktuální stav: zaplaceno, zrušeno nebo už prošel.</p></div>
       <div class="rule"><strong>Vstupenka platí jen na své představení</strong><p>Kdo přijde jiný den, scanner ukáže „Jiný termín“ a dotyčného nepustí jako odbaveného.</p></div>
+      <div class="rule"><strong>Bez internetu u vchodu</strong><p>Scanner si s internetem průběžně stahuje seznam vstupenek. Když spojení vypadne, ověřuje podle něj (pozná i zrušené a už použité vstupenky) a odbavení odešle, až se spojení vrátí. Mobily bez spojení o sobě navzájem nevědí – kopii stejné vstupenky na dvou vchodech zjistí systém až dodatečně.</p></div>
       <div class="rule"><strong>Odbavení jen v pravý čas</strong><p>Od hodiny před do hodiny po začátku představení. Jindy scanner varuje, aby se omylem neodbavovalo jiné představení.</p></div>
       <div class="rule"><strong>Čas a storno podmínky se nemění</strong><p>Jakmile má představení první rezervaci, nelze už změnit jeho začátek ani storno podmínky – platí to, za co si lidé místa koupili.</p></div>
       <div class="rule"><strong>Platba, která už nejde použít</strong><p>Peníze po propadnutí rezervace ji obnoví, pokud představení ještě nezačalo a místa jsou volná. Jinak – a také u zrušené rezervace nebo platby poslané dvakrát – se peníze vrací na účet plátce a návštěvník dostane e-mail.</p></div>
@@ -230,6 +236,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <li>Seznam VIP hostů pro každé představení a jejich místa.</li>
       <li>Jména pořadatelů u vchodu a na která představení přijdou (dostanou pozvánku).</li>
       <li>Kdo bude potvrzovat platby a vracet peníze.</li>
+      <li>Vyzkoušet signál a Wi-Fi přímo v kostele. Před představením otevřít scanner na každém mobilu s internetem – stáhne si seznam vstupenek pro případ výpadku.</li>
       <li>Zkušební rezervace „naostro“: rezervace → platba → vstupenka → načtení u vchodu.</li>
     </ul>
     <p class="note">Snímky obrazovek ukazují zkušební data – jména a rezervace jsou smyšlené.</p>

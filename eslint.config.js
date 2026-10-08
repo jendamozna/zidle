@@ -21,6 +21,11 @@ export default [
     },
   },
   {
+    files: ['public/sw.js'],
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'script', globals: globals.serviceworker },
+    rules: js.configs.recommended.rules,
+  },
+  {
     files: ['tests/**/*.{js,mjs}', '*.config.js'],
     // Playwright tests also contain code evaluated in the browser.
     languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: { ...globals.node, ...globals.browser } },
