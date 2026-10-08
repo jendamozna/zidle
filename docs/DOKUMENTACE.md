@@ -24,7 +24,8 @@ ve správě (kapitola [9.3](#93-záložka-nastavení)).
 15. [Technická reference](#15-technická-reference)
 
 > **Pravidlo projektu:** každá změna kódu musí být ve stejném commitu
-> promítnuta do této dokumentace (viz `CLAUDE.md`).
+> promítnuta do této dokumentace (viz `CLAUDE.md`). Sdílená verze:
+> https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV
 
 ---
 

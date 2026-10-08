@@ -13,8 +13,14 @@ of the app 1:1. **Every code change must update it in the same commit**:
 - removed feature → remove it from the documentation.
 
 Before committing, re-read the affected chapters against the code. After
-pushing, republish the shared documentation page (Artifact
-`docs/DOKUMENTACE.md` → HTML) so the shared link stays current.
+pushing, regenerate and republish the shared documentation page so the
+shared link stays current:
+
+1. `npm run docs` – renders `docs/DOKUMENTACE.md` into `docs/dokumentace.html`
+   (generated, not committed);
+2. publish `docs/dokumentace.html` as an update of the existing Artifact
+   **https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV** (pass it as `url`,
+   never create a new one).
 
 ## Other rules
 

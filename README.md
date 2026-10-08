@@ -2,7 +2,7 @@
 
 Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
 
-**Kompletní dokumentace v češtině: [docs/DOKUMENTACE.md](docs/DOKUMENTACE.md)** (rule: keep it in sync with every code change – see `CLAUDE.md`) – všechny procesy, e-maily, správa, odbavení, konfigurace a provoz.
+**Kompletní dokumentace v češtině: [docs/DOKUMENTACE.md](docs/DOKUMENTACE.md)** (rule: keep it in sync with every code change – see `CLAUDE.md`; shared page: https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV, regenerate with `npm run docs`) – všechny procesy, e-maily, správa, odbavení, konfigurace a provoz.
 
 ## How it works
 
