@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/ticket.php';
+require_once __DIR__ . '/antispam.php';
 
 function config(string $key)
 {

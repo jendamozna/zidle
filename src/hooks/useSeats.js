@@ -9,6 +9,7 @@ export function useSeats() {
   const [selected, setSelected] = useState(() => new Set());
   const [price, setPrice] = useState(SEAT_PRICE);
   const [deadlineHours, setDeadlineHours] = useState(null);
+  const formToken = useRef('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -22,6 +23,7 @@ export function useSeats() {
       setTaken(nextTaken);
       setPrice(data.price);
       setDeadlineHours(data.deadlineHours);
+      formToken.current = data.formToken;
       // Drop seats someone else reserved in the meantime.
       setSelected((prev) => {
         const kept = [...prev].filter((id) => !nextTaken.has(id));
@@ -93,7 +95,7 @@ export function useSeats() {
       if (!ids.length) return null;
       setSubmitting(true);
       try {
-        const reservation = await createReservation({ ...customer, seats: ids });
+        const reservation = await createReservation({ ...customer, seats: ids, formToken: formToken.current });
         setTaken((prev) => new Set([...prev, ...reservation.seats]));
         setSelected(new Set());
         return reservation;

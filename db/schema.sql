@@ -49,3 +49,12 @@ CREATE TABLE IF NOT EXISTS vip_guests (
   PRIMARY KEY (id),
   KEY idx_section (section)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+-- Rate limiting for spam/bot protection (fixed time windows).
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket       CHAR(64)     NOT NULL COMMENT 'sha256 of the limited key (e.g. action + IP)',
+  hits         INT UNSIGNED NOT NULL,
+  window_start DATETIME     NOT NULL,
+  PRIMARY KEY (bucket),
+  KEY idx_window (window_start)
+) ENGINE=InnoDB DEFAULT CHARSET=ascii;

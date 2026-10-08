@@ -14,6 +14,12 @@ return (static function (): array {
         'PAYMENT_DEADLINE_HOURS' => 72,  // unpaid reservations are cancelled after this
         'MAX_SEATS_PER_RESERVATION' => 20,
 
+        // Spam / bot protection
+        'RESERVATIONS_PER_IP_PER_HOUR' => 5,
+        'PENDING_RESERVATIONS_PER_EMAIL' => 2, // unpaid reservations one e-mail may hold at once
+        'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and organizer login, per IP
+        'FORM_MIN_SECONDS' => 3,               // reservation sent sooner after loading the page = bot
+
         // Bank account for the QR payment (Czech "QR Platba" / SPD format)
         'BANK_IBAN' => '',              // required, e.g. CZ6508000000192000145399
         'BANK_BIC' => '',

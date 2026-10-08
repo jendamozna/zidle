@@ -24,7 +24,9 @@ $csrfOk = hash_equals($_SESSION['csrf'], (string) ($_POST['csrf'] ?? ''));
 $action = $_POST['action'] ?? null;
 
 if ($action === 'login' && $csrfOk) {
-    if (hash_equals($password, (string) ($_POST['password'] ?? ''))) {
+    if (!login_allowed('admin')) {
+        $loginError = 'Příliš mnoho pokusů. Zkuste to za 15 minut.';
+    } elseif (hash_equals($password, (string) ($_POST['password'] ?? ''))) {
         session_regenerate_id(true);
         $_SESSION['admin'] = true;
     } else {

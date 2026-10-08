@@ -37,6 +37,16 @@ function create_reservation(): void
     }
 
     $body = read_json_body();
+
+    // Bot checks: honeypot must stay empty, form token must be issued by us and not too fresh.
+    if (trim((string) ($body['website'] ?? '')) !== '' || !form_token_valid((string) ($body['formToken'] ?? ''))) {
+        error_log('[zidle] Rejected reservation as bot from ' . client_ip());
+        json_error('Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.', 400);
+    }
+    if (!rate_limit('reserve|' . client_ip(), (int) config('RESERVATIONS_PER_IP_PER_HOUR'), 3600)) {
+        json_error('Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.', 429);
+    }
+
     $firstName = trim((string) ($body['firstName'] ?? ''));
     $lastName = trim((string) ($body['lastName'] ?? ''));
     $email = trim((string) ($body['email'] ?? ''));
@@ -68,6 +78,12 @@ function create_reservation(): void
     }
 
     expire_reservations();
+
+    $pending = db()->prepare("SELECT COUNT(*) FROM reservations WHERE email = ? AND status = 'pending'");
+    $pending->execute([$email]);
+    if ((int) $pending->fetchColumn() >= (int) config('PENDING_RESERVATIONS_PER_EMAIL')) {
+        json_error('Na tento e-mail už čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.', 429);
+    }
 
     $pdo = db();
     $now = now_utc();

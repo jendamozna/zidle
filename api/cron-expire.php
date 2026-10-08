@@ -12,4 +12,5 @@ if (PHP_SAPI !== 'cli') {
 require __DIR__ . '/lib/bootstrap.php';
 
 $count = expire_reservations();
+cleanup_rate_limits();
 echo date('c') . " expired {$count} reservation(s)\n";

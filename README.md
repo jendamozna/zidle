@@ -39,6 +39,24 @@ The signature is a truncated HMAC-SHA256 of the rest using `TICKET_SECRET`;
 it is checked by the server (`api/organizer.php`), which also records the
 first check-in.
 
+## Spam and bot protection
+
+No captcha or third-party service; all checks are server-side
+(`api/lib/antispam.php`) and configurable in `api/config.php`:
+
+- **Honeypot** – a hidden `website` field in the reservation form; filled = bot.
+- **Form token** – `seats.php` issues a signed, timestamped token; a reservation
+  without it, with a forged one, or sent less than `FORM_MIN_SECONDS` (3 s)
+  after loading the page is rejected.
+- **Rate limits** (table `rate_limits`, IPs stored only as hashes):
+  `RESERVATIONS_PER_IP_PER_HOUR` (5), `PENDING_RESERVATIONS_PER_EMAIL` (2 unpaid
+  reservations at once – stops seat blocking with one address) and
+  `LOGIN_ATTEMPTS_PER_15_MIN` (10) for the admin and organizer logins.
+
+Behind a reverse proxy / CDN, `REMOTE_ADDR` is the proxy's address – make the
+web server pass the real client IP (e.g. Apache `mod_remoteip`), otherwise all
+visitors share one limit.
+
 ## Setup
 
 ```bash

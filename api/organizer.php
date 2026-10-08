@@ -35,6 +35,9 @@ run_api(function (): void {
     $body = read_json_body();
     switch ($body['action'] ?? '') {
         case 'login':
+            if (!login_allowed('organizer')) {
+                json_error('Příliš mnoho pokusů. Zkuste to za 15 minut.', 429);
+            }
             if (!hash_equals($password, (string) ($body['password'] ?? ''))) {
                 sleep(1);
                 json_error('Nesprávné heslo.', 401);

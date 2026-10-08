@@ -13,7 +13,7 @@ function validate(values) {
 }
 
 export default function ReservationForm({ stats, deadlineHours, submitting, onSubmit, onClose }) {
-  const [values, setValues] = useState({ firstName: '', lastName: '', email: '' });
+  const [values, setValues] = useState({ firstName: '', lastName: '', email: '', website: '' });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const firstInput = useRef(null);
@@ -40,6 +40,7 @@ export default function ReservationForm({ stats, deadlineHours, submitting, onSu
       firstName: values.firstName.trim(),
       lastName: values.lastName.trim(),
       email: values.email.trim(),
+      website: values.website,
     };
     try {
       await onSubmit(customer);
@@ -84,6 +85,14 @@ export default function ReservationForm({ stats, deadlineHours, submitting, onSu
           {field('lastName', 'Příjmení', { autoComplete: 'family-name' })}
         </div>
         {field('email', 'E-mail', { type: 'email', autoComplete: 'email', inputMode: 'email' })}
+
+        {/* Honeypot for spam bots – hidden from people and assistive technology. */}
+        <div className="hp-field" aria-hidden="true">
+          <label>
+            Web
+            <input name="website" value={values.website} onChange={set('website')} tabIndex={-1} autoComplete="off" />
+          </label>
+        </div>
 
         {deadlineHours ? <p className="modal-note">Splatnost {deadlineHours} hodin, poté se místa uvolní.</p> : null}
         {formError && <p className="form-error" role="alert">{formError}</p>}
