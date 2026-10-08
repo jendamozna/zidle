@@ -1,6 +1,64 @@
 <?php
-// Plain-text customer e-mails (payment details, reminder, expiry, cancellation).
+// Customer e-mails (payment details, reminder, expiry, cancellation, tickets).
+// Delivery: SMTP when SMTP_HOST is set (PHPMailer), otherwise PHP mail().
 declare(strict_types=1);
+
+use PHPMailer\PHPMailer\Exception as MailerException;
+use PHPMailer\PHPMailer\PHPMailer;
+
+const MAIL_FROM_NAME = 'Moje židle 2026';
+
+/**
+ * Sends one e-mail. $html is optional (multipart/alternative with $text);
+ * $inline are embedded images: [['cid' => 'ticket-qr', 'data' => <binary>, 'name' => 'x.png', 'type' => 'image/png']].
+ * Returns false (and logs the reason) when the message could not be handed over.
+ */
+function deliver_mail(string $to, string $subject, string $text, ?string $html = null, array $inline = []): bool
+{
+    require_once __DIR__ . '/../vendor/autoload.php';
+    $mail = new PHPMailer(true);
+    try {
+        $mail->CharSet = PHPMailer::CHARSET_UTF8;
+        $mail->Timeout = 15;
+        $host = trim((string) config('SMTP_HOST'));
+        if ($host !== '') {
+            $port = (int) config('SMTP_PORT');
+            $mail->isSMTP();
+            $mail->Host = $host;
+            $mail->Port = $port;
+            $mail->SMTPAuth = filter_var(config('SMTP_AUTH'), FILTER_VALIDATE_BOOLEAN);
+            $mail->Username = (string) config('SMTP_SENDER');
+            $mail->Password = (string) config('SMTP_PASSWORD');
+            // 465 = implicit TLS; other ports use STARTTLS whenever the server offers it.
+            $mail->SMTPSecure = $port === 465 ? PHPMailer::ENCRYPTION_SMTPS : '';
+            $mail->SMTPAutoTLS = true;
+            // Never let a slow or silent SMTP server block a request for long
+            // (PHPMailer otherwise waits up to 300 s for each reply).
+            $mail->getSMTPInstance()->Timelimit = 15;
+            $from = (string) config('SMTP_SENDER');
+        } else {
+            $mail->isMail();
+            $from = (string) config('MAIL_FROM');
+        }
+        $mail->setFrom($from, MAIL_FROM_NAME);
+        $mail->addAddress($to);
+        $mail->Subject = $subject;
+        if ($html !== null) {
+            $mail->isHTML(true);
+            $mail->Body = $html;
+            $mail->AltBody = $text;
+        } else {
+            $mail->Body = $text;
+        }
+        foreach ($inline as $file) {
+            $mail->addStringEmbeddedImage($file['data'], $file['cid'], $file['name'], PHPMailer::ENCODING_BASE64, $file['type']);
+        }
+        return $mail->send();
+    } catch (MailerException $e) {
+        error_log('[zidle] Mail to ' . $to . ' failed: ' . $mail->ErrorInfo);
+        return false;
+    }
+}
 
 function mail_enabled(): bool
 {
@@ -51,19 +109,12 @@ function send_customer_email(array $r, string $subject, array $lines): bool
     if (!mail_enabled() || $r['email'] === '') {
         return false;
     }
-    $body = implode("\r\n", array_merge(
+    $body = implode("\n", array_merge(
         ["Dobrý den, {$r['first_name']} {$r['last_name']},", ''],
         $lines,
         ['', 'Moje židle 2026']
     ));
-    $headers = implode("\r\n", [
-        'From: ' . config('MAIL_FROM'),
-        'MIME-Version: 1.0',
-        'Content-Type: text/plain; charset=UTF-8',
-        'Content-Transfer-Encoding: 8bit',
-    ]);
-    $encodedSubject = '=?UTF-8?B?' . base64_encode($subject . ' – Moje židle 2026') . '?=';
-    $ok = @mail($r['email'], $encodedSubject, $body, $headers);
+    $ok = deliver_mail($r['email'], $subject . ' – Moje židle 2026', $body);
     if (!$ok) {
         error_log("[zidle] Failed to send '{$subject}' for reservation {$r['id']}");
     }

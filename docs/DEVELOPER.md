@@ -52,6 +52,7 @@ is used only for admin input and for display.
 api/
   admin.php            admin UI (login, reservations, VIP, scanner invites, runs)
   seats.php            GET runs + taken seats of a run
+  altcha.php           GET invisible ALTCHA challenge
   reservations.php     POST create reservation, GET reservation by token
   cancel.php           POST customer cancellation
   organizer.php        scanner API (access, verify, VIP)
@@ -62,8 +63,9 @@ api/
   lib/settings.php     runs: loading, times, storno rules, check-in window, run_public()
   lib/cancellation.php cancellation_terms(), cancel_seats(), notices, reminders, GDPR purge
   lib/ticket.php       ticket QR code (sign/parse), qr_png(), ticket e-mail, seat_labels()
-  lib/mail.php         plain-text customer e-mails
   lib/antispam.php     form token, rate limits, login limits
+  lib/altcha.php       invisible ALTCHA: challenge, verification, replay protection
+  lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
   lib/scanner_access.php  scanner invites, device cookie, app_base_url()
 db/schema.sql          full schema for a new database
 db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–009)
@@ -74,6 +76,7 @@ src/                   customer app
   data/seatService.js  API client (seats, reservations, cancel)
   components/          RunPicker, Overview, SectionCard, SectionDetail, ReservationPanel,
                        ReservationForm, PaymentView
+  altcha.js            invisible ALTCHA solver (altcha-lib, WebCrypto PBKDF2)
   runs.js, storno.js, plural.js   formatting helpers
 src/scanner/           organizer scanner (ScannerApp, VipView, useQrCamera, ticket.js, api.js)
 docs/DEVELOPER.md      this file
@@ -87,7 +90,7 @@ docs/prehled.html      stakeholder overview (Czech), published as an Artifact
 mariadb -e "CREATE DATABASE zidle CHARACTER SET utf8mb4"
 mariadb -e "CREATE USER 'zidle'@'localhost' IDENTIFIED BY '…'; GRANT ALL ON zidle.* TO 'zidle'@'localhost'"
 mariadb zidle < db/schema.sql
-(cd api && composer install --no-dev)            # chillerlan/php-qrcode (needs GD)
+(cd api && composer install --no-dev)   # chillerlan/php-qrcode (needs GD), phpmailer/phpmailer, altcha-org/altcha
 cp api/config.local.example.php api/config.local.php
 
 npm install
@@ -131,6 +134,9 @@ environment variables of the same name override them (local file wins).
 | `PENDING_RESERVATIONS_PER_EMAIL` | 2 | unpaid reservations per e-mail **in one run** |
 | `LOGIN_ATTEMPTS_PER_15_MIN` | 10 | admin login, scanner password and invite attempts, per IP |
 | `FORM_MIN_SECONDS` | 3 | minimal age of the form token |
+| `ALTCHA_ENABLED` | `true` | invisible ALTCHA on the reservation form |
+| `ALTCHA_COST` | 1000 | PBKDF2 iterations per attempt |
+| `ALTCHA_COUNTER_MAX` | 6000 | attempts needed: random `max/3 … max` (≈ 1–2 s on a computer, ≈ 4–5 s on a slow phone) |
 | `BANK_IBAN` | **required** | reservations are refused (503) without it |
 | `BANK_BIC` | `''` | appended to SPD `ACC` |
 | `BANK_ACCOUNT_DISPLAY` | `''` | Czech account number shown to customers |
@@ -142,7 +148,12 @@ environment variables of the same name override them (local file wins).
 | `SCAN_WINDOW_BEFORE_MINUTES` / `SCAN_WINDOW_AFTER_MINUTES` | 60 / 60 | check-in window around the run start |
 | `TICKET_SECRET` | **required** | ≥ 16 chars; HMAC key for tickets, form tokens, master cookie; never change after tickets are sent |
 | `MAIL_ENABLED` | `false` | all e-mails off when false |
-| `MAIL_FROM` | `rezervace@example.com` | |
+| `MAIL_FROM` | `rezervace@example.com` | sender for PHP `mail()` (SMTP uses `SMTP_SENDER`) |
+| `SMTP_HOST` | `''` | SMTP server; `''` = send with PHP `mail()` |
+| `SMTP_PORT` | 587 | 465 = implicit TLS (SMTPS); other ports use STARTTLS when the server offers it |
+| `SMTP_AUTH` | `true` | log in with `SMTP_SENDER` / `SMTP_PASSWORD` |
+| `SMTP_SENDER` | `''` | sender address (`From`, name *Moje židle 2026*) and SMTP login |
+| `SMTP_PASSWORD` | `''` | SMTP password |
 | `PUBLIC_URL` | `''` | base URL for links in e-mails and invite links (else derived from the request) |
 | `CORS_ORIGIN` | `''` | allowed origin when the apps run elsewhere |
 
@@ -224,7 +235,9 @@ remove chip, total, Reserve; shown on the map when something is selected and
 in a section detail with own seats.
 
 **Form** (`ReservationForm.jsx`): run, summary, first/last name, e-mail
-(client validation), honeypot `hp`, notes (due date, storno text from
+(client validation), honeypot `hp`, invisible ALTCHA (solving starts when
+the form opens; submit waits for it with the button text *Ověřuji…*; on an
+`altcha` error it solves a new challenge and retries once), notes (due date, storno text from
 `stornoText()`, GDPR sentence: *„Jméno a e-mail použijeme jen pro vyřízení
 této rezervace a do N dnů po posledním představení je smažeme.“*), submit
 **Rezervovat a zaplatit**. 409/403 close the form with a toast and refresh.
@@ -256,6 +269,7 @@ then deletes `reservation_seats` of `expired`/`cancelled` reservations.
 | run exists | 422 `Vyberte termín.` |
 | `run_booking_open()` | 403 `Rezervace na tento termín jsou uzavřeny.` |
 | honeypot empty, form token valid | 400 `Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.` |
+| ALTCHA payload valid and unused (if `ALTCHA_ENABLED`) | 400 `Ověření proti robotům se nezdařilo. Zkuste to prosím znovu.` + `code: "altcha"` |
 | names, e-mail, 1–20 valid unique seats | 422 `Zkontrolujte zadané údaje.` / seat message, `fields` |
 | IP rate limit | 429 `Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.` |
 | < 2 pending for the e-mail in this run | 429 `Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.` |
@@ -408,9 +422,15 @@ POST, login rate-limited). Tabs:
 
 ## 15. E-mails
 
-PHP `mail()`, only when `MAIL_ENABLED`; plain text (`send_customer_email()`)
-except the ticket (multipart/related with inline PNG). All contain
-`Termín: <run>`.
+Only when `MAIL_ENABLED`. All mail goes through `deliver_mail(to, subject,
+text, html?, inline[])` (PHPMailer, UTF-8): with `SMTP_HOST` via SMTP
+(`SMTP_PORT`, `SMTP_AUTH`, login `SMTP_SENDER` / `SMTP_PASSWORD`; port 465 =
+SMTPS, otherwise opportunistic STARTTLS; connect timeout and per-reply limit
+15 s), otherwise PHP `mail()` from `MAIL_FROM`. Sender name *Moje židle 2026*.
+Failures return false and are logged as `[zidle] Mail to … failed: <reason>`;
+mail is sent synchronously within the request. Texts are plain
+(`send_customer_email()`) except the ticket (HTML + text alternative with the
+QR as inline image `cid:ticket-qr`). All contain `Termín: <run>`.
 
 | Subject | Trigger |
 | --- | --- |
@@ -434,6 +454,15 @@ seats and statuses stay.
 ## 17. Spam and abuse protection
 
 - Honeypot field `hp` (hidden from people and assistive tech).
+- Invisible ALTCHA (`api/lib/altcha.php`, `src/altcha.js`, protocol v2,
+  `PBKDF2/SHA-256`): `altcha.php` issues a signed challenge (HMAC secrets
+  derived from `TICKET_SECRET`, expires in 15 min, deterministic counter with
+  key signature for fast verification; 60 challenges/h per IP). The browser
+  solves it in the background (`altcha-lib`, WebCrypto) and sends the base64
+  payload `{challenge, solution}` as `altcha`. The server verifies signature,
+  expiry and derived key, and accepts each challenge signature only once
+  (`rate_limit('altcha|<signature>', 1, …)`). The frontend re-solves a
+  payload older than 12 min.
 - Form token from `seats.php`: `<unix time>.<hmac>` (secret derived from
   `TICKET_SECRET`), valid from `FORM_MIN_SECONDS` to 12 h.
 - `rate_limit(key, max, window)` fixed windows in `rate_limits` (keys
@@ -445,8 +474,9 @@ seats and statuses stay.
 
 | Method | Endpoint | Body / query | Response |
 | --- | --- | --- | --- |
-| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `dataRetentionDays` |
-| POST | `reservations.php` | `runId, firstName, lastName, email, seats[], formToken, hp` | 201 reservation payload |
+| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `altcha` (enabled), `dataRetentionDays` |
+| GET | `altcha.php` | – | `{enabled, challenge}` (ALTCHA v2 challenge: `parameters`, `signature`) |
+| POST | `reservations.php` | `runId, firstName, lastName, email, seats[], formToken, hp, altcha` | 201 reservation payload |
 | GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount, spd}, ticket, cancellation, refunds) |
 | POST | `cancel.php` | `token, seats?` | reservation payload |
 | GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`) |

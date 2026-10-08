@@ -34,10 +34,11 @@ export const fetchSeats = (runId) => request(runId ? `seats.php?run=${encodeURIC
 
 /** Creates a pending reservation; returns it with payment details. */
 // formToken comes from fetchSeats; hp is the honeypot field (empty for humans).
-export const createReservation = ({ runId, firstName, lastName, email, seats, formToken, hp = '' }) =>
+// altcha is the invisible ALTCHA payload (src/altcha.js).
+export const createReservation = ({ runId, firstName, lastName, email, seats, formToken, hp = '', altcha = '' }) =>
   request('reservations.php', {
     method: 'POST',
-    body: JSON.stringify({ runId, firstName, lastName, email, seats, formToken, hp }),
+    body: JSON.stringify({ runId, firstName, lastName, email, seats, formToken, hp, altcha }),
   });
 
 export const fetchReservation = (token) => request(`reservations.php?token=${encodeURIComponent(token)}`);

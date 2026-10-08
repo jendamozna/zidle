@@ -3,6 +3,7 @@ import { formatCzk } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { stornoText } from '../storno.js';
 import { runLabel } from '../runs.js';
+import { createAltcha } from '../altcha.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -20,6 +21,10 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const firstInput = useRef(null);
+  const [verifying, setVerifying] = useState(false);
+  // Invisible ALTCHA: starts solving as soon as the form opens.
+  const altcha = useRef(null);
+  if (altcha.current === null) altcha.current = createAltcha();
 
   useEffect(() => {
     firstInput.current?.focus();
@@ -45,8 +50,28 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
       email: values.email.trim(),
       hp: values.hp,
     };
+    const send = async (payload) => onSubmit({ ...customer, altcha: payload });
     try {
-      await onSubmit(customer);
+      setVerifying(true);
+      let payload;
+      try {
+        payload = await altcha.current.get();
+      } finally {
+        setVerifying(false);
+      }
+      try {
+        await send(payload);
+      } catch (err) {
+        if (err.data?.code !== 'altcha') throw err;
+        // Expired or already used challenge: solve a new one and try once more.
+        setVerifying(true);
+        try {
+          payload = await altcha.current.refresh();
+        } finally {
+          setVerifying(false);
+        }
+        await send(payload);
+      }
     } catch (err) {
       setErrors(err.data?.fields ?? {});
       setFormError(err.message);
@@ -111,8 +136,8 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
         </div>
         {formError && <p className="form-error" role="alert">{formError}</p>}
 
-        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-          {submitting ? 'Rezervuji…' : 'Rezervovat a zaplatit'}
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting || verifying}>
+          {verifying ? 'Ověřuji…' : submitting ? 'Rezervuji…' : 'Rezervovat a zaplatit'}
         </button>
       </form>
     </div>

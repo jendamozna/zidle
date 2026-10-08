@@ -22,6 +22,10 @@ return (static function (): array {
         'PENDING_RESERVATIONS_PER_EMAIL' => 2, // unpaid reservations one e-mail may hold at once in one run
         'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and organizer login, per IP
         'FORM_MIN_SECONDS' => 3,               // reservation sent sooner after loading the page = bot
+        // Invisible ALTCHA proof-of-work on the reservation form
+        'ALTCHA_ENABLED' => true,
+        'ALTCHA_COST' => 1000,                 // PBKDF2 iterations per attempt
+        'ALTCHA_COUNTER_MAX' => 6000,          // attempts needed: random between max/3 and max (~1–2 s on a computer)
 
         // Bank account for the QR payment (Czech "QR Platba" / SPD format)
         'BANK_IBAN' => '',              // required, e.g. CZ6508000000192000145399
@@ -43,9 +47,14 @@ return (static function (): array {
         // Secret for signing ticket QR codes (long random string, never change after tickets are sent)
         'TICKET_SECRET' => '',
 
-        // Confirmation e-mail with payment instructions (uses PHP mail())
+        // E-mails to customers. With SMTP_HOST set they are sent via SMTP, otherwise via PHP mail().
         'MAIL_ENABLED' => false,
-        'MAIL_FROM' => 'rezervace@example.com',
+        'MAIL_FROM' => 'rezervace@example.com', // sender for PHP mail() (SMTP uses SMTP_SENDER)
+        'SMTP_HOST' => '',               // e.g. smtp.example.com; '' = use PHP mail()
+        'SMTP_PORT' => 587,              // 465 = implicit TLS (SMTPS); others use STARTTLS when offered
+        'SMTP_AUTH' => true,             // log in with SMTP_SENDER / SMTP_PASSWORD
+        'SMTP_SENDER' => '',             // sender address and SMTP login, e.g. rezervace@example.com
+        'SMTP_PASSWORD' => '',
         'PUBLIC_URL' => '',              // e.g. https://example.com/zidle/ – used for links in e-mails
 
         // Allowed CORS origin when the frontend runs on another domain ('' = same origin only)

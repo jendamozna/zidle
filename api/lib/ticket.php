@@ -105,13 +105,13 @@ function send_ticket_email(array $r, array $intro = []): bool
         return false;
     }
     $code = ticket_code($r);
-    $png = chunk_split(base64_encode(ticket_png($code)));
+    $png = ticket_png($code);
     $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     $seats = seat_labels($r['seats']);
     $count = (int) $r['seat_count'];
 
     $introLines = $intro ?: ['děkujeme, platba byla přijata. Vaše rezervace je potvrzena.'];
-    $text = implode("\r\n", [
+    $text = implode("\n", [
         "Dobrý den, {$r['first_name']} {$r['last_name']},",
         '',
         ...$introLines,
@@ -139,42 +139,10 @@ function send_ticket_email(array $r, array $intro = []): bool
         . '<p style="text-align:center;color:#6b6256;font-size:13px">Při vstupu prosím ukažte tento QR kód.</p>'
         . '</div></body></html>';
 
-    $related = 'rel-' . bin2hex(random_bytes(8));
-    $alt = 'alt-' . bin2hex(random_bytes(8));
-    $body = implode("\r\n", [
-        "--{$related}",
-        "Content-Type: multipart/alternative; boundary=\"{$alt}\"",
-        '',
-        "--{$alt}",
-        'Content-Type: text/plain; charset=UTF-8',
-        'Content-Transfer-Encoding: base64',
-        '',
-        chunk_split(base64_encode($text)),
-        "--{$alt}",
-        'Content-Type: text/html; charset=UTF-8',
-        'Content-Transfer-Encoding: base64',
-        '',
-        chunk_split(base64_encode($html)),
-        "--{$alt}--",
-        '',
-        "--{$related}",
-        'Content-Type: image/png; name="vstupenka.png"',
-        'Content-Transfer-Encoding: base64',
-        'Content-ID: <ticket-qr>',
-        'Content-Disposition: inline; filename="vstupenka.png"',
-        '',
-        $png,
-        "--{$related}--",
+    $subject = ($intro ? 'Nová vstupenka' : 'Vstupenka') . ' – Moje židle 2026';
+    $ok = deliver_mail($r['email'], $subject, $text, $html, [
+        ['cid' => 'ticket-qr', 'data' => $png, 'name' => 'vstupenka.png', 'type' => 'image/png'],
     ]);
-
-    $headers = implode("\r\n", [
-        'From: ' . config('MAIL_FROM'),
-        'MIME-Version: 1.0',
-        "Content-Type: multipart/related; boundary=\"{$related}\"; type=\"multipart/alternative\"",
-    ]);
-    $subject = '=?UTF-8?B?' . base64_encode(($intro ? 'Nová vstupenka' : 'Vstupenka') . ' – Moje židle 2026') . '?=';
-
-    $ok = @mail($r['email'], $subject, $body, $headers);
     if (!$ok) {
         error_log('[zidle] Failed to send ticket e-mail for reservation ' . $r['id']);
     }

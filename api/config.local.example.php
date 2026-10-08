@@ -16,6 +16,10 @@ return [
     'TICKET_SECRET' => 'paste output of: php -r "echo bin2hex(random_bytes(32));"',
 
     'MAIL_ENABLED' => true,
-    'MAIL_FROM' => 'rezervace@example.com',
+    'SMTP_HOST' => 'smtp.example.com',
+    'SMTP_PORT' => 587,
+    'SMTP_AUTH' => true,
+    'SMTP_SENDER' => 'rezervace@example.com',
+    'SMTP_PASSWORD' => 'change-me',
     'PUBLIC_URL' => 'https://example.com/zidle/',
 ];

@@ -8,6 +8,7 @@ require_once __DIR__ . '/settings.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/cancellation.php';
 require_once __DIR__ . '/scanner_access.php';
+require_once __DIR__ . '/altcha.php';
 
 function config(string $key)
 {

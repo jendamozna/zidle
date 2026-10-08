@@ -51,6 +51,11 @@ function create_reservation(): void
         error_log('[zidle] Rejected reservation as bot from ' . client_ip());
         json_error('Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.', 400);
     }
+    // Invisible ALTCHA: the browser solved a proof-of-work challenge in the background.
+    if (altcha_enabled() && !altcha_verify((string) ($body['altcha'] ?? ''))) {
+        error_log('[zidle] Rejected reservation: ALTCHA failed from ' . client_ip());
+        json_error('Ověření proti robotům se nezdařilo. Zkuste to prosím znovu.', 400, ['code' => 'altcha']);
+    }
 
     $firstName = trim((string) ($body['firstName'] ?? ''));
     $lastName = trim((string) ($body['lastName'] ?? ''));

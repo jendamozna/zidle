@@ -214,6 +214,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <div class="rule"><strong>Čas a storno podmínky se nemění</strong><p>Jakmile má představení první rezervaci, nelze už změnit jeho začátek ani storno podmínky – platí to, za co si lidé místa koupili.</p></div>
       <div class="rule"><strong>Platba po představení</strong><p>Když peníze dorazí až po představení, rezervace se neobnoví. Účetní platbu zaznamená k vrácení a návštěvník dostane e-mail.</p></div>
       <div class="rule"><strong>VIP hosté</strong><p>Neplatí a nemají vstupenku. Pořadatel je najde na seznamu podle jména.</p></div>
+      <div class="rule"><strong>Ochrana proti robotům</strong><p>Formulář chrání neviditelná kontrola – návštěvník nic nevyplňuje ani nevybírá obrázky, prohlížeč se ověří sám na pozadí.</p></div>
       <div class="rule"><strong>Ochrana osobních údajů</strong><p>Ukládá se jen jméno a e-mail. 30 dní po posledním představení se automaticky smažou.</p></div>
     </div>
   </section>
@@ -222,6 +223,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
     <h2 id="launch">Co je potřeba před spuštěním</h2>
     <ul class="checklist">
       <li>Bankovní účet pro platby a specifický symbol.</li>
+      <li>Přístup k odesílání e-mailů (SMTP): server, port, e-mailová adresa odesílatele a její heslo.</li>
       <li>Data a časy všech představení a jejich storno podmínky – musí být hotové před spuštěním prodeje, po první rezervaci je už nelze změnit.</li>
       <li>Seznam VIP hostů pro každé představení.</li>
       <li>Jména pořadatelů u vchodu a na která představení přijdou (dostanou pozvánku).</li>
