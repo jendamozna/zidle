@@ -1,0 +1,7 @@
+node_modules
+dist
+api/config.local.php
+api/vendor
+test-results
+playwright-report
+tests/e2e/.seed.json

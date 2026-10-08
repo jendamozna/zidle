@@ -1,0 +1,145 @@
+import { useEffect, useRef, useState } from 'react';
+import { formatCzk } from '../data/layout.js';
+import { seatsLabel } from '../plural.js';
+import { stornoText } from '../storno.js';
+import { runLabel } from '../runs.js';
+import { createAltcha } from '../altcha.js';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validate(values) {
+  const errors = {};
+  if (!values.firstName.trim()) errors.firstName = 'Vyplňte jméno.';
+  if (!values.lastName.trim()) errors.lastName = 'Vyplňte příjmení.';
+  if (!EMAIL_RE.test(values.email.trim())) errors.email = 'Zadejte platný e-mail.';
+  return errors;
+}
+
+export default function ReservationForm({ stats, deadlineHours, run, dataRetentionDays, submitting, onSubmit, onClose }) {
+  const storno = stornoText(run?.stornoRules);
+  const [values, setValues] = useState({ firstName: '', lastName: '', email: '', hp: '' });
+  const [errors, setErrors] = useState({});
+  const [formError, setFormError] = useState(null);
+  const firstInput = useRef(null);
+  const [verifying, setVerifying] = useState(false);
+  // Invisible ALTCHA: starts solving as soon as the form opens.
+  const altcha = useRef(null);
+  if (altcha.current === null) altcha.current = createAltcha();
+
+  useEffect(() => {
+    firstInput.current?.focus();
+    const onKey = (e) => e.key === 'Escape' && !submitting && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, submitting]);
+
+  const set = (field) => (e) => {
+    setValues((v) => ({ ...v, [field]: e.target.value }));
+    setErrors((errs) => ({ ...errs, [field]: undefined }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const found = validate(values);
+    setErrors(found);
+    if (Object.keys(found).length) return;
+    setFormError(null);
+    const customer = {
+      firstName: values.firstName.trim(),
+      lastName: values.lastName.trim(),
+      email: values.email.trim(),
+      hp: values.hp,
+    };
+    const send = async (payload) => onSubmit({ ...customer, altcha: payload });
+    try {
+      setVerifying(true);
+      let payload;
+      try {
+        payload = await altcha.current.get();
+      } finally {
+        setVerifying(false);
+      }
+      try {
+        await send(payload);
+      } catch (err) {
+        if (err.data?.code !== 'altcha') throw err;
+        // Expired or already used challenge: solve a new one and try once more.
+        setVerifying(true);
+        try {
+          payload = await altcha.current.refresh();
+        } finally {
+          setVerifying(false);
+        }
+        await send(payload);
+      }
+    } catch (err) {
+      setErrors(err.data?.fields ?? {});
+      setFormError(err.message);
+    }
+  };
+
+  const field = (name, label, props = {}) => (
+    <label className={`field ${errors[name] ? 'has-error' : ''}`}>
+      <span>{label}</span>
+      <input
+        name={name}
+        value={values[name]}
+        onChange={set(name)}
+        aria-invalid={Boolean(errors[name])}
+        disabled={submitting}
+        {...props}
+      />
+      {errors[name] && <small>{errors[name]}</small>}
+    </label>
+  );
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !submitting && onClose()}>
+      <form className="modal" onSubmit={handleSubmit} noValidate aria-labelledby="reserve-title">
+        <div className="modal-head">
+          <h2 id="reserve-title">Rezervace</h2>
+          <button type="button" className="icon-btn" onClick={onClose} disabled={submitting} aria-label="Zavřít">
+            ×
+          </button>
+        </div>
+
+        <p className="modal-run">
+          Termín <strong>{runLabel(run)}</strong>
+        </p>
+
+        <div className="modal-summary">
+          <span>{seatsLabel(stats.selectedCount)} × {formatCzk(stats.price)}</span>
+          <strong>{formatCzk(stats.total)}</strong>
+        </div>
+
+        <div className="field-row">
+          {field('firstName', 'Jméno', { autoComplete: 'given-name', ref: firstInput })}
+          {field('lastName', 'Příjmení', { autoComplete: 'family-name' })}
+        </div>
+        {field('email', 'E-mail', { type: 'email', autoComplete: 'email', inputMode: 'email' })}
+
+        {/* Honeypot for spam bots – hidden from people and assistive technology. */}
+        <div className="hp-field" aria-hidden="true">
+          <label>
+            Nevyplňujte
+            <input name="hp" value={values.hp} onChange={set('hp')} tabIndex={-1} autoComplete="off" />
+          </label>
+        </div>
+
+        <div className="modal-notes">
+          {deadlineHours ? <p>Splatnost {deadlineHours} hodin (nejpozději do začátku termínu), poté se místa uvolní.</p> : null}
+          {storno && <p>Storno: {storno}.</p>}
+          <p>
+            Jméno a e-mail použijeme jen pro vyřízení této rezervace a
+            {dataRetentionDays ? ` do ${dataRetentionDays} dnů` : ''} po posledním představení je smažeme.
+          </p>
+        </div>
+        {formError && <p className="form-error" role="alert">{formError}</p>}
+
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting || verifying}>
+          {verifying ? 'Ověřuji…' : submitting ? 'Rezervuji…' : 'Rezervovat a zaplatit'}
+        </button>
+      </form>
+    </div>
+  );
+}
