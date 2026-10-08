@@ -105,7 +105,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
     <ol class="flow">
       <li><strong>Výběr</strong><span>Návštěvník vybere představení a na plánku kostela naklikne místa (300 Kč, nejvýše 20 najednou).</span></li>
       <li><strong>Rezervace</strong><span>Vyplní jméno a e-mail. Místa jsou od té chvíle držena jen pro něj.</span></li>
-      <li><strong>Platba</strong><span>Zaplatí převodem – nejsnáz QR platbou v bankovní aplikaci. Má na to 3 dny.</span></li>
+      <li><strong>Platba</strong><span>Zaplatí převodem – nejsnáz QR platbou v bankovní aplikaci. Má na to 3 dny (nejpozději do začátku představení).</span></li>
       <li><strong>Vstupenka</strong><span>Účetní platbu potvrdí a návštěvníkovi přijde e-mailem vstupenka s QR kódem.</span></li>
       <li><strong>Vstup</strong><span>U vchodu ji ukáže v mobilu, pořadatel ji načte telefonem a pustí ho dál.</span></li>
     </ol>
@@ -198,7 +198,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <figure><div class="desktop"><img src="14-admin-vip.jpg" alt="VIP hosté" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>VIP hosté</strong>Seznam hostů zdarma pro každé představení. Je vidět, kdo už přišel.</figcaption></figure>
       <figure><div class="desktop"><img src="16-admin-terminy.jpg" alt="Nastavení představení" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>Představení a storno</strong>Datum a čas každého představení a jeho storno poplatky.</figcaption></figure>
+        <figcaption><strong>Představení a storno</strong>Datum a čas každého představení a jeho storno poplatky. Po první rezervaci jsou zamčené.</figcaption></figure>
     </div>
   </section>
 
@@ -211,6 +211,8 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <div class="rule"><strong>Vstupenku nejde padělat</strong><p>QR kód je elektronicky podepsaný. Pořadatel vždy vidí aktuální stav: zaplaceno, zrušeno nebo už prošel.</p></div>
       <div class="rule"><strong>Vstupenka platí jen na své představení</strong><p>Kdo přijde jiný den, scanner ukáže „Jiný termín“ a dotyčného nepustí jako odbaveného.</p></div>
       <div class="rule"><strong>Odbavení jen v pravý čas</strong><p>Od hodiny před do hodiny po začátku představení. Jindy scanner varuje, aby se omylem neodbavovalo jiné představení.</p></div>
+      <div class="rule"><strong>Čas a storno podmínky se nemění</strong><p>Jakmile má představení první rezervaci, nelze už změnit jeho začátek ani storno podmínky – platí to, za co si lidé místa koupili.</p></div>
+      <div class="rule"><strong>Platba po představení</strong><p>Když peníze dorazí až po představení, rezervace se neobnoví. Účetní platbu zaznamená k vrácení a návštěvník dostane e-mail.</p></div>
       <div class="rule"><strong>VIP hosté</strong><p>Neplatí a nemají vstupenku. Pořadatel je najde na seznamu podle jména.</p></div>
       <div class="rule"><strong>Ochrana osobních údajů</strong><p>Ukládá se jen jméno a e-mail. 30 dní po posledním představení se automaticky smažou.</p></div>
     </div>
@@ -220,7 +222,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
     <h2 id="launch">Co je potřeba před spuštěním</h2>
     <ul class="checklist">
       <li>Bankovní účet pro platby a specifický symbol.</li>
-      <li>Data a časy všech představení a jejich storno podmínky.</li>
+      <li>Data a časy všech představení a jejich storno podmínky – musí být hotové před spuštěním prodeje, po první rezervaci je už nelze změnit.</li>
       <li>Seznam VIP hostů pro každé představení.</li>
       <li>Jména pořadatelů u vchodu a na která představení přijdou (dostanou pozvánku).</li>
       <li>Kdo bude potvrzovat platby a vracet peníze.</li>

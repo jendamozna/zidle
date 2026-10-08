@@ -128,7 +128,7 @@ environment variables of the same name override them (local file wins).
 | `DATA_RETENTION_DAYS` | 30 | personal data purged this long after the last run start |
 | `MAX_SEATS_PER_RESERVATION` | 20 | also enforced in the UI |
 | `RESERVATIONS_PER_IP_PER_HOUR` | 5 | |
-| `PENDING_RESERVATIONS_PER_EMAIL` | 2 | |
+| `PENDING_RESERVATIONS_PER_EMAIL` | 2 | unpaid reservations per e-mail **in one run** |
 | `LOGIN_ATTEMPTS_PER_15_MIN` | 10 | admin login, scanner password and invite attempts, per IP |
 | `FORM_MIN_SECONDS` | 3 | minimal age of the form token |
 | `BANK_IBAN` | **required** | reservations are refused (503) without it |
@@ -226,13 +226,15 @@ in a section detail with own seats.
 **Form** (`ReservationForm.jsx`): run, summary, first/last name, e-mail
 (client validation), honeypot `hp`, notes (due date, storno text from
 `stornoText()`, GDPR sentence: *„Jméno a e-mail použijeme jen pro vyřízení
-této rezervace a do N dnů po skončení akce je smažeme.“*), submit
+této rezervace a do N dnů po posledním představení je smažeme.“*), submit
 **Rezervovat a zaplatit**. 409/403 close the form with a toast and refresh.
 
 **Reservation page** (`PaymentView.jsx`, `/?r=<token>`): run, amount, status
 chip; pending → SPD QR + copyable account/IBAN/VS/SS/amount + due date
 (red overdue notice after it); paid → ticket QR; cancellation info
-(`CancellationInfo`) and cancel panel (`CancelPanel`, §10).
+(`CancellationInfo`, also *„Platba dorazila až po představení.“* with the
+refund for an expired reservation paid after its run) and cancel panel
+(`CancelPanel`, §10).
 
 ## 8. Reservation lifecycle
 
@@ -256,7 +258,7 @@ then deletes `reservation_seats` of `expired`/`cancelled` reservations.
 | honeypot empty, form token valid | 400 `Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.` |
 | names, e-mail, 1–20 valid unique seats | 422 `Zkontrolujte zadané údaje.` / seat message, `fields` |
 | IP rate limit | 429 `Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.` |
-| < 2 pending for e-mail | 429 `Na tento e-mail už čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.` |
+| < 2 pending for the e-mail in this run | 429 `Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.` |
 | seats free in the run (`FOR UPDATE`; duplicate key fallback) | 409 `Některá místa už mezitím někdo rezervoval.` + `conflict` |
 
 Then in one transaction: insert reservation (`expires_at = min(now +
@@ -270,9 +272,15 @@ PAYMENT_DEADLINE_HOURS, run start)`), random unique 10-digit VS
 - Payments are matched manually by VS. Admin **Zaplaceno** sets `paid`,
   `paid_at`, `paid_amount = amount` and sends the ticket.
 - Reminder 24 h before the due date, expiry notice after expiry (§16).
-- **Late payment** (`accept_late_payment()`): only `expired`; re-inserts seats
-  if all are free in the run (else message naming the taken seats), sets
-  `paid`, sends the ticket.
+- **Late payment** (`accept_late_payment()`, admin action `paid-late`): only
+  `expired` without `paid_at`.
+  - run not started yet: re-inserts the seats if all are free in the run
+    (else message naming the taken seats), sets `paid`, sends the ticket
+    (button *Přijmout pozdní platbu*);
+  - run already started: the reservation stays `expired`; sets `paid_at`,
+    `paid_amount = amount`, `cancel_fee = 0`, `refund_amount = amount` (shows
+    in refunds due) and sends *Platba po představení* (button *Platba po
+    představení – vrátit*).
 
 ## 10. Cancellation and refunds
 
@@ -304,7 +312,9 @@ its percent applies, the highest started rule wins.
 E-mails (`send_cancellation_notice()`): paid part → *Nová vstupenka* (ticket
 e-mail with intro: cancelled seats, fee, refund line, *„Původní vstupenka už
 neplatí.“*); pending part → *Změna rezervace* (new payment details); whole →
-*Rezervace zrušena* with fee/refund line; pending whole by admin → none.
+*Rezervace zrušena* with fee/refund line; pending whole by admin → *Rezervace
+zrušena* + *„Pokud jste platbu už odeslali, pošleme Vám ji zpět na účet, ze
+kterého přišla.“*
 Refund line: *„Částku X Kč Vám do 14 dnů pošleme zpět na účet, ze kterého
 platba přišla.“*
 
@@ -385,6 +395,14 @@ POST, login rate-limited). Tabs:
 - **Nastavení** – runs: `run-save` (start required, label, booking cut-off
   before start, storno rows), `run-delete` (only without reservations/VIP;
   removes invite links to the run). Shows the GDPR deletion date.
+  **Lock:** once a run has any reservation (`run_has_reservations()`, any
+  status), its start and storno rules can no longer be changed – the form
+  shows them disabled with *„Představení už má rezervace – začátek a storno
+  podmínky nelze měnit (zákazníci rezervovali za těchto podmínek).“*; a POST
+  containing `starts_at` or `rule_from` is rejected with *„Představení už má
+  rezervace – začátek a storno podmínky nelze měnit.“* Label and booking
+  cut-off stay editable. Hence storno terms and the run time never change for
+  existing customers.
 
 `expire_reservations()` runs on every admin render.
 
@@ -402,7 +420,8 @@ except the ticket (multipart/related with inline PNG). All contain
 | Vstupenka | Zaplaceno / late payment / resend |
 | Nová vstupenka | partial cancellation of a paid reservation |
 | Změna rezervace | partial cancellation of a pending reservation |
-| Rezervace zrušena | whole cancellation (customer; admin only when paid) |
+| Rezervace zrušena | whole cancellation (customer or admin) |
+| Platba po představení | admin records a late payment for a run that already started |
 
 ## 16. Scheduled jobs and GDPR
 
@@ -420,7 +439,7 @@ seats and statuses stay.
 - `rate_limit(key, max, window)` fixed windows in `rate_limits` (keys
   hashed): reservations per IP (counted after validation), cancellations
   20/h per IP, logins/invites per IP.
-- Pending reservations per e-mail.
+- Pending reservations per e-mail and run.
 
 ## 18. HTTP API
 

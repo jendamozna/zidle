@@ -19,7 +19,7 @@ return (static function (): array {
 
         // Spam / bot protection
         'RESERVATIONS_PER_IP_PER_HOUR' => 5,
-        'PENDING_RESERVATIONS_PER_EMAIL' => 2, // unpaid reservations one e-mail may hold at once
+        'PENDING_RESERVATIONS_PER_EMAIL' => 2, // unpaid reservations one e-mail may hold at once in one run
         'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and organizer login, per IP
         'FORM_MIN_SECONDS' => 3,               // reservation sent sooner after loading the page = bot
 

@@ -88,10 +88,11 @@ function create_reservation(): void
 
     expire_reservations();
 
-    $pending = db()->prepare("SELECT COUNT(*) FROM reservations WHERE email = ? AND status = 'pending'");
-    $pending->execute([$email]);
+    // Counted per run, so one person can book several runs at once.
+    $pending = db()->prepare("SELECT COUNT(*) FROM reservations WHERE email = ? AND run_id = ? AND status = 'pending'");
+    $pending->execute([$email, $run['id']]);
     if ((int) $pending->fetchColumn() >= (int) config('PENDING_RESERVATIONS_PER_EMAIL')) {
-        json_error('Na tento e-mail už čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.', 429);
+        json_error('Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.', 429);
     }
 
     $pdo = db();

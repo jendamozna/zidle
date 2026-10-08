@@ -57,6 +57,18 @@ function CancellationInfo({ reservation }) {
   const { status, cancelFee, refundAmount, refundedAmount, cancelledBy, cancelledSeats } = reservation;
   const due = (refundAmount ?? 0) - (refundedAmount ?? 0);
   const whole = status === 'cancelled';
+  if (status === 'expired' && refundAmount > 0) {
+    return (
+      <div className="cancel-info">
+        <strong>Platba dorazila až po představení.</strong>
+        {due > 0 ? (
+          <span>Částku {formatCzk(due)} pošleme zpět na účet, ze kterého platba přišla.</span>
+        ) : (
+          <span>Vráceno {formatCzk(refundedAmount)}.</span>
+        )}
+      </div>
+    );
+  }
   if (!whole && !cancelledSeats.length) return null;
   return (
     <div className="cancel-info">

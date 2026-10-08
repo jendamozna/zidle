@@ -93,6 +93,18 @@ function send_reminder_email(array $r): bool
     ));
 }
 
+/** Payment arrived after the run took place: the money will be returned. */
+function send_late_payment_refund_email(array $r): bool
+{
+    return send_customer_email($r, 'Platba po představení', [
+        'Vaše platba za rezervaci (VS ' . $r['variable_symbol'] . ') dorazila až po představení, rezervace už neplatila.',
+        run_line($r),
+        '',
+        'Částku ' . format_czk((int) $r['refund_amount']) . ' Vám do ' . (int) config('REFUND_DAYS')
+            . ' dnů pošleme zpět na účet, ze kterého platba přišla.',
+    ]);
+}
+
 function send_expiry_email(array $r): bool
 {
     $base = rtrim((string) config('PUBLIC_URL'), '/');

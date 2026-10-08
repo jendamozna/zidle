@@ -106,7 +106,7 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
           {storno && <p>Storno: {storno}.</p>}
           <p>
             Jméno a e-mail použijeme jen pro vyřízení této rezervace a
-            {dataRetentionDays ? ` do ${dataRetentionDays} dnů` : ''} po skončení akce je smažeme.
+            {dataRetentionDays ? ` do ${dataRetentionDays} dnů` : ''} po posledním představení je smažeme.
           </p>
         </div>
         {formError && <p className="form-error" role="alert">{formError}</p>}

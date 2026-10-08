@@ -79,8 +79,12 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run
             $_SESSION['flash'] = 'Termín smazán.';
         }
     } else {
+        // Once a run has reservations, its start and storno rules are fixed:
+        // customers booked under them. Only the label and the booking cut-off change.
+        $existing = $id > 0 ? run_by_id($id) : null;
+        $locked = $existing !== null && run_has_reservations($id);
         $label = trim((string) ($_POST['label'] ?? ''));
-        $starts = prague_time((string) ($_POST['starts_at'] ?? ''));
+        $starts = $locked ? run_starts($existing) : prague_time((string) ($_POST['starts_at'] ?? ''));
         $closesRaw = trim((string) ($_POST['booking_closes_at'] ?? ''));
         $closes = $closesRaw === '' ? null : prague_time($closesRaw);
         $rules = [];
@@ -94,7 +98,10 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run
         if (mb_strlen($label) > 100) {
             $errors[] = 'Název je příliš dlouhý.';
         }
-        foreach ((array) ($_POST['rule_from'] ?? []) as $i => $from) {
+        if ($locked && (isset($_POST['starts_at']) || isset($_POST['rule_from']))) {
+            $errors[] = 'Představení už má rezervace – začátek a storno podmínky nelze měnit.';
+        }
+        foreach ($locked ? [] : (array) ($_POST['rule_from'] ?? []) as $i => $from) {
             $from = trim((string) $from);
             $percent = trim((string) ($_POST['rule_percent'][$i] ?? ''));
             if ($from === '' && $percent === '') {
@@ -109,7 +116,8 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run
         if ($errors) {
             $_SESSION['flash'] = implode(' ', $errors);
         } else {
-            $values = [$label, db_time($starts), $closes ? db_time($closes) : null, json_encode(normalize_storno_rules($rules), JSON_UNESCAPED_UNICODE)];
+            $rulesJson = $locked ? json_encode($existing['storno_rules']) : json_encode(normalize_storno_rules($rules), JSON_UNESCAPED_UNICODE);
+            $values = [$label, db_time($starts), $closes ? db_time($closes) : null, $rulesJson];
             if ($id > 0) {
                 db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ?, storno_rules = ? WHERE id = ?')
                     ->execute([...$values, $id]);
@@ -196,6 +204,8 @@ $flash = $_SESSION['flash'] ?? null;
 /**
  * Payment arrived after the reservation expired: restore it as paid if all
  * its seats are still free, otherwise report which seats were taken meanwhile.
+ * When the run has already started, the reservation is not restored; the
+ * payment is recorded as received and due for refund, and the customer is e-mailed.
  */
 function accept_late_payment(int $id): string
 {
@@ -207,6 +217,20 @@ function accept_late_payment(int $id): string
     if (!$r) {
         $pdo->rollBack();
         return 'Rezervaci nelze obnovit.';
+    }
+    $run = run_by_id((int) $r['run_id']);
+    if ($run === null || run_started($run)) {
+        $pdo->prepare(
+            'UPDATE reservations SET paid_at = ?, paid_amount = amount, cancel_fee = 0,
+               refund_amount = amount, refunded_amount = 0, refunded_at = NULL WHERE id = ?'
+        )->execute([db_time(now_utc()), $id]);
+        $pdo->commit();
+        $stmt = db()->prepare('SELECT * FROM reservations WHERE id = ?');
+        $stmt->execute([$id]);
+        $r = $stmt->fetch();
+        $mailed = send_late_payment_refund_email($r);
+        return 'Představení už proběhlo – platba zaznamenána k vrácení (' . format_czk((int) $r['refund_amount']) . ').'
+            . ($mailed ? ' Zákazník dostal e-mail.' : '');
     }
     $seats = explode(',', $r['seats']);
     $placeholders = implode(',', array_fill(0, count($seats), '?'));
@@ -225,6 +249,14 @@ function accept_late_payment(int $id): string
         ->execute([db_time(now_utc()), $id]);
     $pdo->commit();
     return 'Pozdní platba přijata, rezervace obnovena.' . send_ticket_for($id);
+}
+
+/** True once any reservation (in any status) exists for the run. */
+function run_has_reservations(int $runId): bool
+{
+    $stmt = db()->prepare('SELECT 1 FROM reservations WHERE run_id = ? LIMIT 1');
+    $stmt->execute([$runId]);
+    return (bool) $stmt->fetchColumn();
 }
 
 /** Sends the ticket e-mail for a paid reservation; returns a message for the flash. */
@@ -309,6 +341,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .card.selected { outline:2px solid var(--accent); }
   .settings-intro { margin-bottom:12px; max-width:760px; }
   .settings + .settings { margin-top:12px; }
+  .hint.locked { padding:8px 12px; border-radius:10px; background:#f9e4b7; color:#6d4a04; font-weight:600; }
+  input:disabled { background:#efe9df; color:var(--ink-2); }
   .card.settings { margin-bottom:16px; }
   .checks { display:flex; flex-wrap:wrap; gap:6px 16px; }
   .check { display:inline-flex !important; flex-direction:row !important; align-items:center; gap:6px; font-weight:500 !important; color:var(--ink) !important; max-width:none !important; }
@@ -484,23 +518,28 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <?php if ($deleteAt): ?>Osobní údaje budou smazány <?= $h($deleteAt->format('j. n. Y')) ?> (<?= (int) config('DATA_RETENTION_DAYS') ?> dní po posledním termínu).<?php endif ?></p>
 
   <?php foreach ($runForms as $run):
-      $rows = array_pad($run['storno_rules'], max(3, count($run['storno_rules']) + 1), ['from' => '', 'percent' => '']);
+      $locked = $run['id'] && run_has_reservations($run['id']);
+      $rows = $locked ? $run['storno_rules'] : array_pad($run['storno_rules'], max(3, count($run['storno_rules']) + 1), ['from' => '', 'percent' => '']);
+      $dis = $locked ? ' disabled' : '';
   ?>
   <form class="card settings" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <input type="hidden" name="id" value="<?= (int) $run['id'] ?>">
     <h2><?= $run['id'] ? $h(run_label($run)) : 'Nový termín' ?></h2>
     <div class="rule">
-      <label>Začátek<input type="datetime-local" name="starts_at" value="<?= $h($local($run['starts_at'])) ?>" required></label>
+      <label>Začátek<input type="datetime-local" name="starts_at" value="<?= $h($local($run['starts_at'])) ?>" required<?= $dis ?>></label>
       <label>Název (nepovinný)<input name="label" maxlength="100" value="<?= $h($run['label']) ?>" placeholder="např. Premiéra"></label>
       <label>Konec rezervací (nepovinný)<input type="datetime-local" name="booking_closes_at" value="<?= $h($local($run['booking_closes_at'])) ?>"></label>
     </div>
-    <p class="hint">Storno poplatky zaplacených rezervací tohoto termínu. Před prvním datem je storno zdarma.</p>
+    <?php if ($locked): ?>
+      <p class="hint locked">Představení už má rezervace – začátek a storno podmínky nelze měnit (zákazníci rezervovali za těchto podmínek).</p>
+    <?php endif ?>
+    <p class="hint">Storno poplatky zaplacených rezervací tohoto termínu. Před prvním datem je storno zdarma.<?= $locked && !$rows ? ' Storno podmínky nejsou nastavené – zrušení je zdarma.' : '' ?></p>
     <div class="rules">
       <?php foreach ($rows as $rule): ?>
         <div class="rule">
-          <label>Od<input type="datetime-local" name="rule_from[]" value="<?= $h($rule['from'] === '' ? '' : prague_input(storno_from($rule['from']))) ?>"></label>
-          <label>Poplatek %<input type="number" name="rule_percent[]" min="0" max="100" value="<?= $h($rule['percent']) ?>"></label>
+          <label>Od<input type="datetime-local" name="rule_from[]" value="<?= $h($rule['from'] === '' ? '' : prague_input(storno_from($rule['from']))) ?>"<?= $dis ?>></label>
+          <label>Poplatek %<input type="number" name="rule_percent[]" min="0" max="100" value="<?= $h($rule['percent']) ?>"<?= $dis ?>></label>
         </div>
       <?php endforeach ?>
     </div>
@@ -680,11 +719,14 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                   <button name="action" value="refunded">Vráceno</button>
                 </form>
               <?php endif ?>
-              <?php if ($r['status'] === 'expired'): ?>
-                <form method="post" onsubmit="return confirm('Platba dorazila po splatnosti. Obnovit rezervaci jako zaplacenou?')">
+              <?php if ($r['status'] === 'expired' && $r['paid_at'] === null):
+                  $afterRun = ($lr = run_by_id((int) $r['run_id'])) === null || run_started($lr); ?>
+                <form method="post" onsubmit="return confirm('<?= $afterRun
+                    ? 'Platba dorazila po představení. Zaznamenat ji k vrácení a poslat zákazníkovi e-mail?'
+                    : 'Platba dorazila po splatnosti. Obnovit rezervaci jako zaplacenou?' ?>')">
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
-                  <button class="secondary" name="action" value="paid-late">Přijmout pozdní platbu</button>
+                  <button class="secondary" name="action" value="paid-late"><?= $afterRun ? 'Platba po představení – vrátit' : 'Přijmout pozdní platbu' ?></button>
                 </form>
               <?php endif ?>
               <?php if ($r['status'] === 'paid'): ?>

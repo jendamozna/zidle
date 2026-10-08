@@ -129,7 +129,8 @@ function cancel_seats(int $id, ?array $seatIds, string $by): array
  *  - paid, part of the seats: new ticket (the old one lists cancelled seats) + fee/refund
  *  - paid, everything:        cancellation with fee/refund and refund deadline
  *  - unpaid, part of the seats: new amount to pay
- *  - unpaid, everything:      confirmation to the customer; nothing when admin cancels
+ *  - unpaid, everything:      confirmation to the customer (by admin: also that a payment
+ *                             already sent will be returned)
  */
 function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $fee, int $refund, string $by, bool $paid): void
 {
@@ -157,14 +158,14 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
         ));
         return;
     }
-    if (!$paid && $by === 'admin') {
-        return;
-    }
     send_customer_email($r, 'Rezervace zrušena', array_merge(
         ['Vaše rezervace (VS ' . $r['variable_symbol'] . ') byla zrušena a místa uvolněna:',
          implode('; ', seat_labels($r['seats'])) . '.',
          run_line($r)],
-        $refundLines
+        $refundLines,
+        !$paid && $by === 'admin'
+            ? ['', 'Pokud jste platbu už odeslali, pošleme Vám ji zpět na účet, ze kterého přišla.']
+            : []
     ));
 }
 
