@@ -8,6 +8,14 @@ const PHP_SERVER = process.env.PHP_SERVER ?? 'http://127.0.0.1:8000';
 export default defineConfig({
   plugins: [react()],
   base: './',
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        scanner: 'scanner.html', // organizer ticket scanner
+      },
+    },
+  },
   server: {
     proxy: { '/api': PHP_SERVER },
   },

@@ -48,13 +48,18 @@ export default function PaymentView({ reservation, onBack }) {
   const [qr, setQr] = useState(null);
   const { payment, status } = reservation;
   const isPending = status === 'pending';
+  // Pending: bank payment QR. Paid: ticket QR scanned at the entrance.
+  const qrText = isPending ? payment.spd : reservation.ticket;
 
   useEffect(() => {
-    if (!isPending) return;
-    QRCode.toDataURL(payment.spd, { width: 520, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#2b2620', light: '#ffffff' } })
+    if (!qrText) {
+      setQr(null);
+      return;
+    }
+    QRCode.toDataURL(qrText, { width: 520, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#2b2620', light: '#ffffff' } })
       .then(setQr)
       .catch(() => setQr(null));
-  }, [payment.spd, isPending]);
+  }, [qrText]);
 
   const groups = {};
   for (const id of [...reservation.seats].sort(compareSeatIds)) {
@@ -80,10 +85,14 @@ export default function PaymentView({ reservation, onBack }) {
       </div>
 
       <div className="payment">
-        {isPending && (
+        {qrText && (
           <div className="payment-qr">
-            {qr ? <img src={qr} alt="QR kód pro platbu" width="260" height="260" /> : <div className="qr-placeholder" />}
-            <span className="muted">QR Platba</span>
+            {qr ? (
+              <img src={qr} alt={isPending ? 'QR kód pro platbu' : 'QR kód vstupenky'} width="260" height="260" />
+            ) : (
+              <div className="qr-placeholder" />
+            )}
+            <span className="muted">{isPending ? 'QR Platba' : 'Vstupenka'}</span>
           </div>
         )}
 

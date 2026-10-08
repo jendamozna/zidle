@@ -1,13 +1,13 @@
 <?php
 // Must match src/data/layout.js.
 const SECTIONS = [
-    'WL' => ['rows' => 4, 'seats' => 6],
-    'ML' => ['rows' => 10, 'seats' => 8],
-    'MR' => ['rows' => 10, 'seats' => 8],
-    'WR' => ['rows' => 6, 'seats' => 6],
-    'BL' => ['rows' => 4, 'seats' => 12],
-    'BC' => ['rows' => 4, 'seats' => 12],
-    'BR' => ['rows' => 2, 'seats' => 10],
+    'WL' => ['name' => 'Levé křídlo', 'rows' => 4, 'seats' => 6],
+    'ML' => ['name' => 'Levá hlavní', 'rows' => 10, 'seats' => 8],
+    'MR' => ['name' => 'Pravá hlavní', 'rows' => 10, 'seats' => 8],
+    'WR' => ['name' => 'Pravé křídlo', 'rows' => 6, 'seats' => 6],
+    'BL' => ['name' => 'Balkon vlevo', 'rows' => 4, 'seats' => 12],
+    'BC' => ['name' => 'Balkon střed', 'rows' => 4, 'seats' => 12],
+    'BR' => ['name' => 'Balkon vpravo', 'rows' => 2, 'seats' => 10],
 ];
 
 function is_valid_seat_id(string $id): bool

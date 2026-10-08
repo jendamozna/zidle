@@ -39,13 +39,15 @@ if ($action === 'logout' && $csrfOk) {
 }
 
 $flash = null;
-if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'cancel'], true)) {
+if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'cancel', 'ticket'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     $now = db_time(now_utc());
     if ($action === 'paid') {
         $stmt = db()->prepare("UPDATE reservations SET status = 'paid', paid_at = ? WHERE id = ? AND status = 'pending'");
         $stmt->execute([$now, $id]);
-        $flash = $stmt->rowCount() ? 'Platba potvrzena.' : 'Rezervaci nelze označit jako zaplacenou.';
+        $flash = $stmt->rowCount() ? 'Platba potvrzena.' . send_ticket_for($id) : 'Rezervaci nelze označit jako zaplacenou.';
+    } elseif ($action === 'ticket') {
+        $flash = trim(send_ticket_for($id)) ?: 'Vstupenku nelze odeslat.';
     } else {
         $stmt = db()->prepare("UPDATE reservations SET status = 'cancelled', cancelled_at = ? WHERE id = ? AND status IN ('pending', 'paid')");
         $stmt->execute([$now, $id]);
@@ -57,6 +59,31 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'cancel'
     exit;
 }
 $flash = $_SESSION['flash'] ?? null;
+
+/** Sends the ticket e-mail for a paid reservation; returns a message for the flash. */
+function send_ticket_for(int $id): string
+{
+    $stmt = db()->prepare("SELECT * FROM reservations WHERE id = ? AND status = 'paid'");
+    $stmt->execute([$id]);
+    $r = $stmt->fetch();
+    if (!$r) {
+        return '';
+    }
+    if (!filter_var(config('MAIL_ENABLED'), FILTER_VALIDATE_BOOLEAN)) {
+        return ' E-maily jsou vypnuté (MAIL_ENABLED), vstupenka nebyla odeslána.';
+    }
+    try {
+        $sent = send_ticket_email($r);
+    } catch (Throwable $e) {
+        error_log('[zidle] ' . $e);
+        $sent = false;
+    }
+    if (!$sent) {
+        return ' Vstupenku se nepodařilo odeslat.';
+    }
+    db()->prepare('UPDATE reservations SET ticket_sent_at = ? WHERE id = ?')->execute([db_time(now_utc()), $id]);
+    return ' Vstupenka odeslána na ' . $r['email'] . '.';
+}
 unset($_SESSION['flash']);
 
 $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expired' => 'Propadlo', 'cancelled' => 'Zrušeno'];
@@ -91,7 +118,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .s-pending { background:#f9e4b7; color:#6d4a04; } .s-paid { background:#dcefd9; color:#1f5a2c; }
   .s-expired, .s-cancelled { background:#eee5d8; color:var(--ink-2); }
   .seats { max-width:260px; font-size:.85rem; color:var(--ink-2); }
-  .actions { display:flex; gap:6px; } .actions form { margin:0; }
+  .actions { display:flex; gap:6px; flex-wrap:wrap; } .actions form { margin:0; }
   .flash { margin-bottom:16px; padding:10px 14px; border-radius:10px; background:#dcefd9; color:#1f5a2c; }
   .error { color:#8f2a20; }
   .login { max-width:340px; margin:15vh auto; display:flex; flex-direction:column; gap:12px; }
@@ -171,7 +198,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td class="seats"><?= $h(str_replace(',', ', ', $r['seats'])) ?></td>
           <td><?= $kc($r['amount']) ?></td>
           <td><span class="badge s-<?= $h($r['status']) ?>"><?= $h($statusLabels[$r['status']]) ?></span>
-            <?php if ($r['paid_at']): ?><br><small><?= $h($fmt($r['paid_at'])) ?></small><?php endif ?></td>
+            <?php if ($r['paid_at']): ?><br><small>zaplaceno <?= $h($fmt($r['paid_at'])) ?></small><?php endif ?>
+            <?php if ($r['ticket_sent_at']): ?><br><small>vstupenka <?= $h($fmt($r['ticket_sent_at'])) ?></small><?php endif ?>
+            <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= $h($fmt($r['checked_in_at'])) ?></small><?php endif ?></td>
           <td><?= $h($fmt($r['created_at'])) ?></td>
           <td><?= $h($fmt($r['expires_at'])) ?></td>
           <td>
@@ -181,6 +210,13 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
                   <button name="action" value="paid">Zaplaceno</button>
+                </form>
+              <?php endif ?>
+              <?php if ($r['status'] === 'paid'): ?>
+                <form method="post">
+                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                  <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                  <button class="secondary" name="action" value="ticket"><?= $r['ticket_sent_at'] ? 'Poslat znovu' : 'Poslat vstupenku' ?></button>
                 </form>
               <?php endif ?>
               <?php if (in_array($r['status'], ['pending', 'paid'], true)): ?>

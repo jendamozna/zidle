@@ -9,9 +9,27 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
    as a *pending* reservation and immediately shown as occupied to everyone.
 3. A payment page shows a Czech **QR Platba** code (amount, account, variable
    symbol, due date). The page stays reachable at `?r=<token>`.
-4. An administrator confirms received payments in `api/admin.php`.
+4. The accountant confirms received payments in `api/admin.php`. This e-mails
+   the customer a ticket with a QR code containing the orderer's name, seat
+   count and seat numbers (signed, so it cannot be forged or altered). The
+   ticket QR is also shown on the customer's reservation page.
 5. Reservations not paid by the deadline (`PAYMENT_DEADLINE_HOURS`, default
    72 h) are marked *expired* and their seats are freed.
+6. At the entrance, organizers open `scanner.html` on a phone, log in with
+   `ORGANIZER_PASSWORD` and scan tickets with the rear camera. The scanner
+   shows the name and seats and whether the ticket is valid, already used
+   (with the time of the first scan), unpaid, cancelled or invalid.
+
+### Ticket QR format
+
+```
+Z26|<variable symbol>|<seat count>|<name>|<seat,seat,...>|<signature>
+Z26|2600000005|4|Marie Nováková|WR-1-1,WR-1-2,WR-1-3,BL-1-1|3XCcMAw51txSnZXmaFz_Gt
+```
+
+The signature is a truncated HMAC-SHA256 of the rest using `TICKET_SECRET`;
+it is checked by the server (`api/organizer.php`), which also records the
+first check-in.
 
 ## Setup
 
@@ -20,13 +38,20 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
 mariadb -e "CREATE DATABASE zidle CHARACTER SET utf8mb4"
 mariadb -e "CREATE USER 'zidle'@'localhost' IDENTIFIED BY '…'; GRANT ALL ON zidle.* TO 'zidle'@'localhost'"
 mariadb zidle < db/schema.sql
+# (existing database from an older version: mariadb zidle < db/migrations/002_tickets.sql)
+
+# PHP dependencies (QR code images for ticket e-mails)
+(cd api && composer install --no-dev)
 
 # configuration – DB credentials, bank account, admin password, e-mail
 cp api/config.local.example.php api/config.local.php
 ```
 
 All options and defaults are in `api/config.php`; they can also be set as
-environment variables. `BANK_IBAN` and `ADMIN_PASSWORD` are required.
+environment variables. Required: `BANK_IBAN`, `ADMIN_PASSWORD`,
+`ORGANIZER_PASSWORD`, `TICKET_SECRET` (generate with
+`php -r "echo bin2hex(random_bytes(32));"` and never change it once tickets
+are sent) and `MAIL_ENABLED` + `MAIL_FROM` for sending tickets.
 
 ### Development
 
@@ -42,8 +67,10 @@ npm run dev                  # Vite, proxies /api to the PHP server
 npm run build
 ```
 
-Upload the contents of `dist/` together with the `api/` folder (so the app
-finds the API at `./api/`) to a PHP host with MariaDB. Keep
+Upload the contents of `dist/` together with the `api/` folder including
+`api/vendor/` (so the app finds the API at `./api/`) to a PHP 8.1+ host with
+MariaDB and the GD extension. The site must run on **HTTPS** – phone browsers
+only allow camera access for the scanner on secure pages. Keep
 `api/config.local.php` and `api/lib/` non-public (`.htaccess` files are
 included for Apache). Add a cron job so seats are freed even without traffic:
 
@@ -60,7 +87,8 @@ and set `CORS_ORIGIN`.
 | --- | --- | --- |
 | GET | `api/seats.php` | `{taken: [seatId], price, deadlineHours}` |
 | POST | `api/reservations.php` | body `{firstName, lastName, email, seats}` → reservation with payment details (201), `409` with `conflict` when a seat is already taken, `422` with `fields` on validation errors |
-| GET | `api/reservations.php?token=` | reservation status and payment details |
+| GET | `api/reservations.php?token=` | reservation status, payment details and `ticket` (QR text) once paid |
+| GET/POST | `api/organizer.php` | organizer session (`login`, `logout`) and `verify` of a scanned ticket code |
 
 Seat IDs: `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-4-12`. Sections: `WL` Left
 Wing, `ML` Left Main, `MR` Right Main, `WR` Right Wing, `BL` Balcony left,
@@ -69,5 +97,5 @@ Wing, `ML` Left Main, `MR` Right Main, `WR` Right Wing, `BL` Balcony left,
 
 ## Database
 
-- `reservations` – one row per reservation incl. history (`pending`, `paid`, `expired`, `cancelled`).
+- `reservations` – one row per reservation incl. history (`pending`, `paid`, `expired`, `cancelled`), ticket e-mail time and check-in time.
 - `reservation_seats` – currently held seats; the primary key on `seat_id` prevents double booking. Rows are removed when a reservation expires or is cancelled.

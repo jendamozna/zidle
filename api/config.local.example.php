@@ -11,6 +11,8 @@ return [
     'PAYMENT_RECIPIENT' => 'Farnost',
 
     'ADMIN_PASSWORD' => 'change-me',
+    'ORGANIZER_PASSWORD' => 'change-me-too',
+    'TICKET_SECRET' => 'paste output of: php -r "echo bin2hex(random_bytes(32));"',
 
     'MAIL_ENABLED' => true,
     'MAIL_FROM' => 'rezervace@example.com',

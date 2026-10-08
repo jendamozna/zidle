@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS reservations (
   expires_at      DATETIME     NOT NULL,
   paid_at         DATETIME     NULL,
   cancelled_at    DATETIME     NULL,
+  ticket_sent_at  DATETIME     NULL COMMENT 'When the e-mail with the ticket QR code was sent',
+  checked_in_at   DATETIME     NULL COMMENT 'First scan of the ticket at the entrance',
   PRIMARY KEY (id),
   UNIQUE KEY uq_token (token),
   UNIQUE KEY uq_vs (variable_symbol),

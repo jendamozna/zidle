@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/layout.php';
+require_once __DIR__ . '/ticket.php';
 
 function config(string $key)
 {
@@ -169,6 +170,7 @@ function spd_string(array $r): string
 
 function reservation_payload(array $r): array
 {
+    $ticket = $r['status'] === 'paid' && strlen((string) config('TICKET_SECRET')) >= 16 ? ticket_code($r) : null;
     return [
         'token' => $r['token'],
         'status' => $r['status'],
@@ -180,6 +182,7 @@ function reservation_payload(array $r): array
         'createdAt' => iso_time($r['created_at']),
         'expiresAt' => iso_time($r['expires_at']),
         'paidAt' => iso_time($r['paid_at']),
+        'ticket' => $ticket,
         'payment' => [
             'iban' => (string) config('BANK_IBAN'),
             'account' => (string) config('BANK_ACCOUNT_DISPLAY'),

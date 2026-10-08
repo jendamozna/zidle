@@ -21,8 +21,12 @@ return (static function (): array {
         'PAYMENT_RECIPIENT' => 'Farnost',
         'PAYMENT_MESSAGE' => 'Moje zidle 2026',
 
-        // Admin page (admin.php)
+        // Admin page (admin.php) – used by the accountant to confirm payments
         'ADMIN_PASSWORD' => '',
+        // Ticket scanner (scanner.html) – used by organizers at the entrance
+        'ORGANIZER_PASSWORD' => '',
+        // Secret for signing ticket QR codes (long random string, never change after tickets are sent)
+        'TICKET_SECRET' => '',
 
         // Confirmation e-mail with payment instructions (uses PHP mail())
         'MAIL_ENABLED' => false,

@@ -1,3 +1,5 @@
-<FilesMatch "^(config\.php|config\.local.*\.php|cron-expire\.php)$">
+<FilesMatch "^(config\.php|config\.local.*\.php|cron-expire\.php|composer\.(json|lock))$">
   Require all denied
 </FilesMatch>
+
+RedirectMatch 404 ^.*/api/vendor/.*$
