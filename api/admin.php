@@ -1,0 +1,204 @@
+<?php
+// Admin page: list reservations, confirm received payments, cancel reservations.
+declare(strict_types=1);
+require __DIR__ . '/lib/bootstrap.php';
+
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' => !empty($_SERVER['HTTPS'])]);
+session_start();
+header('Content-Type: text/html; charset=utf-8');
+header('X-Frame-Options: DENY');
+
+$password = (string) config('ADMIN_PASSWORD');
+$h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+
+if ($password === '') {
+    http_response_code(503);
+    exit('Nastavte ADMIN_PASSWORD v config.local.php.');
+}
+
+if (empty($_SESSION['csrf'])) {
+    $_SESSION['csrf'] = bin2hex(random_bytes(16));
+}
+$csrfOk = hash_equals($_SESSION['csrf'], (string) ($_POST['csrf'] ?? ''));
+$action = $_POST['action'] ?? null;
+
+if ($action === 'login' && $csrfOk) {
+    if (hash_equals($password, (string) ($_POST['password'] ?? ''))) {
+        session_regenerate_id(true);
+        $_SESSION['admin'] = true;
+    } else {
+        sleep(1);
+        $loginError = 'Nesprávné heslo.';
+    }
+}
+if ($action === 'logout' && $csrfOk) {
+    $_SESSION = [];
+    session_destroy();
+    header('Location: admin.php');
+    exit;
+}
+
+$flash = null;
+if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'cancel'], true)) {
+    $id = (int) ($_POST['id'] ?? 0);
+    $now = db_time(now_utc());
+    if ($action === 'paid') {
+        $stmt = db()->prepare("UPDATE reservations SET status = 'paid', paid_at = ? WHERE id = ? AND status = 'pending'");
+        $stmt->execute([$now, $id]);
+        $flash = $stmt->rowCount() ? 'Platba potvrzena.' : 'Rezervaci nelze označit jako zaplacenou.';
+    } else {
+        $stmt = db()->prepare("UPDATE reservations SET status = 'cancelled', cancelled_at = ? WHERE id = ? AND status IN ('pending', 'paid')");
+        $stmt->execute([$now, $id]);
+        expire_reservations(); // frees the seats
+        $flash = $stmt->rowCount() ? 'Rezervace zrušena, místa uvolněna.' : 'Rezervaci nelze zrušit.';
+    }
+    $_SESSION['flash'] = $flash;
+    header('Location: admin.php?' . http_build_query(['status' => $_GET['status'] ?? '', 'q' => $_GET['q'] ?? '']));
+    exit;
+}
+$flash = $_SESSION['flash'] ?? null;
+unset($_SESSION['flash']);
+
+$statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expired' => 'Propadlo', 'cancelled' => 'Zrušeno'];
+?>
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Správa rezervací – Moje židle 2026</title>
+<style>
+  :root { --bg:#f5f1ea; --surface:#fffdf9; --ink:#2b2620; --ink-2:#6b6256; --wall:#d9cfbf; --accent:#8a5a2b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, sans-serif; }
+  main { max-width:1200px; margin:0 auto; padding:24px 16px 64px; }
+  header { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+  h1 { margin:0; font:600 1.5rem Georgia, serif; }
+  .card { background:var(--surface); border-radius:16px; box-shadow:0 6px 20px rgba(60,45,25,.07); padding:16px; }
+  .stats { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .stats .card { padding:12px 16px; min-width:150px; }
+  .stats strong { display:block; font:600 1.4rem Georgia, serif; }
+  form.filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  input, select, button { font:inherit; padding:8px 12px; border-radius:10px; border:1px solid var(--wall); background:#fff; }
+  button { cursor:pointer; background:var(--accent); color:#fff; border:0; font-weight:600; }
+  button.secondary { background:#fff; color:var(--ink); border:1px solid var(--wall); }
+  button.danger { background:#fff; color:#8f2a20; border:1px solid #e49a8e; }
+  .table { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:10px 8px; border-bottom:1px solid #eee5d8; vertical-align:top; }
+  th { font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.8rem; font-weight:600; white-space:nowrap; }
+  .s-pending { background:#f9e4b7; color:#6d4a04; } .s-paid { background:#dcefd9; color:#1f5a2c; }
+  .s-expired, .s-cancelled { background:#eee5d8; color:var(--ink-2); }
+  .seats { max-width:260px; font-size:.85rem; color:var(--ink-2); }
+  .actions { display:flex; gap:6px; } .actions form { margin:0; }
+  .flash { margin-bottom:16px; padding:10px 14px; border-radius:10px; background:#dcefd9; color:#1f5a2c; }
+  .error { color:#8f2a20; }
+  .login { max-width:340px; margin:15vh auto; display:flex; flex-direction:column; gap:12px; }
+</style>
+</head>
+<body>
+<main>
+<?php if (empty($_SESSION['admin'])): ?>
+  <form class="card login" method="post">
+    <h1>Správa rezervací</h1>
+    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+    <input type="hidden" name="action" value="login">
+    <input type="password" name="password" placeholder="Heslo" autofocus required>
+    <?php if (!empty($loginError)): ?><div class="error"><?= $h($loginError) ?></div><?php endif ?>
+    <button>Přihlásit</button>
+  </form>
+<?php else:
+    expire_reservations();
+    $status = (string) ($_GET['status'] ?? '');
+    $q = trim((string) ($_GET['q'] ?? ''));
+    $where = [];
+    $params = [];
+    if (isset($statusLabels[$status])) {
+        $where[] = 'status = ?';
+        $params[] = $status;
+    }
+    if ($q !== '') {
+        $where[] = '(variable_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ? OR seats LIKE ?)';
+        array_push($params, ...array_fill(0, 5, '%' . $q . '%'));
+    }
+    $sql = 'SELECT * FROM reservations' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 500';
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll();
+    $totals = db()->query("SELECT status, COUNT(*) n, SUM(seat_count) seats, SUM(amount) amount FROM reservations GROUP BY status")
+        ->fetchAll(PDO::FETCH_UNIQUE);
+    $prague = new DateTimeZone('Europe/Prague');
+    $fmt = static fn ($t) => $t ? (new DateTimeImmutable($t, new DateTimeZone('UTC')))->setTimezone($prague)->format('j. n. Y H:i') : '';
+    $kc = static fn ($n) => number_format((int) $n, 0, ',', ' ') . ' Kč';
+?>
+  <header>
+    <h1>Správa rezervací</h1>
+    <form method="post">
+      <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+      <input type="hidden" name="action" value="logout">
+      <button class="secondary">Odhlásit</button>
+    </form>
+  </header>
+
+  <?php if ($flash): ?><div class="flash"><?= $h($flash) ?></div><?php endif ?>
+
+  <div class="stats">
+    <?php foreach (['pending', 'paid'] as $s): $t = $totals[$s] ?? ['n' => 0, 'seats' => 0, 'amount' => 0]; ?>
+      <div class="card"><?= $h($statusLabels[$s]) ?><strong><?= (int) $t['seats'] ?> míst</strong><?= $kc($t['amount']) ?> · <?= (int) $t['n'] ?> rez.</div>
+    <?php endforeach ?>
+  </div>
+
+  <form class="filters" method="get">
+    <select name="status">
+      <option value="">Všechny stavy</option>
+      <?php foreach ($statusLabels as $k => $label): ?>
+        <option value="<?= $h($k) ?>" <?= $status === $k ? 'selected' : '' ?>><?= $h($label) ?></option>
+      <?php endforeach ?>
+    </select>
+    <input type="search" name="q" value="<?= $h($q) ?>" placeholder="VS, jméno, e-mail, místo">
+    <button class="secondary">Filtrovat</button>
+  </form>
+
+  <div class="card table">
+    <table>
+      <thead><tr><th>VS</th><th>Jméno</th><th>Místa</th><th>Částka</th><th>Stav</th><th>Vytvořeno</th><th>Splatnost</th><th></th></tr></thead>
+      <tbody>
+      <?php foreach ($rows as $r): ?>
+        <tr>
+          <td><strong><?= $h($r['variable_symbol']) ?></strong></td>
+          <td><?= $h($r['first_name'] . ' ' . $r['last_name']) ?><br><a href="mailto:<?= $h($r['email']) ?>"><?= $h($r['email']) ?></a></td>
+          <td class="seats"><?= $h(str_replace(',', ', ', $r['seats'])) ?></td>
+          <td><?= $kc($r['amount']) ?></td>
+          <td><span class="badge s-<?= $h($r['status']) ?>"><?= $h($statusLabels[$r['status']]) ?></span>
+            <?php if ($r['paid_at']): ?><br><small><?= $h($fmt($r['paid_at'])) ?></small><?php endif ?></td>
+          <td><?= $h($fmt($r['created_at'])) ?></td>
+          <td><?= $h($fmt($r['expires_at'])) ?></td>
+          <td>
+            <div class="actions">
+              <?php if ($r['status'] === 'pending'): ?>
+                <form method="post">
+                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                  <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                  <button name="action" value="paid">Zaplaceno</button>
+                </form>
+              <?php endif ?>
+              <?php if (in_array($r['status'], ['pending', 'paid'], true)): ?>
+                <form method="post" onsubmit="return confirm('Zrušit rezervaci a uvolnit místa?')">
+                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                  <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                  <button class="danger" name="action" value="cancel">Zrušit</button>
+                </form>
+              <?php endif ?>
+            </div>
+          </td>
+        </tr>
+      <?php endforeach ?>
+      <?php if (!$rows): ?><tr><td colspan="8">Žádné rezervace.</td></tr><?php endif ?>
+      </tbody>
+    </table>
+  </div>
+<?php endif ?>
+</main>
+</body>
+</html>

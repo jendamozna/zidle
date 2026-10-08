@@ -1,4 +1,4 @@
-import { SECTIONS, SEAT_PRICE, formatCzk, parseSeatId } from '../data/layout.js';
+import { SECTIONS, formatCzk, parseSeatId } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 
 export default function ReservationPanel({ stats, currentSectionId, submitting, onRemove, onOpen, onReserve }) {
@@ -16,7 +16,7 @@ export default function ReservationPanel({ stats, currentSectionId, submitting, 
                 <button type="button" className="link" onClick={() => onOpen(section.id)}>
                   {section.name}
                 </button>
-                <span className="muted">{formatCzk(mine.length * SEAT_PRICE)}</span>
+                <span className="muted">{formatCzk(mine.length * stats.price)}</span>
               </div>
               <div className="seat-chips">
                 {mine.map((id) => {
@@ -43,7 +43,7 @@ export default function ReservationPanel({ stats, currentSectionId, submitting, 
       <div className="panel-total">
         <div>
           <span className="muted">
-            {seatsLabel(stats.selectedCount)} × {formatCzk(SEAT_PRICE)}
+            {seatsLabel(stats.selectedCount)} × {formatCzk(stats.price)}
           </span>
           <strong>{formatCzk(stats.total)}</strong>
         </div>

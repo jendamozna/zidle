@@ -816,3 +816,308 @@ h2 {
     animation: none !important;
   }
 }
+
+/* ---------- Reservation form ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(43, 38, 32, 0.38);
+  backdrop-filter: blur(3px);
+  animation: fade-in 0.2s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.modal {
+  width: min(100%, 440px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 24px;
+  padding: 1.5rem;
+  box-shadow: 0 24px 60px rgba(43, 38, 32, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  animation: panel-in 0.25s var(--ease);
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-head h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.4rem;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--surface-2);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.icon-btn:hover {
+  background: var(--wall);
+}
+
+.modal-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 0.9rem;
+  color: var(--ink-2);
+}
+
+.modal-summary strong {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 420px) {
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.field input {
+  font: inherit;
+  font-weight: 400;
+  font-size: 1rem;
+  color: var(--ink);
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--wall);
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  min-width: 0;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(138, 90, 43, 0.18);
+}
+
+.field.has-error input {
+  border-color: #c4473b;
+}
+
+.field small,
+.form-error {
+  color: #9a2c21;
+  font-weight: 500;
+}
+
+.form-error {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.modal-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+
+/* ---------- Payment ---------- */
+
+.payment {
+  background: var(--surface);
+  border-radius: 28px;
+  padding: clamp(18px, 3vw, 36px);
+  box-shadow: var(--shadow);
+  display: flex;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.payment-qr {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.payment-qr img,
+.qr-placeholder {
+  display: block;
+  width: min(260px, 70vw);
+  height: auto;
+  aspect-ratio: 1;
+  padding: 12px;
+  border-radius: 20px;
+  background: #fff;
+  border: 1.5px solid var(--wall);
+}
+
+.payment-info {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  min-width: 0;
+}
+
+.payment-amount {
+  display: flex;
+  flex-direction: column;
+}
+
+.payment-amount strong {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.pay-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.pay-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+}
+
+.pay-row + .pay-row {
+  border-top: 1px solid rgba(217, 207, 191, 0.7);
+}
+
+.pay-row dt {
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+
+.pay-row dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.copy-btn {
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.copy-btn:hover {
+  background: var(--wall);
+  color: var(--ink);
+}
+
+.deadline {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-2);
+}
+
+.deadline strong {
+  color: var(--ink);
+}
+
+.pay-seats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.pay-seats li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pay-seats li span:first-child {
+  font-weight: 600;
+  flex: none;
+}
+
+.pay-seats li span:last-child {
+  text-align: right;
+}
+
+.small {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 480px) {
+  .pay-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25rem;
+  }
+  .pay-row dd {
+    justify-content: space-between;
+    text-align: left;
+  }
+}

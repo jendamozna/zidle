@@ -1,0 +1,3 @@
+<FilesMatch "^(config\.php|config\.local.*\.php|cron-expire\.php)$">
+  Require all denied
+</FilesMatch>

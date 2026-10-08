@@ -1,24 +1,52 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SECTIONS, SEAT_PRICE, TOTAL_CAPACITY, capacity, compareSeatIds, parseSeatId } from '../data/layout.js';
-import { fetchTakenSeats, reserveSeats } from '../data/seatService.js';
+import { createReservation, fetchSeats } from '../data/seatService.js';
+
+const REFRESH_MS = 30_000;
 
 export function useSeats() {
   const [taken, setTaken] = useState(() => new Set());
   const [selected, setSelected] = useState(() => new Set());
+  const [price, setPrice] = useState(SEAT_PRICE);
+  const [deadlineHours, setDeadlineHours] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const active = useRef(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await fetchSeats();
+      if (!active.current) return;
+      const nextTaken = new Set(data.taken);
+      setTaken(nextTaken);
+      setPrice(data.price);
+      setDeadlineHours(data.deadlineHours);
+      // Drop seats someone else reserved in the meantime.
+      setSelected((prev) => {
+        const kept = [...prev].filter((id) => !nextTaken.has(id));
+        return kept.length === prev.size ? prev : new Set(kept);
+      });
+      setLoadError(null);
+    } catch (err) {
+      if (active.current) setLoadError(err.message);
+    } finally {
+      if (active.current) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let active = true;
-    fetchTakenSeats().then((ids) => {
-      if (!active) return;
-      setTaken(new Set(ids));
-      setLoading(false);
-    });
+    active.current = true;
+    refresh();
+    const timer = setInterval(refresh, REFRESH_MS);
+    const onFocus = () => refresh();
+    window.addEventListener('focus', onFocus);
     return () => {
-      active = false;
+      active.current = false;
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
     };
-  }, []);
+  }, [refresh]);
 
   const toggleSeat = useCallback(
     (id) => {
@@ -37,7 +65,10 @@ export function useSeats() {
     const bySection = Object.fromEntries(
       SECTIONS.map((s) => [s.id, { capacity: capacity(s), taken: 0, mine: [] }]),
     );
-    for (const id of taken) bySection[parseSeatId(id).sectionId].taken += 1;
+    for (const id of taken) {
+      const section = bySection[parseSeatId(id).sectionId];
+      if (section) section.taken += 1;
+    }
     for (const id of [...selected].sort(compareSeatIds)) bySection[parseSeatId(id).sectionId].mine.push(id);
 
     for (const s of Object.values(bySection)) {
@@ -45,33 +76,41 @@ export function useSeats() {
       s.free = s.capacity - s.occupied;
       s.pct = Math.round((s.occupied / s.capacity) * 100);
     }
-    const occupied = taken.size + selected.size;
+    const occupied = Object.values(bySection).reduce((sum, s) => sum + s.occupied, 0);
     return {
       bySection,
       free: TOTAL_CAPACITY - occupied,
       selectedCount: selected.size,
-      total: selected.size * SEAT_PRICE,
+      price,
+      total: selected.size * price,
     };
-  }, [taken, selected]);
+  }, [taken, selected, price]);
 
-  const reserve = useCallback(async () => {
-    const ids = [...selected];
-    if (!ids.length) return null;
-    setSubmitting(true);
-    try {
-      const result = await reserveSeats(ids);
-      setTaken((prev) => new Set([...prev, ...ids]));
-      setSelected(new Set());
-      return result;
-    } finally {
-      setSubmitting(false);
-    }
-  }, [selected]);
+  /** Submits the selection with customer details; resolves with the reservation. */
+  const reserve = useCallback(
+    async (customer) => {
+      const ids = [...selected].sort(compareSeatIds);
+      if (!ids.length) return null;
+      setSubmitting(true);
+      try {
+        const reservation = await createReservation({ ...customer, seats: ids });
+        setTaken((prev) => new Set([...prev, ...reservation.seats]));
+        setSelected(new Set());
+        return reservation;
+      } catch (err) {
+        if (err.status === 409) await refresh();
+        throw err;
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [selected, refresh],
+  );
 
   const seatState = useCallback(
     (id) => (selected.has(id) ? 'selected' : taken.has(id) ? 'taken' : 'available'),
     [selected, taken],
   );
 
-  return { loading, submitting, stats, seatState, toggleSeat, reserve };
+  return { loading, loadError, submitting, deadlineHours, stats, seatState, toggleSeat, reserve, refresh };
 }
