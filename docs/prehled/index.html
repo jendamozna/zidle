@@ -125,12 +125,13 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       </article>
       <article class="role">
         <h3>Účetní / správce</h3>
-        <span class="where">správa · počítač</span>
+        <span class="where">správa · počítač · vlastní e-mail a heslo</span>
         <ul>
           <li>kontroluje platby ve výpisu a zapisuje, kolik skutečně přišlo</li>
           <li>vrací peníze při zrušení</li>
           <li>zakládá představení, storno podmínky a VIP hosty s konkrétními místy</li>
           <li>posílá pozvánky pořadatelům u vchodu</li>
+          <li>zve další účetní – každý má vlastní přihlášení</li>
         </ul>
       </article>
       <article class="role">
@@ -200,6 +201,10 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <figcaption><strong>Pořadatelé</strong>Pozvánky pro mobily u vchodu, vždy jen na vybraná představení. Přístup lze kdykoli zrušit.</figcaption></figure>
       <figure><div class="desktop"><img src="18-admin-konflikty.jpg" alt="Konflikty z odbavení bez internetu" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>Konflikty z odbavení bez internetu</strong>Co scanner bez spojení pustil, ale už to neplatilo – typicky stejná vstupenka na dvou mobilech. Počet svítí červeně v záložce Pořadatelé.</figcaption></figure>
+      <figure><div class="desktop"><img src="19-admin-ucetni.jpg" alt="Účetní a jejich pozvánky" width="1360" height="860" loading="lazy"></div>
+        <figcaption><strong>Účetní</strong>Pozvání další účetní e-mailem, stav pozvánek, nové heslo při zapomenutí, vypnutí účtu.</figcaption></figure>
+      <figure><div class="desktop"><img src="20-pozvanka-heslo.jpg" alt="Vytvoření hesla z pozvánky" width="1360" height="860" loading="lazy"></div>
+        <figcaption><strong>Pozvánka pro účetní</strong>Odkaz z e-mailu: pozvaná si vytvoří heslo, přihlašovacím jménem je její e-mail.</figcaption></figure>
       <figure><div class="desktop"><img src="14-admin-vip.jpg" alt="VIP hosté" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>VIP hosté</strong>Hosté zdarma pro každé představení. Místa se vybírají na plánku – šedá obsadily rezervace, zlatá jiní VIP. Je vidět, kdo už přišel.</figcaption></figure>
       <figure><div class="desktop"><img src="16-admin-terminy.jpg" alt="Nastavení představení" width="1360" height="860" loading="lazy"></div>
@@ -221,6 +226,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <div class="rule"><strong>Čas a storno podmínky se nemění</strong><p>Jakmile má představení první rezervaci, nelze už změnit jeho začátek ani storno podmínky – platí to, za co si lidé místa koupili.</p></div>
       <div class="rule"><strong>Platba, která už nejde použít</strong><p>Peníze po propadnutí rezervace ji obnoví, pokud představení ještě nezačalo a místa jsou volná. Jinak – a také u zrušené rezervace nebo platby poslané dvakrát – se peníze vrací na účet plátce a návštěvník dostane e-mail.</p></div>
       <div class="rule"><strong>VIP hosté</strong><p>Neplatí a nemají vstupenku, ale mají přidělená konkrétní místa – na webu se ukazují jako obsazená. Pořadatel je najde na seznamu podle jména.</p></div>
+      <div class="rule"><strong>Každá účetní má vlastní přihlášení</strong><p>Správce pozve účetní e-mailem, ta si na odkazu (platí 7 dní) vytvoří heslo, přihlašuje se svým e-mailem. Kdo heslo zapomene, dostane nový odkaz. Účet lze kdykoli vypnout – dotyčná je hned odhlášená. Všichni správci mají stejná práva.</p></div>
       <div class="rule"><strong>Ochrana proti robotům</strong><p>Formulář chrání neviditelná kontrola – návštěvník nic nevyplňuje ani nevybírá obrázky, prohlížeč se ověří sám na pozadí.</p></div>
       <div class="rule"><strong>Ochrana osobních údajů</strong><p>Ukládá se jen jméno a e-mail. 30 dní po posledním představení se automaticky smažou – u rezervací, kde se ještě vrací peníze, až po jejich vrácení.</p></div>
     </div>
@@ -235,7 +241,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <li>Data a časy všech představení a jejich storno podmínky – musí být hotové před spuštěním prodeje, po první rezervaci je už nelze změnit.</li>
       <li>Seznam VIP hostů pro každé představení a jejich místa.</li>
       <li>Jména pořadatelů u vchodu a na která představení přijdou (dostanou pozvánku).</li>
-      <li>Kdo bude potvrzovat platby a vracet peníze.</li>
+      <li>Kdo bude potvrzovat platby a vracet peníze – jména a e-maily účetních, kterým přijde pozvánka. Po jejich pozvání lze hlavní heslo z konfigurace smazat.</li>
       <li>Vyzkoušet signál a Wi-Fi přímo v kostele. Před představením otevřít scanner na každém mobilu s internetem – stáhne si seznam vstupenek pro případ výpadku.</li>
       <li>Zkušební rezervace „naostro“: rezervace → platba → vstupenka → načtení u vchodu.</li>
     </ul>

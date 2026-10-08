@@ -251,6 +251,61 @@ test('the layout for the apps lists all sections in order with their shape', fun
     }
 });
 
+// ----------------------------------------------------------- admin accounts
+
+test('an invited accountant sets a password and signs in with the e-mail', function (): void {
+    $invite = admin_invite(' Jana@Example.cz ', 'Jana  Nováková', 'hlavní heslo');
+    same(true, is_array($invite), 'invited');
+    $token = is_array($invite) ? $invite['token'] : '';
+    same(['jana@example.cz', 'Jana Nováková', null], [$invite['user']['email'] ?? null, $invite['user']['name'] ?? null, $invite['user']['password_hash'] ?? null], 'account');
+    same(null, admin_login('jana@example.cz', 'cokoliv-dlouheho'), 'no login before accepting');
+    same('Heslo musí mít alespoň 10 znaků.', admin_accept_invite($token, 'kratke', 'kratke'), 'too short');
+    same('Hesla se neshodují.', admin_accept_invite($token, 'dlouhe-heslo-1', 'dlouhe-heslo-2'), 'mismatch');
+    $me = admin_accept_invite($token, 'dlouhe-heslo-1', 'dlouhe-heslo-1');
+    same('Jana Nováková', is_array($me) ? $me['name'] : $me, 'accepted');
+    same(null, admin_invited_user($token), 'link used up');
+    same('Jana Nováková', admin_login('JANA@example.cz', 'dlouhe-heslo-1')['name'] ?? null, 'login (e-mail case-insensitive)');
+    same(null, admin_login('jana@example.cz', 'spatne-heslo'), 'wrong password');
+    same('Účet s tímto e-mailem už existuje. Pošlete mu nový odkaz v seznamu.', admin_invite('jana@example.cz', 'Jana', 'x'), 'duplicate');
+    same('Neplatný e-mail.', admin_invite('neni-email', 'Jana', 'x'), 'invalid e-mail');
+});
+
+test('a new link lets the owner set a new password; expired links do not work', function (): void {
+    $invite = admin_invite('petr@example.cz', 'Petr', 'x');
+    $id = is_array($invite) ? (int) $invite['user']['id'] : 0;
+    admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'prvni-heslo-1', 'prvni-heslo-1');
+    $token = admin_new_invite($id);
+    same('Petr', admin_login('petr@example.cz', 'prvni-heslo-1')['name'] ?? null, 'old password works until changed');
+    admin_accept_invite($token, 'druhe-heslo-2', 'druhe-heslo-2');
+    same([null, 'Petr'], [admin_login('petr@example.cz', 'prvni-heslo-1'), admin_login('petr@example.cz', 'druhe-heslo-2')['name'] ?? null], 'new password');
+    $expired = admin_new_invite($id);
+    db()->prepare('UPDATE admin_users SET invite_expires_at = ? WHERE id = ?')->execute([db_time(now_utc()->modify('-1 minute')), $id]);
+    same('Pozvánka neplatí nebo vypršela. Požádejte o novou.', admin_accept_invite($expired, 'treti-heslo-3', 'treti-heslo-3'), 'expired');
+});
+
+test('disabled accounts cannot sign in and lose their session; nobody disables themselves', function (): void {
+    $invite = admin_invite('eva@example.cz', 'Eva', 'x');
+    $id = is_array($invite) ? (int) $invite['user']['id'] : 0;
+    admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'evino-heslo-1', 'evino-heslo-1');
+    same('Eva', admin_from_session($id)['name'] ?? null, 'session valid');
+    same('Svůj vlastní účet nelze vypnout.', admin_set_disabled($id, true, $id), 'not yourself');
+    admin_set_disabled($id, true, null);
+    same([null, null], [admin_login('eva@example.cz', 'evino-heslo-1'), admin_from_session($id)], 'disabled');
+    admin_set_disabled($id, false, null);
+    same('Eva', admin_login('eva@example.cz', 'evino-heslo-1')['name'] ?? null, 'enabled again');
+});
+
+test('the master password signs in with an empty e-mail', function (): void {
+    $master = (string) config('ADMIN_PASSWORD');
+    if ($master === '') {
+        same(null, admin_login('', 'cokoliv'), 'no master password configured');
+        return;
+    }
+    same(['id' => null, 'name' => ADMIN_MASTER_NAME, 'email' => null], admin_login('', $master), 'master');
+    same(null, admin_login('', $master . 'x'), 'wrong master password');
+    same(ADMIN_MASTER_NAME, admin_from_session(0)['name'] ?? null, 'master session');
+});
+
 // ------------------------------------------------------------------ offline
 
 /** Scanner access as scanner_access() returns it. */
