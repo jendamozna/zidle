@@ -95,6 +95,7 @@ function ResultCard({ scan, onNext }) {
         <div>
           <h2>{meta.title}</h2>
           {result === 'used' && checkedInAt && <p>Poprvé načteno {formatTime(checkedInAt)}</p>}
+          {scan.changed && <p>Část míst byla zrušena – platí jen uvedená místa.</p>}
         </div>
       </div>
 
@@ -157,7 +158,7 @@ function Scanner({ onLogout }) {
       setScan({ raw, ticket: decoded, result: 'checking' });
       try {
         const res = await verifyTicket(raw);
-        setScan({ raw, ticket: res.ticket ?? decoded, result: res.result, checkedInAt: res.checkedInAt });
+        setScan({ raw, ticket: res.ticket ?? decoded, result: res.result, checkedInAt: res.checkedInAt, changed: res.changed });
       } catch (err) {
         if (err.status === 401) onLogout();
         else setScan({ raw, ticket: decoded, result: 'offline' });

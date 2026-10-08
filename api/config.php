@@ -13,6 +13,7 @@ return (static function (): array {
         'SEAT_PRICE' => 300,             // CZK per seat
         'PAYMENT_DEADLINE_HOURS' => 72,  // due date shown to the customer
         'PAYMENT_GRACE_HOURS' => 48,     // unpaid reservations are cancelled this long after the due date (bank transfer delay)
+        'REFUND_DAYS' => 14,             // refunds are promised within this many days (e-mails)
         'DATA_RETENTION_DAYS' => 30,     // personal data is deleted this many days after the event (event date is set in admin)
         'BOOKING_CLOSES_AT' => '',       // e.g. '2026-12-20 12:00' (Europe/Prague); no new reservations after this, '' = open
         'MAX_SEATS_PER_RESERVATION' => 20,

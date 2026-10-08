@@ -3,15 +3,22 @@
 // deletion of personal data after the event.
 declare(strict_types=1);
 
+/** Price of one seat in this reservation (prices are stored per reservation). */
+function seat_price(array $r): int
+{
+    return (int) $r['seat_count'] > 0 ? intdiv((int) $r['amount'], (int) $r['seat_count']) : 0;
+}
+
 /**
- * What cancelling would mean right now.
+ * What cancelling by the customer would mean right now.
  * allowed: false with a reason when the reservation can no longer be cancelled.
+ * fee/refund are for the whole reservation; for single seats the frontend
+ * uses seatPrice and percent (the server recalculates on cancellation).
  */
 function cancellation_terms(array $r): array
 {
     $now = now_utc();
     $event = event_at();
-    $amount = (int) $r['amount'];
 
     if (!in_array($r['status'], ['pending', 'paid'], true)) {
         return ['allowed' => false, 'reason' => 'inactive'];
@@ -22,12 +29,29 @@ function cancellation_terms(array $r): array
     if ($event !== null && $now >= $event) {
         return ['allowed' => false, 'reason' => 'event_started'];
     }
-    if ($r['status'] === 'pending') {
-        return ['allowed' => true, 'percent' => 0, 'fee' => 0, 'refund' => 0];
+    $percent = $r['status'] === 'paid' ? storno_percent($now) : 0;
+    [$fee, $refund] = cancellation_money($r, (int) $r['seat_count'], 'customer');
+    return [
+        'allowed' => true,
+        'percent' => $percent,
+        'seatPrice' => seat_price($r),
+        'fee' => $fee,
+        'refund' => $refund,
+    ];
+}
+
+/**
+ * [fee, refund] in CZK for cancelling $count seats. Unpaid: nothing is paid
+ * or returned. Paid by customer: storno fee in effect. Paid by admin: full refund.
+ */
+function cancellation_money(array $r, int $count, string $by): array
+{
+    if ($r['status'] !== 'paid') {
+        return [0, 0];
     }
-    $percent = storno_percent($now);
-    $fee = (int) round($amount * $percent / 100);
-    return ['allowed' => true, 'percent' => $percent, 'fee' => $fee, 'refund' => $amount - $fee];
+    $value = seat_price($r) * $count;
+    $fee = $by === 'customer' ? (int) round($value * storno_percent(now_utc()) / 100) : 0;
+    return [$fee, $value - $fee];
 }
 
 /** Czech account "(prefix-)number/bank" or an IBAN; returns the normalized value or null. */
@@ -41,50 +65,139 @@ function normalize_refund_account(string $account): ?string
 }
 
 /**
- * Cancels the reservation for the customer. Returns the updated row or
- * throws InvalidArgumentException with a message for the customer.
+ * Cancels the given seats (null = the whole reservation).
+ *   $by = 'customer': only while cancellation_terms() allows it, storno fee applies,
+ *                     a refund account is required when money is returned.
+ *   $by = 'admin':    any pending/paid reservation, paid seats are refunded in full.
+ * Cancelling all remaining seats cancels the reservation. Sends the e-mails.
+ * Returns the updated reservation row; throws InvalidArgumentException with a
+ * message for the user.
  */
-function cancel_by_customer(string $token, string $refundAccount): array
+function cancel_seats(int $id, ?array $seatIds, string $by, string $refundAccount = ''): array
 {
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $stmt = $pdo->prepare('SELECT * FROM reservations WHERE token = ? FOR UPDATE');
-        $stmt->execute([$token]);
+        $stmt = $pdo->prepare('SELECT * FROM reservations WHERE id = ? FOR UPDATE');
+        $stmt->execute([$id]);
         $r = $stmt->fetch();
-        if (!$r) {
-            throw new InvalidArgumentException('Rezervace nenalezena.');
-        }
-        $terms = cancellation_terms($r);
-        if (!$terms['allowed']) {
+        if (!$r || !in_array($r['status'], ['pending', 'paid'], true)) {
             throw new InvalidArgumentException('Rezervaci už nelze zrušit.');
         }
-        $account = null;
-        if ($terms['refund'] > 0) {
+        if ($by === 'customer' && !cancellation_terms($r)['allowed']) {
+            throw new InvalidArgumentException('Rezervaci už nelze zrušit.');
+        }
+
+        $current = explode(',', $r['seats']);
+        $cancel = $seatIds === null ? $current : array_values(array_unique(array_map('strval', $seatIds)));
+        if (!$cancel || array_diff($cancel, $current)) {
+            throw new InvalidArgumentException('Vyberte místa z této rezervace.');
+        }
+        $remaining = array_values(array_diff($current, $cancel));
+        $whole = $remaining === [];
+
+        [$fee, $refund] = cancellation_money($r, count($cancel), $by);
+        $account = $r['refund_account'];
+        if ($by === 'customer' && $refund > 0) {
             $account = normalize_refund_account($refundAccount);
             if ($account === null) {
                 throw new InvalidArgumentException('Zadejte platné číslo účtu pro vrácení peněz.');
             }
         }
-        $pdo->prepare(
-            "UPDATE reservations SET status = 'cancelled', cancelled_at = ?, cancelled_by = 'customer',
-               cancel_fee = ?, refund_amount = ?, refund_account = ? WHERE id = ?"
-        )->execute([
-            db_time(now_utc()),
-            $r['status'] === 'paid' ? $terms['fee'] : null,
-            $terms['refund'] ?: null,
-            $account,
-            $r['id'],
-        ]);
-        $pdo->prepare('DELETE FROM reservation_seats WHERE reservation_id = ?')->execute([$r['id']]);
+        $paid = $r['status'] === 'paid';
+        $totalFee = $paid ? (int) $r['cancel_fee'] + $fee : null;
+        $totalRefund = $paid ? (int) $r['refund_amount'] + $refund : null;
+
+        if ($whole) {
+            $pdo->prepare(
+                "UPDATE reservations SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?,
+                   cancel_fee = ?, refund_amount = ?, refund_account = ? WHERE id = ?"
+            )->execute([db_time(now_utc()), $by, $totalFee, $totalRefund, $account, $id]);
+            $pdo->prepare('DELETE FROM reservation_seats WHERE reservation_id = ?')->execute([$id]);
+        } else {
+            $cancelledSeats = implode(',', array_filter([$r['cancelled_seats'], implode(',', $cancel)]));
+            $pdo->prepare(
+                'UPDATE reservations SET seats = ?, seat_count = ?, amount = ?, cancelled_seats = ?,
+                   cancel_fee = ?, refund_amount = ?, refund_account = ? WHERE id = ?'
+            )->execute([
+                implode(',', $remaining), count($remaining), seat_price($r) * count($remaining),
+                $cancelledSeats, $totalFee, $totalRefund, $account, $id,
+            ]);
+            $placeholders = implode(',', array_fill(0, count($cancel), '?'));
+            $pdo->prepare("DELETE FROM reservation_seats WHERE reservation_id = ? AND seat_id IN ($placeholders)")
+                ->execute([$id, ...$cancel]);
+        }
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
-    $r = find_reservation_by_token($token);
-    send_cancellation_email($r);
-    return $r;
+
+    $stmt = db()->prepare('SELECT * FROM reservations WHERE id = ?');
+    $stmt->execute([$id]);
+    $updated = $stmt->fetch();
+    send_cancellation_notice($updated, $cancel, $whole, $fee, $refund, $by, $paid);
+    return $updated;
+}
+
+/**
+ * E-mails after a cancellation:
+ *  - paid, part of the seats: new ticket (the old one lists cancelled seats) + fee/refund
+ *  - paid, everything:        cancellation with fee/refund and refund deadline
+ *  - unpaid, part of the seats: new amount to pay
+ *  - unpaid, everything:      confirmation to the customer; nothing when admin cancels
+ */
+function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $fee, int $refund, string $by, bool $paid): void
+{
+    if (!mail_enabled() || $r['email'] === '') {
+        return;
+    }
+    $refundLines = refund_lines($r, $fee, $refund, $by);
+    if ($paid && !$whole) {
+        try {
+            send_ticket_email($r, array_merge(
+                ['Zrušená místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.'],
+                $refundLines,
+                ['Posíláme novou vstupenku na zbývající místa. Původní vstupenka už neplatí.']
+            ));
+        } catch (Throwable $e) {
+            error_log('[zidle] ' . $e);
+        }
+        return;
+    }
+    if (!$paid && !$whole) {
+        send_customer_email($r, 'Změna rezervace', array_merge(
+            ['zrušili jsme místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.',
+             'Zbývající místa: ' . implode('; ', seat_labels($r['seats'])) . '.', '', 'Nové platební údaje:'],
+            payment_lines($r)
+        ));
+        return;
+    }
+    if (!$paid && $by === 'admin') {
+        return;
+    }
+    send_customer_email($r, 'Rezervace zrušena', array_merge(
+        ['Vaše rezervace (VS ' . $r['variable_symbol'] . ') byla zrušena a místa uvolněna:',
+         implode('; ', seat_labels($r['seats'])) . '.'],
+        $refundLines
+    ));
+}
+
+function refund_lines(array $r, int $fee, int $refund, string $by): array
+{
+    $lines = [];
+    if ($fee > 0) {
+        $lines[] = 'Storno poplatek: ' . format_czk($fee) . '.';
+    }
+    if ($refund > 0) {
+        $days = (int) config('REFUND_DAYS');
+        $lines[] = 'Částka ' . format_czk($refund) . " Vám bude vrácena do {$days} dnů"
+            . ($r['refund_account'] ? ' na účet ' . $r['refund_account'] . '.' : '.');
+        if (!$r['refund_account']) {
+            $lines[] = 'Odpovězte nám prosím na tento e-mail s číslem účtu, na který máme peníze vrátit.';
+        }
+    }
+    return $lines;
 }
 
 /** Reminder 24 h before the due date and notice after expiry. Returns counts. */

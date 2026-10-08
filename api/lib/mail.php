@@ -97,17 +97,3 @@ function send_expiry_email(array $r): bool
         $base !== '' ? ['', "Nová rezervace: {$base}/"] : []
     ));
 }
-
-function send_cancellation_email(array $r): bool
-{
-    $lines = ['Vaše rezervace (VS ' . $r['variable_symbol'] . ') byla zrušena a místa uvolněna:', implode('; ', seat_labels($r['seats'])) . '.'];
-    if ((int) $r['cancel_fee'] > 0) {
-        $lines[] = '';
-        $lines[] = 'Storno poplatek: ' . format_czk((int) $r['cancel_fee']);
-    }
-    if ((int) $r['refund_amount'] > 0) {
-        $lines[] = 'K vrácení: ' . format_czk((int) $r['refund_amount'])
-            . ($r['refund_account'] ? ' na účet ' . $r['refund_account'] : '');
-    }
-    return send_customer_email($r, 'Rezervace zrušena', $lines);
-}

@@ -117,10 +117,13 @@ function verify_ticket(string $code): void
     $stmt->execute([$ticket['variableSymbol']]);
     $r = $stmt->fetch();
 
-    if (!$r || $r['seats'] !== implode(',', $ticket['seats'])) {
+    if (!$r) {
         $pdo->rollBack();
         json_response(['result' => 'invalid', 'ticket' => $ticket]);
     }
+    // Seats may have been cancelled individually since the ticket was issued:
+    // the database is authoritative, the scanner shows the current seats.
+    $changed = $r['seats'] !== implode(',', $ticket['seats']);
 
     $firstScan = $r['checked_in_at'] === null;
     if ($r['status'] === 'paid' && $firstScan) {
@@ -137,7 +140,13 @@ function verify_ticket(string $code): void
     };
     json_response([
         'result' => $result,
-        'ticket' => $ticket,
+        'changed' => $changed,
+        'ticket' => [
+            'variableSymbol' => $r['variable_symbol'],
+            'count' => (int) $r['seat_count'],
+            'name' => trim($r['first_name'] . ' ' . $r['last_name']) ?: $ticket['name'],
+            'seats' => explode(',', $r['seats']),
+        ],
         'checkedInAt' => iso_time($r['checked_in_at']),
         'email' => $r['email'],
     ]);

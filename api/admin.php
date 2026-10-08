@@ -101,11 +101,11 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-
     exit;
 }
 
-if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-late', 'cancel', 'ticket', 'email', 'refunded'], true)) {
+if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-late', 'cancel', 'cancel-seats', 'ticket', 'email', 'refunded'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     $now = db_time(now_utc());
     if ($action === 'paid') {
-        $stmt = db()->prepare("UPDATE reservations SET status = 'paid', paid_at = ? WHERE id = ? AND status = 'pending'");
+        $stmt = db()->prepare("UPDATE reservations SET status = 'paid', paid_at = ?, paid_amount = amount WHERE id = ? AND status = 'pending'");
         $stmt->execute([$now, $id]);
         $flash = $stmt->rowCount() ? 'Platba potvrzena.' . send_ticket_for($id) : 'Rezervaci nelze označit jako zaplacenou.';
     } elseif ($action === 'paid-late') {
@@ -119,22 +119,23 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-la
             $flash = "E-mail změněn na {$email}.";
         }
     } elseif ($action === 'refunded') {
-        $stmt = db()->prepare('UPDATE reservations SET refunded_at = ? WHERE id = ? AND refund_amount > 0 AND refunded_at IS NULL');
+        $stmt = db()->prepare('UPDATE reservations SET refunded_at = ?, refunded_amount = refund_amount WHERE id = ? AND refund_amount > refunded_amount');
         $stmt->execute([$now, $id]);
         $flash = $stmt->rowCount() ? 'Vrácení peněz zaznamenáno.' : 'Nelze označit jako vráceno.';
     } elseif ($action === 'ticket') {
         $flash = trim(send_ticket_for($id)) ?: 'Vstupenku nelze odeslat.';
     } else {
-        // Cancelled by the organizers: a paid reservation is refunded in full.
-        $stmt = db()->prepare(
-            // refund/fee are assigned before status: MariaDB applies SET left to right.
-            "UPDATE reservations SET refund_amount = IF(status = 'paid', amount, NULL), cancel_fee = IF(status = 'paid', 0, NULL),
-               status = 'cancelled', cancelled_at = ?, cancelled_by = 'admin'
-             WHERE id = ? AND status IN ('pending', 'paid')"
-        );
-        $stmt->execute([$now, $id]);
-        expire_reservations(); // frees the seats
-        $flash = $stmt->rowCount() ? 'Rezervace zrušena, místa uvolněna.' : 'Rezervaci nelze zrušit.';
+        // Cancelled by the organizers: paid seats are refunded in full, the customer is e-mailed.
+        $seats = $action === 'cancel-seats' ? (array) ($_POST['seats'] ?? []) : null;
+        try {
+            $r = cancel_seats($id, $seats, 'admin');
+            $flash = $r['status'] === 'cancelled' ? 'Rezervace zrušena, místa uvolněna.' : 'Vybraná místa zrušena a uvolněna.';
+            if ($r['refund_amount'] > $r['refunded_amount']) {
+                $flash .= ' K vrácení: ' . format_czk((int) $r['refund_amount'] - (int) $r['refunded_amount']) . '.';
+            }
+        } catch (InvalidArgumentException $e) {
+            $flash = $e->getMessage();
+        }
     }
     $_SESSION['flash'] = $flash;
     header('Location: admin.php?' . http_build_query(['status' => $_GET['status'] ?? '', 'q' => $_GET['q'] ?? '']));
@@ -170,7 +171,7 @@ function accept_late_payment(int $id): string
     foreach ($seats as $seat) {
         $insert->execute([$seat, $id]);
     }
-    $pdo->prepare("UPDATE reservations SET status = 'paid', paid_at = ?, cancelled_at = NULL WHERE id = ?")
+    $pdo->prepare("UPDATE reservations SET status = 'paid', paid_at = ?, paid_amount = amount, cancelled_at = NULL WHERE id = ?")
         ->execute([db_time(now_utc()), $id]);
     $pdo->commit();
     return 'Pozdní platba přijata, rezervace obnovena.' . send_ticket_for($id);
@@ -249,6 +250,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .edit-email input { width:200px; padding:4px 8px; }
   .edit-email button { padding:4px 10px; }
   .overdue { color:#8f2a20; font-weight:600; }
+  .seat-cancel { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:6px; align-items:center; max-width:260px; }
+  .seat-cancel label { font-size:.8rem; white-space:nowrap; }
+  .seat-cancel button { padding:4px 10px; }
   .card.attention { background:#f6cdc6; color:#7d2117; text-decoration:none; }
   .settings { max-width:640px; display:flex; flex-direction:column; gap:12px; }
   .settings h2 { margin:8px 0 0; font:600 1.15rem Georgia, serif; }
@@ -282,7 +286,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         $where[] = 'status = ?';
         $params[] = $status;
     } elseif ($status === 'refund') {
-        $where[] = 'refund_amount > 0 AND refunded_at IS NULL';
+        $where[] = 'refund_amount > refunded_amount';
     }
     if ($q !== '') {
         $where[] = '(variable_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ? OR seats LIKE ?)';
@@ -404,7 +408,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <?php foreach (['pending', 'paid'] as $s): $t = $totals[$s] ?? ['n' => 0, 'seats' => 0, 'amount' => 0]; ?>
       <div class="card"><?= $h($statusLabels[$s]) ?><strong><?= (int) $t['seats'] ?> míst</strong><?= $kc($t['amount']) ?> · <?= (int) $t['n'] ?> rez.</div>
     <?php endforeach ?>
-    <?php $refunds = db()->query('SELECT COUNT(*) n, COALESCE(SUM(refund_amount), 0) amount FROM reservations WHERE refund_amount > 0 AND refunded_at IS NULL')->fetch(); ?>
+    <?php $refunds = db()->query('SELECT COUNT(*) n, COALESCE(SUM(refund_amount - refunded_amount), 0) amount FROM reservations WHERE refund_amount > refunded_amount')->fetch(); ?>
     <?php if ($refunds['n'] > 0): ?>
       <a class="card attention" href="admin.php?status=refund">K vrácení<strong><?= $kc($refunds['amount']) ?></strong><?= (int) $refunds['n'] ?> rez.</a>
     <?php endif ?>
@@ -438,19 +442,32 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                 <button name="action" value="email">Uložit</button>
               </form>
             </details></td>
-          <td class="seats"><?= $h(str_replace(',', ', ', $r['seats'])) ?></td>
-          <td><?= $kc($r['amount']) ?></td>
+          <td class="seats"><?= $h(str_replace(',', ', ', $r['seats'])) ?>
+            <?php if ($r['cancelled_seats'] !== ''): ?><br><small>zrušená místa: <?= $h(str_replace(',', ', ', $r['cancelled_seats'])) ?></small><?php endif ?>
+            <?php if (in_array($r['status'], ['pending', 'paid'], true) && (int) $r['seat_count'] > 1): ?>
+              <details class="edit-email"><summary>zrušit jednotlivá místa</summary>
+                <form method="post" class="seat-cancel" onsubmit="return confirm('Zrušit vybraná místa?<?= $r['status'] === 'paid' ? ' Zákazníkovi bude vrácena jejich plná cena a přijde mu e-mail s novou vstupenkou.' : '' ?>')">
+                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                  <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                  <?php foreach (explode(',', $r['seats']) as $seat): ?>
+                    <label><input type="checkbox" name="seats[]" value="<?= $h($seat) ?>"> <?= $h($seat) ?></label>
+                  <?php endforeach ?>
+                  <button class="danger" name="action" value="cancel-seats">Zrušit vybraná</button>
+                </form>
+              </details>
+            <?php endif ?></td>
+          <td><?= $kc($r['amount']) ?>
+            <?php if ($r['paid_amount'] !== null && (int) $r['paid_amount'] !== (int) $r['amount']): ?><br><small>přijato <?= $kc($r['paid_amount']) ?></small><?php endif ?></td>
           <td><span class="badge s-<?= $h($r['status']) ?>"><?= $h($statusLabels[$r['status']]) ?></span>
             <?php if ($r['paid_at']): ?><br><small>zaplaceno <?= $h($fmt($r['paid_at'])) ?></small><?php endif ?>
             <?php if ($r['ticket_sent_at']): ?><br><small>vstupenka <?= $h($fmt($r['ticket_sent_at'])) ?></small><?php endif ?>
             <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= $h($fmt($r['checked_in_at'])) ?></small><?php endif ?>
             <?php if ($r['status'] === 'cancelled'): ?><br><small><?= $r['cancelled_by'] === 'customer' ? 'zrušil zákazník' : 'zrušeno správcem' ?> <?= $h($fmt($r['cancelled_at'])) ?></small><?php endif ?>
             <?php if ($r['cancel_fee'] > 0): ?><br><small>storno <?= $kc($r['cancel_fee']) ?></small><?php endif ?>
-            <?php if ($r['refund_amount'] > 0): ?>
-              <br><small class="<?= $r['refunded_at'] ? '' : 'overdue' ?>">
-                <?= $r['refunded_at'] ? 'vráceno ' . $h($fmt($r['refunded_at'])) . ': ' : 'vrátit: ' ?><?= $kc($r['refund_amount']) ?>
-                <?= $r['refund_account'] ? ' na ' . $h($r['refund_account']) : ' (účet zjistit e-mailem)' ?>
-              </small>
+            <?php if ($r['refunded_amount'] > 0): ?><br><small>vráceno <?= $kc($r['refunded_amount']) ?> (<?= $h($fmt($r['refunded_at'])) ?>)</small><?php endif ?>
+            <?php if ($r['refund_amount'] > $r['refunded_amount']): ?>
+              <br><small class="overdue">vrátit: <?= $kc($r['refund_amount'] - $r['refunded_amount']) ?>
+                <?= $r['refund_account'] ? ' na ' . $h($r['refund_account']) : ' (účet zjistit e-mailem)' ?></small>
             <?php endif ?></td>
           <td><?= $h($fmt($r['created_at'])) ?></td>
           <td class="<?= $r['status'] === 'pending' && $r['expires_at'] < db_time(now_utc()) ? 'overdue' : '' ?>"><?= $h($fmt($r['expires_at'])) ?></td>
@@ -463,7 +480,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                   <button name="action" value="paid">Zaplaceno</button>
                 </form>
               <?php endif ?>
-              <?php if ($r['refund_amount'] > 0 && !$r['refunded_at']): ?>
+              <?php if ($r['refund_amount'] > $r['refunded_amount']): ?>
                 <form method="post" onsubmit="return confirm('Peníze byly vráceny?')">
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
@@ -485,7 +502,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                 </form>
               <?php endif ?>
               <?php if (in_array($r['status'], ['pending', 'paid'], true)): ?>
-                <form method="post" onsubmit="return confirm('Zrušit rezervaci a uvolnit místa?')">
+                <form method="post" onsubmit="return confirm('Zrušit rezervaci a uvolnit místa?<?= $r['status'] === 'paid' ? ' Zákazníkovi bude vrácena celá částka a přijde mu e-mail.' : '' ?>')">
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
                   <button class="danger" name="action" value="cancel">Zrušit</button>

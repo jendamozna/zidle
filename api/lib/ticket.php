@@ -82,20 +82,25 @@ function ticket_png(string $code): string
 
 /**
  * E-mails the ticket QR code (inline PNG) to the customer. Returns true when
- * the message was handed over to the mail system.
+ * the message was handed over to the mail system. $intro replaces the default
+ * "payment received" text (used for a new ticket after seats were cancelled).
  */
-function send_ticket_email(array $r): bool
+function send_ticket_email(array $r, array $intro = []): bool
 {
+    if ($r['email'] === '') {
+        return false;
+    }
     $code = ticket_code($r);
     $png = chunk_split(base64_encode(ticket_png($code)));
     $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     $seats = seat_labels($r['seats']);
     $count = (int) $r['seat_count'];
 
+    $introLines = $intro ?: ['děkujeme, platba byla přijata. Vaše rezervace je potvrzena.'];
     $text = implode("\r\n", [
         "Dobrý den, {$r['first_name']} {$r['last_name']},",
         '',
-        'děkujeme, platba byla přijata. Vaše rezervace je potvrzena.',
+        ...$introLines,
         '',
         "Počet míst: {$count}",
         'Místa: ' . implode('; ', $seats),
@@ -109,6 +114,7 @@ function send_ticket_email(array $r): bool
         . '<div style="background:#fffdf9;border-radius:18px;padding:24px;text-align:center">'
         . '<h1 style="margin:0 0 4px;font-family:Georgia,serif;font-size:24px">Moje židle <span style="color:#8a5a2b">2026</span></h1>'
         . '<p style="margin:0 0 20px;color:#6b6256">Vstupenka · VS ' . $h($r['variable_symbol']) . '</p>'
+        . ($intro ? '<p style="margin:0 0 20px;text-align:left;line-height:1.5">' . implode('<br>', array_map($h, $intro)) . '</p>' : '')
         . '<img src="cid:ticket-qr" alt="QR kód vstupenky" width="260" height="260" style="display:block;margin:0 auto 20px;width:260px;height:260px">'
         . '<p style="margin:0 0 4px;font-size:18px;font-weight:bold">' . $h($r['first_name'] . ' ' . $r['last_name']) . '</p>'
         . '<p style="margin:0 0 16px;color:#6b6256">' . $count . ' ' . ($count === 1 ? 'místo' : ($count < 5 ? 'místa' : 'míst')) . '</p>'
@@ -150,7 +156,7 @@ function send_ticket_email(array $r): bool
         'MIME-Version: 1.0',
         "Content-Type: multipart/related; boundary=\"{$related}\"; type=\"multipart/alternative\"",
     ]);
-    $subject = '=?UTF-8?B?' . base64_encode('Vstupenka – Moje židle 2026') . '?=';
+    $subject = '=?UTF-8?B?' . base64_encode(($intro ? 'Nová vstupenka' : 'Vstupenka') . ' – Moje židle 2026') . '?=';
 
     $ok = @mail($r['email'], $subject, $body, $headers);
     if (!$ok) {

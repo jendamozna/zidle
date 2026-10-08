@@ -39,6 +39,9 @@ export const createReservation = ({ firstName, lastName, email, seats, formToken
 
 export const fetchReservation = (token) => request(`reservations.php?token=${encodeURIComponent(token)}`);
 
-/** Customer cancellation; refundAccount is required when money will be returned. */
-export const cancelReservation = (token, refundAccount = '') =>
-  request('cancel.php', { method: 'POST', body: JSON.stringify({ token, refundAccount }) });
+/**
+ * Customer cancellation of the given seats (null = whole reservation);
+ * refundAccount is required when money will be returned.
+ */
+export const cancelReservation = (token, seats = null, refundAccount = '') =>
+  request('cancel.php', { method: 'POST', body: JSON.stringify({ token, seats, refundAccount }) });

@@ -1,5 +1,6 @@
 <?php
-// POST api/cancel.php {token, refundAccount?} – customer cancels their reservation.
+// POST api/cancel.php {token, seats?, refundAccount?} – customer cancels the given seats
+// (omitted = the whole reservation).
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 
@@ -16,8 +17,13 @@ run_api(function (): void {
         json_error('Příliš mnoho pokusů. Zkuste to prosím později.', 429);
     }
     expire_reservations();
+    $r = find_reservation_by_token($token);
+    if ($r === null) {
+        json_error('Rezervace nenalezena.', 404);
+    }
+    $seats = isset($body['seats']) && is_array($body['seats']) ? $body['seats'] : null;
     try {
-        $r = cancel_by_customer($token, (string) ($body['refundAccount'] ?? ''));
+        $r = cancel_seats((int) $r['id'], $seats, 'customer', (string) ($body['refundAccount'] ?? ''));
     } catch (InvalidArgumentException $e) {
         json_error($e->getMessage(), 422);
     }
