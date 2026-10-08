@@ -124,7 +124,10 @@ function ResultCard({ scan, onNext }) {
               </li>
             ))}
           </ul>
-          <p className="muted small">VS {ticket.variableSymbol}</p>
+          <p className="muted small">
+            Rezervace č. {ticket.id ?? '–'} · VS {ticket.variableSymbol}
+            {result === 'offline' ? ' · údaje z QR kódu, neověřeno' : ' · aktuální stav ze systému'}
+          </p>
         </div>
       ) : (
         <p className="scan-raw">

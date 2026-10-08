@@ -53,7 +53,7 @@ const seatLabel = (id) => {
 
 /** Fee/refund summary after a cancellation (whole reservation or single seats). */
 function CancellationInfo({ reservation }) {
-  const { status, cancelFee, refundAmount, refundedAmount, refundAccount, cancelledBy, cancelledSeats } = reservation;
+  const { status, cancelFee, refundAmount, refundedAmount, cancelledBy, cancelledSeats } = reservation;
   const due = (refundAmount ?? 0) - (refundedAmount ?? 0);
   const whole = status === 'cancelled';
   if (!whole && !cancelledSeats.length) return null;
@@ -67,10 +67,7 @@ function CancellationInfo({ reservation }) {
       {cancelFee > 0 && <span>Storno poplatek {formatCzk(cancelFee)}.</span>}
       {refundedAmount > 0 && <span>Vráceno {formatCzk(refundedAmount)}.</span>}
       {due > 0 && (
-        <span>
-          Vrátíme {formatCzk(due)}
-          {refundAccount ? ` na účet ${refundAccount}` : ''}.
-        </span>
+        <span>Částku {formatCzk(due)} pošleme zpět na účet, ze kterého platba přišla.</span>
       )}
     </div>
   );
@@ -79,7 +76,6 @@ function CancellationInfo({ reservation }) {
 function CancelPanel({ reservation, onCancelled }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(() => new Set(reservation.seats));
-  const [account, setAccount] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const { percent, seatPrice } = reservation.cancellation;
@@ -106,7 +102,7 @@ function CancelPanel({ reservation, onCancelled }) {
     setBusy(true);
     setError(null);
     try {
-      const updated = await cancelReservation(reservation.token, whole ? null : [...selected], account);
+      const updated = await cancelReservation(reservation.token, whole ? null : [...selected]);
       onCancelled(updated);
       setOpen(false);
       setBusy(false);
@@ -142,24 +138,14 @@ function CancelPanel({ reservation, onCancelled }) {
         <p>
           {whole ? 'Zrušíte celou rezervaci, místa se uvolní.' : `Zrušíte ${seatsLabel(count)}, zbytek rezervace zůstane.`}{' '}
           {!isPaid && (whole ? 'Nic neplatíte.' : `Nová částka k úhradě: ${formatCzk(seatPrice * (seats.length - count))}.`)}
-          {isPaid && percent === 0 && `Vrátíme Vám ${formatCzk(refund)}.`}
-          {isPaid && percent > 0 && percent < 100 && `Storno poplatek ${percent} % (${formatCzk(fee)}). Vrátíme Vám ${formatCzk(refund)}.`}
+          {isPaid && percent === 0 && `Částku ${formatCzk(refund)} pošleme zpět na účet, ze kterého platba přišla.`}
+          {isPaid &&
+            percent > 0 &&
+            percent < 100 &&
+            `Storno poplatek ${percent} % (${formatCzk(fee)}). Zbylých ${formatCzk(refund)} pošleme zpět na účet, ze kterého platba přišla.`}
           {isPaid && percent >= 100 && 'Storno poplatek je 100 %, peníze se nevracejí.'}
           {isPaid && !whole && ' Na e-mail přijde nová vstupenka.'}
         </p>
-      )}
-      {refund > 0 && (
-        <label className="field">
-          <span>Číslo účtu pro vrácení peněz</span>
-          <input
-            value={account}
-            onChange={(e) => setAccount(e.target.value)}
-            placeholder="123456789/0800"
-            autoComplete="off"
-            required
-            disabled={busy}
-          />
-        </label>
       )}
       {error && <p className="form-error">{error}</p>}
       <div className="cancel-actions">

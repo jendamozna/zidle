@@ -1,10 +1,13 @@
 <?php
 // Ticket QR codes sent to the customer after the payment is confirmed.
 //
-// Format (UTF-8 text):  Z26|<variable symbol>|<seat count>|<name>|<seat,seat,...>|<signature>
-// e.g.                  Z26|2600000002|2|Jana Dvořáková|ML-1-1,ML-1-2|Xb3...
+// Format (UTF-8 text):  Z26|<reservation id>|<variable symbol>|<seat count>|<name>|<seat,seat,...>|<signature>
+// e.g.                  Z26|42|2600000002|2|Jana Dvořáková|ML-1-1,ML-1-2|Xb3...
 // The signature (HMAC-SHA256 with TICKET_SECRET) lets the scanner detect
-// forged or altered codes. Keep the format in sync with src/scanner/ticket.js.
+// forged or altered codes. The scanner looks the reservation up by its id and
+// shows its current state from the database (the rest of the code is only a
+// fallback when offline). Older tickets without the id (6 parts) are still
+// accepted. Keep the format in sync with src/scanner/ticket.js.
 declare(strict_types=1);
 
 use chillerlan\QRCode\Common\EccLevel;
@@ -39,6 +42,7 @@ function ticket_code(array $r): string
 {
     $payload = implode('|', [
         TICKET_PREFIX,
+        (string) (int) $r['id'],
         $r['variable_symbol'],
         (string) (int) $r['seat_count'],
         ticket_name($r),
@@ -51,15 +55,19 @@ function ticket_code(array $r): string
 function parse_ticket_code(string $code): ?array
 {
     $parts = explode('|', trim($code));
-    if (count($parts) !== 6 || $parts[0] !== TICKET_PREFIX) {
+    if (count($parts) === 6) {
+        array_splice($parts, 1, 0, ['']); // older ticket without reservation id
+    }
+    if (count($parts) !== 7 || $parts[0] !== TICKET_PREFIX) {
         return null;
     }
-    [, $vs, $count, $name, $seats, $sig] = $parts;
-    $payload = implode('|', array_slice($parts, 0, 5));
-    if (!hash_equals(ticket_signature($payload), $sig)) {
+    [, $id, $vs, $count, $name, $seats, $sig] = $parts;
+    $signed = array_values(array_filter(array_slice($parts, 0, 6), static fn ($p, $i) => $i !== 1 || $id !== '', ARRAY_FILTER_USE_BOTH));
+    if (!hash_equals(ticket_signature(implode('|', $signed)), $sig)) {
         return null;
     }
     return [
+        'id' => $id === '' ? null : (int) $id,
         'variableSymbol' => $vs,
         'count' => (int) $count,
         'name' => $name,

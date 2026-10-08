@@ -218,7 +218,6 @@ function reservation_payload(array $r): array
         'cancelFee' => $r['cancel_fee'] === null ? null : (int) $r['cancel_fee'],
         'refundAmount' => $r['refund_amount'] === null ? null : (int) $r['refund_amount'],
         'refundedAmount' => (int) $r['refunded_amount'],
-        'refundAccount' => $r['refund_account'],
         'cancelledSeats' => $r['cancelled_seats'] === '' ? [] : explode(',', $r['cancelled_seats']),
         'refundedAt' => iso_time($r['refunded_at']),
         'stornoRules' => storno_rules_public(),

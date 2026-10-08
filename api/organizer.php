@@ -113,8 +113,12 @@ function verify_ticket(string $code): void
 
     $pdo = db();
     $pdo->beginTransaction();
-    $stmt = $pdo->prepare('SELECT * FROM reservations WHERE variable_symbol = ? FOR UPDATE');
-    $stmt->execute([$ticket['variableSymbol']]);
+    // Current state is always loaded from the database: by reservation id
+    // (older tickets: by variable symbol); the VS must match as well.
+    $stmt = $ticket['id'] !== null
+        ? $pdo->prepare('SELECT * FROM reservations WHERE id = ? AND variable_symbol = ? FOR UPDATE')
+        : $pdo->prepare('SELECT * FROM reservations WHERE variable_symbol = ? FOR UPDATE');
+    $stmt->execute($ticket['id'] !== null ? [$ticket['id'], $ticket['variableSymbol']] : [$ticket['variableSymbol']]);
     $r = $stmt->fetch();
 
     if (!$r) {
@@ -142,12 +146,15 @@ function verify_ticket(string $code): void
         'result' => $result,
         'changed' => $changed,
         'ticket' => [
+            'id' => (int) $r['id'],
             'variableSymbol' => $r['variable_symbol'],
             'count' => (int) $r['seat_count'],
             'name' => trim($r['first_name'] . ' ' . $r['last_name']) ?: $ticket['name'],
             'seats' => explode(',', $r['seats']),
         ],
         'checkedInAt' => iso_time($r['checked_in_at']),
+        'status' => $r['status'],
+        'cancelledSeats' => $r['cancelled_seats'] === '' ? [] : explode(',', $r['cancelled_seats']),
         'email' => $r['email'],
     ]);
 }

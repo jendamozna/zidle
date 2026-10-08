@@ -54,26 +54,16 @@ function cancellation_money(array $r, int $count, string $by): array
     return [$fee, $value - $fee];
 }
 
-/** Czech account "(prefix-)number/bank" or an IBAN; returns the normalized value or null. */
-function normalize_refund_account(string $account): ?string
-{
-    $account = strtoupper(preg_replace('/\s+/', '', $account));
-    if (preg_match('/^(\d{1,6}-)?\d{2,10}\/\d{4}$/', $account) || preg_match('/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/', $account)) {
-        return $account;
-    }
-    return null;
-}
-
 /**
  * Cancels the given seats (null = the whole reservation).
- *   $by = 'customer': only while cancellation_terms() allows it, storno fee applies,
- *                     a refund account is required when money is returned.
+ *   $by = 'customer': only while cancellation_terms() allows it, storno fee applies.
  *   $by = 'admin':    any pending/paid reservation, paid seats are refunded in full.
- * Cancelling all remaining seats cancels the reservation. Sends the e-mails.
+ * Cancelling all remaining seats cancels the reservation. Refunds go back to the
+ * account the payment came from. Sends the e-mails.
  * Returns the updated reservation row; throws InvalidArgumentException with a
  * message for the user.
  */
-function cancel_seats(int $id, ?array $seatIds, string $by, string $refundAccount = ''): array
+function cancel_seats(int $id, ?array $seatIds, string $by): array
 {
     $pdo = db();
     $pdo->beginTransaction();
@@ -97,13 +87,6 @@ function cancel_seats(int $id, ?array $seatIds, string $by, string $refundAccoun
         $whole = $remaining === [];
 
         [$fee, $refund] = cancellation_money($r, count($cancel), $by);
-        $account = $r['refund_account'];
-        if ($by === 'customer' && $refund > 0) {
-            $account = normalize_refund_account($refundAccount);
-            if ($account === null) {
-                throw new InvalidArgumentException('Zadejte platné číslo účtu pro vrácení peněz.');
-            }
-        }
         $paid = $r['status'] === 'paid';
         $totalFee = $paid ? (int) $r['cancel_fee'] + $fee : null;
         $totalRefund = $paid ? (int) $r['refund_amount'] + $refund : null;
@@ -111,17 +94,17 @@ function cancel_seats(int $id, ?array $seatIds, string $by, string $refundAccoun
         if ($whole) {
             $pdo->prepare(
                 "UPDATE reservations SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?,
-                   cancel_fee = ?, refund_amount = ?, refund_account = ? WHERE id = ?"
-            )->execute([db_time(now_utc()), $by, $totalFee, $totalRefund, $account, $id]);
+                   cancel_fee = ?, refund_amount = ? WHERE id = ?"
+            )->execute([db_time(now_utc()), $by, $totalFee, $totalRefund, $id]);
             $pdo->prepare('DELETE FROM reservation_seats WHERE reservation_id = ?')->execute([$id]);
         } else {
             $cancelledSeats = implode(',', array_filter([$r['cancelled_seats'], implode(',', $cancel)]));
             $pdo->prepare(
                 'UPDATE reservations SET seats = ?, seat_count = ?, amount = ?, cancelled_seats = ?,
-                   cancel_fee = ?, refund_amount = ?, refund_account = ? WHERE id = ?'
+                   cancel_fee = ?, refund_amount = ? WHERE id = ?'
             )->execute([
                 implode(',', $remaining), count($remaining), seat_price($r) * count($remaining),
-                $cancelledSeats, $totalFee, $totalRefund, $account, $id,
+                $cancelledSeats, $totalFee, $totalRefund, $id,
             ]);
             $placeholders = implode(',', array_fill(0, count($cancel), '?'));
             $pdo->prepare("DELETE FROM reservation_seats WHERE reservation_id = ? AND seat_id IN ($placeholders)")
@@ -191,11 +174,7 @@ function refund_lines(array $r, int $fee, int $refund, string $by): array
     }
     if ($refund > 0) {
         $days = (int) config('REFUND_DAYS');
-        $lines[] = 'Částka ' . format_czk($refund) . " Vám bude vrácena do {$days} dnů"
-            . ($r['refund_account'] ? ' na účet ' . $r['refund_account'] . '.' : '.');
-        if (!$r['refund_account']) {
-            $lines[] = 'Odpovězte nám prosím na tento e-mail s číslem účtu, na který máme peníze vrátit.';
-        }
+        $lines[] = 'Částku ' . format_czk($refund) . " Vám do {$days} dnů pošleme zpět na účet, ze kterého platba přišla.";
     }
     return $lines;
 }
@@ -250,8 +229,8 @@ function data_deletion_at(): ?DateTimeImmutable
 }
 
 /**
- * GDPR: after the event + DATA_RETENTION_DAYS remove names, e-mails and
- * refund accounts (payment records – VS, amount, seats – stay for accounting)
+ * GDPR: after the event + DATA_RETENTION_DAYS remove names and e-mails
+ * (payment records – VS, amount, seats – stay for accounting)
  * and delete the VIP list. Returns the number of anonymized reservations.
  */
 function purge_personal_data(): int
@@ -261,8 +240,8 @@ function purge_personal_data(): int
         return 0;
     }
     $stmt = db()->prepare(
-        "UPDATE reservations SET first_name = '', last_name = '', email = '', refund_account = NULL
-         WHERE email <> '' OR first_name <> '' OR refund_account IS NOT NULL"
+        "UPDATE reservations SET first_name = '', last_name = '', email = ''
+         WHERE email <> '' OR first_name <> ''"
     );
     $stmt->execute();
     db()->exec('DELETE FROM vip_guests');

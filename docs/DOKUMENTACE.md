@@ -23,6 +23,9 @@ ve správě (kapitola [9.3](#93-záložka-nastavení)).
 14. [Instalace a provoz](#14-instalace-a-provoz)
 15. [Technická reference](#15-technická-reference)
 
+> **Pravidlo projektu:** každá změna kódu musí být ve stejném commitu
+> promítnuta do této dokumentace (viz `CLAUDE.md`).
+
 ---
 
 ## 1. Přehled aplikace
@@ -270,12 +273,12 @@ Na stránce rezervace tlačítko **Zrušit rezervaci** (u více míst
      neplatíte.“*
    - nezaplaceno, část: *„Zrušíte 1 místo, zbytek rezervace zůstane.
      Nová částka k úhradě: …“*
-   - zaplaceno: storno poplatek a částka k vrácení; při 100 % *„peníze
-     se nevracejí“*; u části míst *„Na e-mail přijde nová vstupenka.“*
-3. Vrací-li se peníze, je povinné **číslo účtu** (formát `předčíslí-číslo/kód
-   banky` nebo IBAN).
-4. Po potvrzení server znovu spočítá poplatek podle **aktuálního** data
-   a místa uvolní.
+   - zaplaceno: storno poplatek a *„… pošleme zpět na účet, ze kterého
+     platba přišla.“*; při 100 % *„peníze se nevracejí“*; u části míst
+     *„Na e-mail přijde nová vstupenka.“*
+3. Po potvrzení server znovu spočítá poplatek podle **aktuálního** data
+   a místa uvolní. Číslo účtu se nezadává – peníze se vždy vracejí na
+   účet, ze kterého platba přišla.
 
 Zrušit **nelze**: po začátku akce, po odbavení vstupenky u vchodu a u
 rezervací *Propadlo* / *Zrušeno*.
@@ -286,7 +289,7 @@ rezervací *Propadlo* / *Zrušeno*.
 | --- | --- | --- | --- |
 | nezaplaceno, všechna místa | Zrušeno | – | **Rezervace zrušena** |
 | nezaplaceno, část míst | Čeká na platbu | sníží se, QR platba se změní | **Změna rezervace** s novými platebními údaji |
-| zaplaceno, všechna místa | Zrušeno | poplatek + vrácení | **Rezervace zrušena** – poplatek, *„Částka … Vám bude vrácena do 14 dnů na účet …“* |
+| zaplaceno, všechna místa | Zrušeno | poplatek + vrácení | **Rezervace zrušena** – poplatek, *„Částku … Vám do 14 dnů pošleme zpět na účet, ze kterého platba přišla.“* |
 | zaplaceno, část míst | Zaplaceno | poplatek + vrácení za zrušená místa | **Nová vstupenka** – zrušená místa, poplatek, vrácení; *„Původní vstupenka už neplatí.“* |
 
 Poplatky a vrácené částky se při opakovaném rušení sčítají. Zrušená místa
@@ -305,9 +308,7 @@ Rozdíly proti zrušení zákazníkem:
 - správce může rušit i po odbavení a po začátku akce,
 - u zaplacených míst se **vrací celá cena** (bez storno poplatku),
 - e-maily:
-  - zaplaceno, celé: **Rezervace zrušena** – *„Částka … Vám bude vrácena
-    do 14 dnů.“* a pokud účet neznáme, *„Odpovězte nám prosím na tento
-    e-mail s číslem účtu, na který máme peníze vrátit.“*
+  - zaplaceno, celé: **Rezervace zrušena** – *„Částku … Vám do 14 dnů pošleme zpět na účet, ze kterého platba přišla.“*
   - zaplaceno, část: **Nová vstupenka** se stejnými údaji o vrácení,
   - nezaplaceno, část: **Změna rezervace** s novou částkou,
   - nezaplaceno, celé: e-mail se **neposílá**.
@@ -316,9 +317,9 @@ Rozdíly proti zrušení zákazníkem:
 
 1. Ve správě karta **K vrácení** ukazuje celkovou dlužnou částku a počet
    rezervací; filtr *K vrácení peněz* je vypíše.
-2. U rezervace je *„vrátit: 300 Kč na 2000123456/2010“*, případně
-   *„(účet zjistit e-mailem)“*.
-3. Účetní pošle peníze z banky a klikne **Vráceno**.
+2. U rezervace je *„vrátit: 300 Kč na účet plátce“*.
+3. Účetní pošle peníze zpět na účet, ze kterého platba přišla (najde ho
+   ve výpisu podle VS), a klikne **Vráceno**.
 4. Zaznamená se vrácená částka a datum. Pokud zákazník později zruší další
    místa, vznikne nový dluh jen ve výši nového vrácení.
 
@@ -333,9 +334,11 @@ Rozdíly proti zrušení zákazníkem:
 - Vstupenka je zároveň na stránce rezervace.
 - Ve správě lze vstupenku poslat znovu (**Poslat znovu**).
 - QR kód obsahuje text
-  `Z26|VS|počet míst|jméno|místa|podpis`.
+  `Z26|ID rezervace|VS|počet míst|jméno|místa|podpis`.
   Podpis vytváří server tajným klíčem `TICKET_SECRET`; padělaný nebo
-  upravený kód se pozná.
+  upravený kód (včetně změněného ID) se pozná.
+- Starší vstupenky bez ID rezervace (`Z26|VS|…`) scanner stále přijímá
+  a hledá je podle VS.
 
 ### 7.2 Odbavení (scanner.html)
 
@@ -343,19 +346,23 @@ Rozdíly proti zrušení zákazníkem:
    pořadatele (přihlášení vydrží 24 hodin).
 2. V režimu **Vstupenky** se spustí zadní kamera (je-li to možné, je
    k dispozici i svítilna).
-3. Po načtení QR kódu telefon zavibruje, skenování se zastaví a zobrazí
-   se výsledek se jménem, počtem míst a místy po sekcích a řadách.
-4. Tlačítkem **Skenovat další** se pokračuje.
+3. Po načtení QR kódu telefon zavibruje a skenování se zastaví.
+4. Scanner podle **ID rezervace** z QR kódu (a kontrolního VS) načte ze
+   serveru **aktuální stav rezervace** – stav, jméno, platná místa, čas
+   odbavení. Údaje vytištěné v QR kódu se použijí jen bez připojení.
+5. Zobrazí se výsledek se jménem, počtem míst, místy po sekcích a řadách
+   a řádkem *„Rezervace č. … · VS … · aktuální stav ze systému“*.
+6. Tlačítkem **Skenovat další** se pokračuje.
 
 | Výsledek | Barva | Kdy |
 | --- | --- | --- |
 | **Platná vstupenka** | zelená | zaplaceno, první načtení – zaznamená se příchod |
 | **Už odbaveno** + čas prvního načtení | oranžová | vstupenka už byla načtena |
 | **Nezaplaceno** | červená | rezervace čeká na platbu |
-| **Rezervace zrušena** | červená | zrušeno nebo propadlo |
-| **Neplatný kód** | červená | cizí, padělaný nebo upravený kód |
+| **Rezervace zrušena** | červená | zrušeno nebo propadlo (i když se to stalo až po vydání vstupenky) |
+| **Neplatný kód** | červená | cizí, padělaný nebo upravený kód, nebo rezervace s tímto ID a VS neexistuje |
 | **To je platební QR kód** | červená | zákazník ukazuje QR platbu místo vstupenky |
-| **Neověřeno – bez spojení** | oranžová | telefon je offline; údaje se jen přečtou z kódu |
+| **Neověřeno – bez spojení** | oranžová | telefon je offline; údaje se jen přečtou z kódu (*„údaje z QR kódu, neověřeno“*) |
 
 Pokud byla po vydání vstupenky zrušena část míst, ukáže se u výsledku
 *„Část míst byla zrušena – platí jen uvedená místa.“* a zobrazí se
@@ -450,8 +457,8 @@ nastaveném `PUBLIC_URL`.
 | Rezervace zrušena | propadnutí (cron) | rezervace zrušena pro nezaplacení, odkaz na novou rezervaci |
 | Vstupenka | Zaplaceno / Přijmout pozdní platbu / Poslat znovu | QR vstupenka, jméno, počet míst, místa, VS |
 | Změna rezervace | zrušení části nezaplacené rezervace | zrušená a zbývající místa, nové platební údaje |
-| Nová vstupenka | zrušení části zaplacené rezervace | zrušená místa, poplatek, vrácení do 14 dnů, nová QR vstupenka |
-| Rezervace zrušena | zrušení celé rezervace zákazníkem, nebo zaplacené správcem | zrušená místa, poplatek, *„Částka … Vám bude vrácena do 14 dnů“*, příp. žádost o číslo účtu |
+| Nová vstupenka | zrušení části zaplacené rezervace | zrušená místa, poplatek, vrácení do 14 dnů na účet, ze kterého platba přišla, nová QR vstupenka |
+| Rezervace zrušena | zrušení celé rezervace zákazníkem, nebo zaplacené správcem | zrušená místa, poplatek, *„Částku … Vám do 14 dnů pošleme zpět na účet, ze kterého platba přišla.“* |
 
 Všechny e-maily začínají oslovením jménem a končí podpisem *Moje židle
 2026*.
@@ -460,13 +467,13 @@ Všechny e-maily začínají oslovením jménem a končí podpisem *Moje židle
 
 ## 11. Ochrana osobních údajů (GDPR)
 
-- Ukládá se jen jméno, příjmení, e-mail a případně číslo účtu pro
-  vrácení peněz. IP adresy se ukládají jen jako otisk (hash) pro limity
+- Ukládá se jen jméno, příjmení a e-mail. Číslo účtu se neukládá
+  (peníze se vracejí na účet, ze kterého platba přišla). IP adresy se ukládají jen jako otisk (hash) pro limity
   a mažou se po 1 dni.
 - Formulář informuje: *„Jméno a e-mail použijeme jen pro vyřízení této
   rezervace a do 30 dnů po skončení akce je smažeme.“*
 - **30 dnů po začátku akce** (`DATA_RETENTION_DAYS`) plánovaná úloha:
-  - smaže jména, e-maily a čísla účtů u všech rezervací,
+  - smaže jména a e-maily u všech rezervací,
   - smaže celý seznam VIP hostů,
   - ponechá VS, částky, místa a stavy (účetní evidence).
 - Mazání funguje jen při vyplněném **Začátku akce** v Nastavení.
@@ -556,7 +563,7 @@ konfiguraci a knihovnám.
 
 ### 14.3 Aktualizace existující instalace
 
-Spusťte postupně skripty v `db/migrations/` (002 až 006), které ještě
+Spusťte postupně skripty v `db/migrations/` (002 až 007), které ještě
 nebyly použité. Všechny lze bezpečně spustit opakovaně.
 
 ### 14.4 Plánovaná úloha (cron)
@@ -597,8 +604,8 @@ npm run dev                  # web, /api se přesměruje na PHP
 | GET | `api/seats.php` | obsazená místa, cena, limity, storno pravidla, začátek akce, token formuláře |
 | POST | `api/reservations.php` | vytvoření rezervace `{firstName, lastName, email, seats, formToken, hp}` |
 | GET | `api/reservations.php?token=` | stav rezervace, platební údaje, vstupenka, podmínky zrušení |
-| POST | `api/cancel.php` | zrušení zákazníkem `{token, seats?, refundAccount?}` (bez `seats` = celá) |
-| GET/POST | `api/organizer.php` | scanner: `login`, `logout`, `verify`, `vip-list`, `vip-checkin`, `vip-undo` |
+| POST | `api/cancel.php` | zrušení zákazníkem `{token, seats?}` (bez `seats` = celá) |
+| GET/POST | `api/organizer.php` | scanner: `login`, `logout`, `verify` (najde rezervaci podle ID z QR, vrátí aktuální stav a zaznamená odbavení), `vip-list`, `vip-checkin`, `vip-undo` |
 | – | `api/admin.php` | správa (HTML stránka) |
 | CLI | `api/cron.php` | plánované úlohy |
 
@@ -615,7 +622,8 @@ npm run dev                  # web, /api se přesměruje na PHP
 ### 15.3 Formát QR kódů
 
 - **QR Platba**: `SPD*1.0*ACC:<IBAN>*AM:<částka>*CC:CZK*X-VS:<VS>*DT:<splatnost>*MSG:<zpráva>*X-SS:<SS>*RN:<příjemce>`
-- **Vstupenka**: `Z26|<VS>|<počet míst>|<jméno>|<místa oddělená čárkou>|<podpis>`
+- **Vstupenka**: `Z26|<ID rezervace>|<VS>|<počet míst>|<jméno>|<místa oddělená čárkou>|<podpis>`
+  (starší vstupenky: bez ID rezervace)
 
 ### 15.4 Struktura kódu
 

@@ -1,5 +1,5 @@
 <?php
-// POST api/cancel.php {token, seats?, refundAccount?} – customer cancels the given seats
+// POST api/cancel.php {token, seats?} – customer cancels the given seats
 // (omitted = the whole reservation).
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
@@ -23,7 +23,7 @@ run_api(function (): void {
     }
     $seats = isset($body['seats']) && is_array($body['seats']) ? $body['seats'] : null;
     try {
-        $r = cancel_seats((int) $r['id'], $seats, 'customer', (string) ($body['refundAccount'] ?? ''));
+        $r = cancel_seats((int) $r['id'], $seats, 'customer');
     } catch (InvalidArgumentException $e) {
         json_error($e->getMessage(), 422);
     }

@@ -467,7 +467,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
             <?php if ($r['refunded_amount'] > 0): ?><br><small>vráceno <?= $kc($r['refunded_amount']) ?> (<?= $h($fmt($r['refunded_at'])) ?>)</small><?php endif ?>
             <?php if ($r['refund_amount'] > $r['refunded_amount']): ?>
               <br><small class="overdue">vrátit: <?= $kc($r['refund_amount'] - $r['refunded_amount']) ?>
-                <?= $r['refund_account'] ? ' na ' . $h($r['refund_account']) : ' (účet zjistit e-mailem)' ?></small>
+                na účet plátce</small>
             <?php endif ?></td>
           <td><?= $h($fmt($r['created_at'])) ?></td>
           <td class="<?= $r['status'] === 'pending' && $r['expires_at'] < db_time(now_utc()) ? 'overdue' : '' ?>"><?= $h($fmt($r['expires_at'])) ?></td>

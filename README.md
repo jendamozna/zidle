@@ -2,7 +2,7 @@
 
 Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
 
-**Kompletní dokumentace v češtině: [docs/DOKUMENTACE.md](docs/DOKUMENTACE.md)** – všechny procesy, e-maily, správa, odbavení, konfigurace a provoz.
+**Kompletní dokumentace v češtině: [docs/DOKUMENTACE.md](docs/DOKUMENTACE.md)** (rule: keep it in sync with every code change – see `CLAUDE.md`) – všechny procesy, e-maily, správa, odbavení, konfigurace a provoz.
 
 ## How it works
 
@@ -31,17 +31,17 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
 8. **Cancellation by the customer** on the reservation page (`?r=<token>`).
    Unpaid reservations are cancelled free of charge. For paid ones the
    **storno fee** set in admin → *Nastavení* applies (e.g. 50 % from one date,
-   100 % from another; free before the first date) and the customer enters a
-   bank account for the refund. Customers can cancel the whole reservation or
+   100 % from another; free before the first date). Refunds always go back
+   to the account the payment came from. Customers can cancel the whole reservation or
    individual seats (unpaid: the amount shrinks; paid: a new ticket is
    e-mailed). Cancelling is possible until the event starts and not after
    check-in. Refunds due are listed in admin (*K vrácení*) and
    marked **Vráceno** once paid out. A paid reservation (or seats) cancelled by
    admin is refunded in full and the customer is e-mailed that the amount
-   will be returned within `REFUND_DAYS` (14).
+   will be sent back to the paying account within `REFUND_DAYS` (14).
 9. **GDPR**: the form says that names and e-mails are used only for the
    reservation and deleted `DATA_RETENTION_DAYS` (30) after the event.
-   `cron.php` then removes names, e-mails and refund accounts (VS, amounts
+   `cron.php` then removes names and e-mails (VS, amounts
    and seats stay for accounting) and deletes the VIP list. Requires the
    event date in admin → *Nastavení*.
 6. At the entrance, organizers open `scanner.html` on a phone, log in with
@@ -58,13 +58,14 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
 ### Ticket QR format
 
 ```
-Z26|<variable symbol>|<seat count>|<name>|<seat,seat,...>|<signature>
-Z26|2600000005|4|Marie Nováková|WR-1-1,WR-1-2,WR-1-3,BL-1-1|3XCcMAw51txSnZXmaFz_Gt
+Z26|<reservation id>|<variable symbol>|<seat count>|<name>|<seat,seat,...>|<signature>
+Z26|30|7736065879|2|Marta Dušková|WL-3-1,WL-3-2|yx3MH4ga00ig1fOUdjZnSV
 ```
 
 The signature is a truncated HMAC-SHA256 of the rest using `TICKET_SECRET`;
-it is checked by the server (`api/organizer.php`), which also records the
-first check-in.
+the server (`api/organizer.php`) checks it, loads the reservation by its id
+and returns its current state (status, valid seats), and records the first
+check-in.
 
 ## Spam and bot protection
 
@@ -91,7 +92,7 @@ visitors share one limit.
 mariadb -e "CREATE DATABASE zidle CHARACTER SET utf8mb4"
 mariadb -e "CREATE USER 'zidle'@'localhost' IDENTIFIED BY '…'; GRANT ALL ON zidle.* TO 'zidle'@'localhost'"
 mariadb zidle < db/schema.sql
-# (existing database from an older version: run the files in db/migrations/ in order, 002–006)
+# (existing database from an older version: run the files in db/migrations/ in order, 002–007)
 
 # PHP dependencies (QR code images for ticket e-mails)
 (cd api && composer install --no-dev)
@@ -142,7 +143,7 @@ and set `CORS_ORIGIN`.
 | GET | `api/seats.php` | `{taken: [seatId], price, deadlineHours}` |
 | POST | `api/reservations.php` | body `{firstName, lastName, email, seats}` → reservation with payment details (201), `409` with `conflict` when a seat is already taken, `422` with `fields` on validation errors |
 | GET | `api/reservations.php?token=` | reservation status, payment details and `ticket` (QR text) once paid |
-| POST | `api/cancel.php` | body `{token, refundAccount}` – customer cancellation; `refundAccount` required when money is returned |
+| POST | `api/cancel.php` | body `{token, seats?}` – customer cancellation of the given seats (omitted = whole reservation) |
 | GET/POST | `api/organizer.php` | organizer session (`login`, `logout`), `verify` of a scanned ticket code, `vip-list`, `vip-checkin`, `vip-undo` |
 
 Seat IDs: `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-4-12`. Sections: `WL` Left
