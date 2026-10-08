@@ -40,13 +40,15 @@ function cancellation_terms(array $r): array
 }
 
 /**
- * [fee, refund] in CZK for cancelling $count seats. Unpaid: nothing is paid
- * or returned. Paid by customer: storno fee in effect. Paid by admin: full refund.
+ * [fee, refund] in CZK for cancelling $count seats. Unpaid: no fee; cancelling
+ * all seats returns any part of the price that already arrived. Paid by customer:
+ * storno fee in effect. Paid by admin: full refund.
  */
 function cancellation_money(array $r, int $count, string $by): array
 {
     if ($r['status'] !== 'paid') {
-        return [0, 0];
+        $kept = (int) $r['paid_amount'] - (int) $r['refund_amount'];
+        return [0, $count >= (int) $r['seat_count'] ? max(0, $kept) : 0];
     }
     $value = seat_price($r) * $count;
     $run = run_by_id((int) $r['run_id']);
@@ -89,8 +91,8 @@ function cancel_seats(int $id, ?array $seatIds, string $by): array
 
         [$fee, $refund] = cancellation_money($r, count($cancel), $by);
         $paid = $r['status'] === 'paid';
-        $totalFee = $paid ? (int) $r['cancel_fee'] + $fee : null;
-        $totalRefund = $paid ? (int) $r['refund_amount'] + $refund : null;
+        $totalFee = $paid ? (int) $r['cancel_fee'] + $fee : $r['cancel_fee'];
+        $totalRefund = $paid || $refund > 0 ? (int) $r['refund_amount'] + $refund : $r['refund_amount'];
 
         if ($whole) {
             $pdo->prepare(
@@ -110,6 +112,10 @@ function cancel_seats(int $id, ?array $seatIds, string $by): array
             $placeholders = implode(',', array_fill(0, count($cancel), '?'));
             $pdo->prepare("DELETE FROM reservation_seats WHERE reservation_id = ? AND seat_id IN ($placeholders)")
                 ->execute([$id, ...$cancel]);
+            if (!$paid) {
+                // What already arrived may now cover the lower price.
+                complete_if_covered($pdo, array_merge($r, ['amount' => seat_price($r) * count($remaining)]));
+            }
         }
         $pdo->commit();
     } catch (Throwable $e) {
@@ -128,9 +134,10 @@ function cancel_seats(int $id, ?array $seatIds, string $by): array
  * E-mails after a cancellation:
  *  - paid, part of the seats: new ticket (the old one lists cancelled seats) + fee/refund
  *  - paid, everything:        cancellation with fee/refund and refund deadline
- *  - unpaid, part of the seats: new amount to pay
- *  - unpaid, everything:      confirmation to the customer (by admin: also that a payment
- *                             already sent will be returned)
+ *  - unpaid, part of the seats: new amount to pay, or the ticket when what already
+ *                             arrived covers the remaining seats (a surplus is refunded)
+ *  - unpaid, everything:      confirmation to the customer; money that already arrived and
+ *                             a payment still on its way will be returned
  */
 function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $fee, int $refund, string $by, bool $paid): void
 {
@@ -150,6 +157,20 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
         }
         return;
     }
+    if (!$paid && !$whole && $r['status'] === 'paid') {
+        $surplus = (int) $r['paid_amount'] - (int) $r['amount'];
+        try {
+            send_ticket_email($r, array_merge(
+                ['Zrušená místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.',
+                 'Platba za zbývající místa je kompletní, rezervace je potvrzena.'],
+                $surplus > 0 ? refund_lines($r, 0, $surplus, $by) : []
+            ), 'Vstupenka');
+            db()->prepare('UPDATE reservations SET ticket_sent_at = ? WHERE id = ?')->execute([db_time(now_utc()), $r['id']]);
+        } catch (Throwable $e) {
+            error_log('[zidle] ' . $e);
+        }
+        return;
+    }
     if (!$paid && !$whole) {
         send_customer_email($r, 'Změna rezervace', array_merge(
             ['zrušili jsme místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.', run_line($r),
@@ -163,8 +184,8 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
          implode('; ', seat_labels($r['seats'])) . '.',
          run_line($r)],
         $refundLines,
-        !$paid && $by === 'admin'
-            ? ['', 'Pokud jste platbu už odeslali, pošleme Vám ji zpět na účet, ze kterého přišla.']
+        !$paid
+            ? ['', 'Pokud jste platbu už odeslali, pošleme Vám ji po připsání zpět na účet, ze kterého přišla.']
             : []
     ));
 }
@@ -233,7 +254,9 @@ function data_deletion_at(): ?DateTimeImmutable
 /**
  * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails
  * (payment records – VS, amount, seats – stay for accounting)
- * and delete the VIP list. Returns the number of anonymized reservations.
+ * and delete the VIP list. Reservations with money still to return keep their
+ * contact until the refund is marked as done (the next run then removes it).
+ * Returns the number of anonymized reservations.
  */
 function purge_personal_data(): int
 {
@@ -243,7 +266,7 @@ function purge_personal_data(): int
     }
     $stmt = db()->prepare(
         "UPDATE reservations SET first_name = '', last_name = '', email = ''
-         WHERE email <> '' OR first_name <> ''"
+         WHERE (email <> '' OR first_name <> '') AND COALESCE(refund_amount, 0) <= refunded_amount"
     );
     $stmt->execute();
     db()->exec('DELETE FROM vip_guests');

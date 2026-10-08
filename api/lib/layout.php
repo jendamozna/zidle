@@ -27,3 +27,12 @@ function is_valid_seat_id(string $id): bool
         && $row >= 1 && $row <= $section['rows']
         && $seat >= 1 && $seat <= $section['seats'];
 }
+
+/** Sort order of seat ids: section (layout order), row, seat. */
+function compare_seat_ids(string $a, string $b): int
+{
+    $order = array_flip(array_keys(SECTIONS));
+    [$sa, $ra, $na] = explode('-', $a);
+    [$sb, $rb, $nb] = explode('-', $b);
+    return [$order[$sa] ?? 99, (int) $ra, (int) $na] <=> [$order[$sb] ?? 99, (int) $rb, (int) $nb];
+}

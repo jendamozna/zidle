@@ -60,7 +60,7 @@ function CancellationInfo({ reservation }) {
   if (status === 'expired' && refundAmount > 0) {
     return (
       <div className="cancel-info">
-        <strong>Platba dorazila až po představení.</strong>
+        <strong>Rezervace propadla, přijatá platba se vrací.</strong>
         {due > 0 ? (
           <span>Částku {formatCzk(due)} pošleme zpět na účet, ze kterého platba přišla.</span>
         ) : (
@@ -69,7 +69,16 @@ function CancellationInfo({ reservation }) {
       </div>
     );
   }
-  if (!whole && !cancelledSeats.length) return null;
+  if (!whole && !cancelledSeats.length) {
+    // Paid reservation with a payment on top (overpayment or sent twice).
+    if (status !== 'paid' || due <= 0) return null;
+    return (
+      <div className="cancel-info">
+        <strong>Přišlo víc, než bylo potřeba.</strong>
+        <span>Částku {formatCzk(due)} pošleme zpět na účet, ze kterého platba přišla.</span>
+      </div>
+    );
+  }
   return (
     <div className="cancel-info">
       {whole ? (
@@ -98,6 +107,7 @@ function CancelPanel({ reservation, onCancelled }) {
   const whole = count === seats.length;
   // Same calculation as the server (cancellation_money); the server's result is authoritative.
   const value = isPaid ? seatPrice * count : 0;
+  const received = reservation.payment.received;
   const fee = Math.round((value * percent) / 100);
   const refund = value - fee;
 
@@ -150,7 +160,14 @@ function CancelPanel({ reservation, onCancelled }) {
       {count > 0 && (
         <p>
           {whole ? 'Zrušíte celou rezervaci, místa se uvolní.' : `Zrušíte ${seatsLabel(count)}, zbytek rezervace zůstane.`}{' '}
-          {!isPaid && (whole ? 'Nic neplatíte.' : `Nová částka k úhradě: ${formatCzk(seatPrice * (seats.length - count))}.`)}
+          {!isPaid &&
+            whole &&
+            (received > 0
+              ? `Už přijatých ${formatCzk(received)} pošleme zpět na účet, ze kterého platba přišla.`
+              : 'Nic neplatíte.')}
+          {!isPaid &&
+            !whole &&
+            `Nová částka k úhradě: ${formatCzk(Math.max(0, seatPrice * (seats.length - count) - received))}.`}
           {isPaid && percent === 0 && `Částku ${formatCzk(refund)} pošleme zpět na účet, ze kterého platba přišla.`}
           {isPaid &&
             percent > 0 &&
@@ -233,7 +250,7 @@ export default function PaymentView({ reservation, onChange, onBack }) {
           )}
           <div className="payment-amount">
             <span className="muted">{seatsLabel(reservation.seats.length)}</span>
-            <strong>{formatCzk(payment.amount)}</strong>
+            <strong>{formatCzk(reservation.amount)}</strong>
           </div>
 
           {isPending && (
@@ -245,6 +262,12 @@ export default function PaymentView({ reservation, onChange, onBack }) {
                 {payment.specificSymbol && <CopyValue label="Specifický symbol" value={payment.specificSymbol} />}
                 <CopyValue label="Částka" value={String(payment.amount)} />
               </dl>
+              {payment.received > 0 && (
+                <p className="deadline">
+                  Už jsme přijali <strong>{formatCzk(payment.received)}</strong> z {formatCzk(reservation.amount)}. Doplaťte
+                  prosím zbývajících <strong>{formatCzk(payment.amount)}</strong> se stejným variabilním symbolem.
+                </p>
+              )}
               {new Date(reservation.expiresAt) < new Date() ? (
                 <p className="deadline is-overdue">
                   Splatnost <strong>{formatDeadline(reservation.expiresAt)}</strong> uplynula. Zaplaťte prosím

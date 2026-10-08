@@ -47,27 +47,15 @@ CREATE TABLE IF NOT EXISTS reservations (
   KEY idx_run (run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
--- One row per currently held seat of a run (pending or paid reservation).
--- The primary key makes double booking of a seat in the same run impossible; rows are deleted when a
--- reservation expires or is cancelled, which frees the seat.
-CREATE TABLE IF NOT EXISTS reservation_seats (
-  run_id         INT UNSIGNED NOT NULL,
-  seat_id        VARCHAR(12)  NOT NULL,
-  reservation_id INT UNSIGNED NOT NULL,
-  PRIMARY KEY (run_id, seat_id),
-  KEY idx_reservation (reservation_id),
-  CONSTRAINT fk_seat_reservation FOREIGN KEY (reservation_id)
-    REFERENCES reservations (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
-
--- VIP guests entered by the management. They do not pay and do not hold
--- specific seats; organizers find them by name at the entrance.
+-- VIP guests entered by the management. They do not pay; their seats are held
+-- in reservation_seats; organizers find them by name at the entrance.
 CREATE TABLE IF NOT EXISTS vip_guests (
   id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
   run_id        INT UNSIGNED NOT NULL,
   name          VARCHAR(200) NOT NULL,
-  section       CHAR(2)      NOT NULL COMMENT 'Section id, e.g. ML',
-  persons       TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  section       CHAR(2)      NOT NULL COMMENT 'Section id of the first seat, e.g. ML',
+  seats         TEXT         NOT NULL DEFAULT '' COMMENT 'Comma separated seat ids held for the guest (empty for guests added before seats existed)',
+  persons       TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Number of seats',
   note          VARCHAR(255) NOT NULL DEFAULT '',
   created_at    DATETIME     NOT NULL,
   checked_in_at DATETIME     NULL,
@@ -75,6 +63,24 @@ CREATE TABLE IF NOT EXISTS vip_guests (
   PRIMARY KEY (id),
   KEY idx_section (section),
   KEY idx_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+-- One row per currently held seat of a run: a pending/paid reservation's seat or a VIP guest's seat
+-- (exactly one of reservation_id / vip_guest_id is set).
+-- The primary key makes double booking of a seat in the same run impossible; rows are deleted when a
+-- reservation expires or is cancelled or a VIP guest is removed, which frees the seat.
+CREATE TABLE IF NOT EXISTS reservation_seats (
+  run_id         INT UNSIGNED NOT NULL,
+  seat_id        VARCHAR(12)  NOT NULL,
+  reservation_id INT UNSIGNED NULL,
+  vip_guest_id   INT UNSIGNED NULL,
+  PRIMARY KEY (run_id, seat_id),
+  KEY idx_reservation (reservation_id),
+  KEY idx_vip (vip_guest_id),
+  CONSTRAINT fk_seat_reservation FOREIGN KEY (reservation_id)
+    REFERENCES reservations (id) ON DELETE CASCADE,
+  CONSTRAINT fk_seat_vip FOREIGN KEY (vip_guest_id)
+    REFERENCES vip_guests (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- Rate limiting for spam/bot protection (fixed time windows).

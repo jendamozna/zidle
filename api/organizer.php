@@ -119,13 +119,14 @@ function scanner_run_public(array $run): array
 
 function vip_list(int $runId): array
 {
-    $stmt = db()->prepare('SELECT id, name, section, persons, note, checked_in_at, checked_in_by FROM vip_guests WHERE run_id = ? ORDER BY name');
+    $stmt = db()->prepare('SELECT id, name, section, seats, persons, note, checked_in_at, checked_in_by FROM vip_guests WHERE run_id = ? ORDER BY name');
     $stmt->execute([$runId]);
     return array_map(static fn ($v) => [
         'id' => (int) $v['id'],
         'name' => $v['name'],
         'section' => $v['section'],
         'persons' => (int) $v['persons'],
+        'seats' => seat_labels($v['seats']),
         'note' => $v['note'],
         'checkedInAt' => iso_time($v['checked_in_at']),
         'checkedInBy' => $v['checked_in_by'],

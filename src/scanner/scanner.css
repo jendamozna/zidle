@@ -458,6 +458,11 @@
   color: var(--ink);
 }
 
+.vip-seats {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .vip-done {
   flex: none;
   display: flex;

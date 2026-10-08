@@ -59,16 +59,17 @@ api/
   cron.php             scheduled jobs (CLI only); cron-expire.php = alias
   config.php           defaults (+ config.local.php / env overrides)
   lib/bootstrap.php    config(), db(), JSON helpers, expire_reservations(), QR payment, reservation_payload()
-  lib/layout.php       SECTIONS (must match src/data/layout.js), total_capacity(), is_valid_seat_id()
+  lib/layout.php       SECTIONS (must match src/data/layout.js), total_capacity(), is_valid_seat_id(), compare_seat_ids()
   lib/settings.php     runs: loading, times, storno rules, check-in window, run_public()
   lib/cancellation.php cancellation_terms(), cancel_seats(), notices, reminders, GDPR purge
+  lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
   lib/ticket.php       ticket QR code (sign/parse), qr_png(), ticket e-mail, seat_labels()
   lib/antispam.php     form token, rate limits, login limits
   lib/altcha.php       invisible ALTCHA: challenge, verification, replay protection
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
   lib/scanner_access.php  scanner invites, device cookie, app_base_url()
 db/schema.sql          full schema for a new database
-db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–009)
+db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–010)
 src/                   customer app
   App.jsx              views: run picker / map / section / reservation page; form; toasts
   hooks/useSeats.js    seat state of one run, polling, reserve()
@@ -111,7 +112,9 @@ Upgrading an existing database: run the not yet applied
 `db/migrations/0NN_*.sql` in order. Migration 008 moves existing data into a
 first run whose start is converted from the former event date with
 `CONVERT_TZ(…, 'Europe/Prague', 'UTC')`, falling back to UTC+1 when MariaDB
-has no time-zone tables – check that run's time in admin.
+has no time-zone tables – check that run's time in admin. Migration 010 lets
+`reservation_seats` hold VIP seats; VIP guests added before it have no seats
+(admin shows them, remove and add them again with seats).
 
 Build-time option: `VITE_API_URL` (default `api`) when the API is on another
 origin; then set `CORS_ORIGIN`.
@@ -185,8 +188,12 @@ environment variables of the same name override them (local file wins).
 - **Reservation** – one run, customer data, current seats, price, VS, status,
   history (cancelled seats, fees, refunds, check-in).
 - **Held seat** – row in `reservation_seats` (`run_id`, `seat_id`) while the
-  reservation is `pending` or `paid`.
-- **VIP guest** – name, section, persons, note, per run; no seats, no payment.
+  reservation is `pending` or `paid`, or while a VIP guest holds it.
+- **VIP guest** – name, specific seats, note, per run; no payment.
+- **Money on a reservation** – `paid_amount` = everything received,
+  `refund_amount` = everything to send back, `refunded_amount` = already sent
+  back; kept = `paid_amount − refund_amount`; still to pay
+  (`amount_due()`) = `amount − kept` (≥ 0).
 - **Scanner invite** – named access for chosen runs.
 
 ## 6. Database
@@ -196,9 +203,9 @@ All `DATETIME` columns and JSON dates are UTC.
 | Table | Purpose / key columns |
 | --- | --- |
 | `runs` | `id`, `label`, `starts_at`, `booking_closes_at` (NULL = start), `storno_rules` JSON `[{"from":"YYYY-MM-DDTHH:MM:SSZ","percent":50}]` |
-| `reservations` | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `seat_count`, `amount` (price of current seats), `paid_amount`, `variable_symbol` (unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `cancelled_by` (`customer`/`admin`), `cancel_fee`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at`, `checked_in_by` |
-| `reservation_seats` | PK (`run_id`, `seat_id`), `reservation_id` (FK cascade). Prevents double booking per run. |
-| `vip_guests` | `run_id`, `name`, `section`, `persons`, `note`, `created_at`, `checked_in_at`, `checked_in_by` |
+| `reservations` | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `seat_count`, `amount` (price of current seats), `paid_amount` (sum of all received transfers), `variable_symbol` (unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `cancelled_by` (`customer`/`admin`), `cancel_fee`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at`, `checked_in_by` |
+| `reservation_seats` | PK (`run_id`, `seat_id`), `reservation_id` or `vip_guest_id` (both FK cascade, exactly one set). Prevents double booking per run, VIP seats included. |
+| `vip_guests` | `run_id`, `name`, `section` (section of the first seat), `seats` (CSV; `''` for guests added before migration 010), `persons` (= number of seats), `note`, `created_at`, `checked_in_at`, `checked_in_by` |
 | `scanner_invites` | `name`, `token_hash` (sha256, unique), `created_at`, `last_used_at`, `revoked_at` |
 | `scanner_invite_runs` | PK (`invite_id`, `run_id`) |
 | `rate_limits` | `bucket` (sha256 of key), `hits`, `window_start` |
@@ -250,24 +257,30 @@ the form opens; submit waits for it with the button text *Ověřuji…*; on an
 této rezervace a do N dnů po posledním představení je smažeme.“*), submit
 **Rezervovat a zaplatit**. 409/403 close the form with a toast and refresh.
 
-**Reservation page** (`PaymentView.jsx`, `/?r=<token>`): run, amount, status
-chip; pending → SPD QR + copyable account/IBAN/VS/SS/amount + due date
-(red overdue notice after it); paid → ticket QR; cancellation info
-(`CancellationInfo`, also *„Platba dorazila až po představení.“* with the
-refund for an expired reservation paid after its run) and cancel panel
-(`CancelPanel`, §10).
+**Reservation page** (`PaymentView.jsx`, `/?r=<token>`): run, price of the
+seats, status chip; pending → SPD QR + copyable account/IBAN/VS/SS/amount
+(amount = still to pay, `payment.amount`) + due date (red overdue notice
+after it); after a partial payment also *„Už jsme přijali X z Y. Doplaťte
+prosím zbývajících Z se stejným variabilním symbolem.“*; paid → ticket QR;
+cancellation info (`CancellationInfo`: cancelled seats / fee / refund; for an
+expired reservation with money to return *„Rezervace propadla, přijatá platba
+se vrací.“*; for a paid one with a surplus *„Přišlo víc, než bylo potřeba.“*
++ refund line) and cancel panel (`CancelPanel`, §10; pending whole
+cancellation says *„Už přijatých X pošleme zpět…“* when something arrived,
+partial shows the new amount to pay minus what arrived).
 
 ## 8. Reservation lifecycle
 
 ```
-pending ──"Zaplaceno" (admin)──────────────▶ paid
-pending ──expires_at + GRACE passed────────▶ expired ──"Přijmout pozdní platbu"──▶ paid (if seats free)
-pending / paid ──cancel (customer/admin)───▶ cancelled
+pending ──payment recorded, whole price arrived──▶ paid
+pending ──expires_at + GRACE passed──────────────▶ expired ──payment recorded──▶ paid (run not started, price covered, seats free)
+pending / paid ──cancel (customer/admin)─────────▶ cancelled
 ```
 
 `expire_reservations()` (every API request and cron): sets `expired` +
-`cancelled_at` for `pending` with `expires_at <= now − PAYMENT_GRACE_HOURS`,
-then deletes `reservation_seats` of `expired`/`cancelled` reservations.
+`cancelled_at` for `pending` with `expires_at <= now − PAYMENT_GRACE_HOURS`
+(a part of the price that already arrived becomes `refund_amount`), then
+deletes `reservation_seats` of `expired`/`cancelled` reservations.
 
 **Create** (`POST reservations.php`), checks in order:
 
@@ -291,25 +304,39 @@ PAYMENT_DEADLINE_HOURS, run start)`), random unique 10-digit VS
 ## 9. Payments
 
 - **SPD** (`spd_string()`): `SPD*1.0*ACC:<IBAN>[+BIC]*AM:<amount>*CC:CZK*X-VS:<VS>*DT:<due date Prague YYYYMMDD>*MSG:<PAYMENT_MESSAGE + last name, ASCII, ≤60>[*X-SS:<SS>][*RN:<recipient ≤35>]`.
-- Payments are matched manually by VS. Admin **Zaplaceno** sets `paid`,
-  `paid_at`, `paid_amount = amount` and sends the ticket.
+  `AM` = `amount_due()` (what is still missing after a partial payment).
+- Payments are matched manually by VS. The accountant records every received
+  transfer with its real amount (admin action `payment`, field `received`
+  1–1 000 000 Kč; pending rows: input prefilled with `amount_due()` + button
+  **Zaplaceno**; other statuses: *přišla platba* → input + **Zapsat platbu**
+  with a `confirm()` explaining the outcome). `record_payment(id, received)`
+  adds it to `paid_amount` and by status:
+
+  | Status | Result | Customer e-mail |
+  | --- | --- | --- |
+  | pending, kept ≥ `amount` (`complete_if_covered()`) | `paid`, `paid_at`; surplus `paid_amount − amount` → `refund_amount` | *Vstupenka* (intro adds the surplus refund line) |
+  | pending, less | stays pending; admin row shows *zbývá doplatit X* | *Přijata část platby* (missing amount + payment details) |
+  | expired, run not started, kept ≥ `amount`, all seats free | seats re-inserted, `paid` (surplus refunded as above; refund of an earlier partial payment cancelled unless already returned) | *Vstupenka* |
+  | expired otherwise | stays expired; `refund_amount += received` | *Vrácení platby* |
+  | cancelled | `refund_amount += received` | *Vrácení platby* |
+  | paid (sent twice etc.) | `refund_amount += received` | *Vrácení platby* |
+
+  Reasons in *Vrácení platby* and the admin message (`REFUND_REASONS`):
+  `after_run` *platba dorazila až po představení*, `taken` *místa mezitím
+  obsadil někdo jiný*, `short` *rezervace už propadla a platba nepokrývá celou
+  částku*, `cancelled` *rezervace už byla zrušená*, `extra` *rezervace už byla
+  zaplacená, jde o platbu navíc*. Admin messages: *„Přijato X – zaplaceno.
+  [Přeplatek Y k vrácení.]“*, *„Přijato X, zbývá doplatit Y.“*, *„Přijato X,
+  rezervace obnovena – zaplaceno.“*, *„Přijato X – <reason>. K vrácení na účet
+  plátce: Y.“* + ticket/e-mail result.
 - Reminder 24 h before the due date, expiry notice after expiry (§16).
-- **Late payment** (`accept_late_payment()`, admin action `paid-late`): only
-  `expired` without `paid_at`.
-  - run not started yet: re-inserts the seats if all are free in the run
-    (else message naming the taken seats), sets `paid`, sends the ticket
-    (button *Přijmout pozdní platbu*);
-  - run already started: the reservation stays `expired`; sets `paid_at`,
-    `paid_amount = amount`, `cancel_fee = 0`, `refund_amount = amount` (shows
-    in refunds due) and sends *Platba po představení* (button *Platba po
-    představení – vrátit*).
 
 ## 10. Cancellation and refunds
 
 `cancellation_terms($r)` (in every reservation payload): `allowed` false
 (`inactive`, `checked_in`, `event_started` = run started); else `percent`
 (`storno_percent(run, now)` for paid, 0 for pending), `seatPrice`, `fee`,
-`refund` for all seats.
+`refund` for all seats (pending: the part of the price that already arrived).
 
 Storno rules (per run): before the first rule 0 %; from each rule's `from`
 its percent applies, the highest started rule wins.
@@ -328,15 +355,20 @@ its percent applies, the highest started rule wins.
 - part → `seats`, `seat_count`, `amount` reduced, `cancelled_seats` appended;
 - paid: `cancel_fee` and `refund_amount` accumulate; refunds go to the
   paying account (no account is collected);
+- pending, whole: a part of the price that already arrived → `refund_amount`;
+- pending, part: when what already arrived covers the lower price the
+  reservation becomes `paid` (`complete_if_covered()`, surplus refunded);
 - admin **Vráceno** sets `refunded_amount = refund_amount`, `refunded_at`;
   due = `refund_amount − refunded_amount`.
 
 E-mails (`send_cancellation_notice()`): paid part → *Nová vstupenka* (ticket
 e-mail with intro: cancelled seats, fee, refund line, *„Původní vstupenka už
-neplatí.“*); pending part → *Změna rezervace* (new payment details); whole →
-*Rezervace zrušena* with fee/refund line; pending whole by admin → *Rezervace
-zrušena* + *„Pokud jste platbu už odeslali, pošleme Vám ji zpět na účet, ze
-kterého přišla.“*
+neplatí.“*); pending part now fully paid → *Vstupenka* (intro: cancelled
+seats, *„Platba za zbývající místa je kompletní, rezervace je potvrzena.“*,
+surplus refund line); other pending part → *Změna rezervace* (new payment
+details); whole → *Rezervace zrušena* with fee/refund line; pending whole
+(customer or admin) additionally *„Pokud jste platbu už odeslali, pošleme Vám
+ji po připsání zpět na účet, ze kterého přišla.“*
 Refund line: *„Částku X Kč Vám do 14 dnů pošleme zpět na účet, ze kterého
 platba přišla.“*
 
@@ -394,13 +426,31 @@ platba přišla.“*
 
 ## 13. VIP guests
 
-Admin VIP tab: add (run, name, section, persons 1–50, note), delete,
-reset arrival; filter by run. Scanner VIP mode: list of the selected run
-(refresh 20 s), diacritics/word-order-insensitive search over name + note,
-section filter, **Vpustit** (records `checked_in_at`/`by`; first wins),
+VIP guests hold specific seats of a run: their rows in `reservation_seats`
+(`vip_guest_id`) make the seats taken on the public map and for reservations.
+
+Admin VIP tab, filter by run. Adding needs a run chosen in the filter (else
+*„Pro přidání VIP hosta vyberte nahoře termín – zobrazí se plánek s volnými
+místy.“*): name, note and a seat plan of all sections with checkboxes (free =
+white, held by reservations = grey, by other VIP = gold, both disabled;
+counter *Vybraná místa: N*). `add_vip_guest()` validates (name ≤ 200, note ≤
+255 → *„Vyplňte termín a jméno.“*; 1–50 valid seats → *„Vyberte na plánku 1
+až 50 míst.“*), locks the seats (`FOR UPDATE`; taken → *„Místa … už jsou
+obsazená. Vyberte jiná.“*), inserts the guest (`seats` sorted by
+`compare_seat_ids()`, `section` = first seat's, `persons` = count) and the seat
+rows: *„VIP host X přidán (N místa).“* The list shows `seat_labels()`; legacy
+guests without seats show the section and *„bez přidělených míst – odstraňte
+a přidejte znovu“*. **Odstranit** deletes the guest and frees the seats (FK
+cascade): *„VIP host odstraněn, jeho místa jsou volná.“* **Zrušit příchod**
+resets arrival.
+
+Scanner VIP mode: list of the selected run (refresh 20 s) with section,
+persons and seats (`seats` = `seat_labels()`; for one section without the
+repeated section name), diacritics/word-order-insensitive search over name +
+note, section filter, **Vpustit** (records `checked_in_at`/`by`; first wins),
 **Vrátit**; outside the window without confirmation 409 `Termín je mimo čas
 odbavení. Potvrďte odbavení mimo čas.`; empty search result *„Není na
-seznamu VIP“*. VIP guests do not hold seats.
+seznamu VIP“*.
 
 ## 14. Admin
 
@@ -408,10 +458,15 @@ seznamu VIP“*. VIP guests do not hold seats.
 POST, login rate-limited). Tabs:
 
 - **Rezervace** – cards per status (pending/paid), refunds due, per run
-  occupancy; filters run/status (incl. `refund`)/search (VS, name, e-mail,
-  seat). Actions: `paid`, `paid-late`, `ticket` (send/resend), `cancel`,
-  `cancel-seats`, `refunded`, `email` (change).
-- **VIP** – `vip-add`, `vip-delete`, `vip-reset`.
+  occupancy (VIP seats count as held); filters run/status (incl. `refund`)/
+  search (VS, name, e-mail, seat). Amount column: *přijato X* when it differs
+  from the price, *zbývá doplatit Y* for partly paid pending. Actions:
+  `payment` (§9), `ticket` (send/resend), `cancel`, `cancel-seats`,
+  `refunded`, `email` (change). Within 14 days of the GDPR deletion date and
+  while refunds are due, a warning: *„Osobní údaje se mažou <date>. U N rez.
+  zbývá vrátit peníze – jejich jméno a e-mail se smažou až po označení
+  „Vráceno“.“*
+- **VIP** – `vip-add` (with `seats[]`), `vip-delete`, `vip-reset` (§13).
 - **Pořadatelé** – `invite-save` (create / edit name+runs / new link),
   `invite-revoke`.
 - **Nastavení** – runs: `run-save` (start required, label, booking cut-off
@@ -446,20 +501,23 @@ QR as inline image `cid:ticket-qr`). All contain `Termín: <run>`.
 | --- | --- |
 | Rezervace míst | reservation created (payment details, link if `PUBLIC_URL`) |
 | Připomínka platby | cron: pending, due within 24 h, created ≥ 24 h before due, once |
-| Rezervace zrušena | cron: expired within the last 3 days, once |
-| Vstupenka | Zaplaceno / late payment / resend |
+| Rezervace zrušena | cron: expired within the last 3 days, once (refund line for money that already arrived; *„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“*) |
+| Vstupenka | recorded payment completes the price / expired restored / pending partial cancellation now covered / resend |
+| Přijata část platby | recorded payment below the price |
+| Vrácení platby | recorded payment that can't be used (§9 reasons) |
 | Nová vstupenka | partial cancellation of a paid reservation |
 | Změna rezervace | partial cancellation of a pending reservation |
 | Rezervace zrušena | whole cancellation (customer or admin) |
-| Platba po představení | admin records a late payment for a run that already started |
 
 ## 16. Scheduled jobs and GDPR
 
 `php api/cron.php`: `expire_reservations()`, `send_due_notifications()`,
 `purge_personal_data()`, `cleanup_rate_limits()`; prints a summary line.
 Purge after `last_run_start() + DATA_RETENTION_DAYS`: empties first/last
-name and e-mail of all reservations, deletes all VIP guests; VS, amounts,
-seats and statuses stay.
+name and e-mail of all reservations except those with money still to return
+(`refund_amount > refunded_amount`; they are emptied by the first cron run
+after **Vráceno**), deletes all VIP guests (their seat rows cascade); VS,
+amounts, seats and statuses stay.
 
 ## 17. Spam and abuse protection
 
@@ -489,7 +547,7 @@ seats and statuses stay.
 | GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays` |
 | GET | `altcha.php` | – | `{enabled, challenge}` (ALTCHA v2 challenge: `parameters`, `signature`) |
 | POST | `reservations.php` | `runId, firstName, lastName, email, seats[], formToken, hp, altcha` | 201 reservation payload |
-| GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount, spd}, ticket, cancellation, refunds) |
+| GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, ticket, cancellation, refunds) |
 | POST | `cancel.php` | `token, seats?` | reservation payload |
 | GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`) |
 | POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `vip-list {runId}`, `vip-checkin {id, runId, confirmOutside?}`, `vip-undo {id, runId}` | see §11–13 |

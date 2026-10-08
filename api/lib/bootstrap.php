@@ -7,6 +7,7 @@ require_once __DIR__ . '/antispam.php';
 require_once __DIR__ . '/settings.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/cancellation.php';
+require_once __DIR__ . '/payments.php';
 require_once __DIR__ . '/scanner_access.php';
 require_once __DIR__ . '/altcha.php';
 
@@ -123,8 +124,10 @@ function expire_reservations(): int
         // expires_at is the due date shown to the customer; the reservation is
         // only cancelled PAYMENT_GRACE_HOURS later, so a transfer sent on the
         // last day still arrives before the seats are released.
+        // Part of the price that already arrived goes back to the paying account.
         $stmt = $pdo->prepare(
-            "UPDATE reservations SET status = 'expired', cancelled_at = :now
+            "UPDATE reservations SET status = 'expired', cancelled_at = :now,
+               refund_amount = IF(paid_amount > 0, paid_amount, refund_amount)
              WHERE status = 'pending' AND expires_at <= :cutoff"
         );
         $now = now_utc();
@@ -170,7 +173,7 @@ function spd_string(array $r): string
         'SPD',
         '1.0',
         'ACC:' . $acc . ($bic !== '' ? '+' . $bic : ''),
-        'AM:' . number_format((float) $r['amount'], 2, '.', ''),
+        'AM:' . number_format((float) amount_due($r), 2, '.', ''),
         'CC:CZK',
         'X-VS:' . $r['variable_symbol'],
         'DT:' . (new DateTimeImmutable($r['expires_at'], new DateTimeZone('UTC')))
@@ -218,7 +221,8 @@ function reservation_payload(array $r): array
             'recipient' => (string) config('PAYMENT_RECIPIENT'),
             'variableSymbol' => $r['variable_symbol'],
             'specificSymbol' => specific_symbol() ?: null,
-            'amount' => (int) $r['amount'],
+            'amount' => amount_due($r),
+            'received' => max(0, (int) $r['paid_amount'] - (int) $r['refund_amount']),
             'currency' => 'CZK',
             'spd' => spd_string($r),
         ],

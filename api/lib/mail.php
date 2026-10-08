@@ -110,8 +110,12 @@ function run_line(array $r): string
 
 function payment_lines(array $r): array
 {
+    $lines = (int) $r['paid_amount'] > 0
+        ? ['Už jsme přijali: ' . format_czk((int) $r['paid_amount'] - (int) $r['refund_amount']) . ' z ' . format_czk((int) $r['amount'])]
+        : [];
     $lines = [
-        'Částka: ' . format_czk((int) $r['amount']),
+        ...$lines,
+        'Částka: ' . format_czk(amount_due($r)),
         'Účet: ' . config('BANK_ACCOUNT_DISPLAY') . ' (IBAN ' . config('BANK_IBAN') . ')',
         'Variabilní symbol: ' . $r['variable_symbol'],
     ];
@@ -155,8 +159,11 @@ function send_payment_email(array $r): void
 function send_reminder_email(array $r): bool
 {
     $link = reservation_link($r);
+    $missing = (int) $r['paid_amount'] > 0
+        ? 'zatím nám chybí část platby za Vaši rezervaci ('
+        : 'zatím jsme neobdrželi platbu za Vaši rezervaci (';
     return send_customer_email($r, 'Připomínka platby', array_merge(
-        ['zatím jsme neobdrželi platbu za Vaši rezervaci (' . implode('; ', seat_labels($r['seats'])) . ').', run_line($r), '', 'Platební údaje:'],
+        [$missing . implode('; ', seat_labels($r['seats'])) . ').', run_line($r), '', 'Platební údaje:'],
         payment_lines($r),
         ['', 'Pokud platba nedorazí, rezervace bude zrušena a místa uvolněna.',
          'Pokud jste již zaplatili, považujte tuto zprávu za bezpředmětnou.'],
@@ -164,14 +171,29 @@ function send_reminder_email(array $r): bool
     ));
 }
 
-/** Payment arrived after the run took place: the money will be returned. */
-function send_late_payment_refund_email(array $r): bool
+/** Part of the price arrived: what is still missing and the payment details. */
+function send_partial_payment_email(array $r, int $received): bool
 {
-    return send_customer_email($r, 'Platba po představení', [
-        'Vaše platba za rezervaci (VS ' . $r['variable_symbol'] . ') dorazila až po představení, rezervace už neplatila.',
+    $link = reservation_link($r);
+    return send_customer_email($r, 'Přijata část platby', array_merge(
+        ['přijali jsme Vaši platbu ' . format_czk($received) . ' (VS ' . $r['variable_symbol'] . '), na celou částku ale chybí '
+            . format_czk(amount_due($r)) . '.', run_line($r), '', 'Doplaťte prosím se stejným variabilním symbolem:'],
+        payment_lines($r),
+        ['', 'Vstupenku pošleme, jakmile dorazí celá částka.'],
+        $link ? ['', "QR kód pro doplatek: {$link}"] : []
+    ));
+}
+
+/** Money arrived that can't be used for the reservation ($reason: key of REFUND_REASONS); it goes back. */
+function send_payment_refund_email(array $r, int $received, string $reason): bool
+{
+    $due = (int) $r['refund_amount'] - (int) $r['refunded_amount'];
+    return send_customer_email($r, 'Vrácení platby', [
+        'přijali jsme Vaši platbu ' . format_czk($received) . ' (VS ' . $r['variable_symbol'] . '), ale '
+            . REFUND_REASONS[$reason] . '.',
         run_line($r),
         '',
-        'Částku ' . format_czk((int) $r['refund_amount']) . ' Vám do ' . (int) config('REFUND_DAYS')
+        'Částku ' . format_czk($due) . ' Vám do ' . (int) config('REFUND_DAYS')
             . ' dnů pošleme zpět na účet, ze kterého platba přišla.',
     ]);
 }
@@ -182,9 +204,12 @@ function send_expiry_email(array $r): bool
     return send_customer_email($r, 'Rezervace zrušena', array_merge(
         ['platba za Vaši rezervaci (VS ' . $r['variable_symbol'] . ') nedorazila včas, proto byla rezervace zrušena a místa uvolněna:',
          implode('; ', seat_labels($r['seats'])) . '.',
-         run_line($r),
-         '',
-         'Pokud jste platbu přesto odeslali, ozvěte se nám prosím – vyřešíme to.'],
+         run_line($r)],
+        (int) $r['refund_amount'] > (int) $r['refunded_amount']
+            ? ['', 'Částku ' . format_czk((int) $r['refund_amount'] - (int) $r['refunded_amount']) . ', která už dorazila, Vám do '
+                . (int) config('REFUND_DAYS') . ' dnů pošleme zpět na účet, ze kterého platba přišla.']
+            : [],
+        ['', 'Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.'],
         $base !== '' ? ['', "Nová rezervace: {$base}/"] : []
     ));
 }

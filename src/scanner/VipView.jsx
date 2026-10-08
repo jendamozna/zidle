@@ -120,6 +120,12 @@ export default function VipView({ runId, confirmOutside, onUnauthorized }) {
                 <span className="vip-section">{SECTION_BY_ID[v.section]?.name ?? v.section}</span>
                 <span>{personsLabel(v.persons)}</span>
               </span>
+              {v.seats?.length > 0 && (
+                <span className="vip-seats small">
+                  {/* One section: its name is already shown above. */}
+                  {v.seats.length === 1 ? v.seats[0].replace(/^[^:]+:\s*/, '') : v.seats.join(' · ')}
+                </span>
+              )}
               {v.note && <span className="muted small">{v.note}</span>}
             </div>
             {v.checkedInAt ? (

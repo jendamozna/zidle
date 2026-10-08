@@ -127,9 +127,9 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <h3>Účetní / správce</h3>
         <span class="where">správa · počítač</span>
         <ul>
-          <li>kontroluje platby ve výpisu a potvrzuje je</li>
+          <li>kontroluje platby ve výpisu a zapisuje, kolik skutečně přišlo</li>
           <li>vrací peníze při zrušení</li>
-          <li>zakládá představení, storno podmínky a VIP hosty</li>
+          <li>zakládá představení, storno podmínky a VIP hosty s konkrétními místy</li>
           <li>posílá pozvánky pořadatelům u vchodu</li>
         </ul>
       </article>
@@ -186,17 +186,17 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <figure><div class="phone"><img src="11-scanner-uz-odbaveno.jpg" alt="Vstupenka už použita" width="585" height="1266" loading="lazy"></div>
         <figcaption><strong>Už odbaveno</strong>Druhé načtení stejné vstupenky ukáže, kdy prošla poprvé.</figcaption></figure>
       <figure><div class="phone"><img src="12-scanner-vip.jpg" alt="Seznam VIP hostů" width="585" height="1266" loading="lazy"></div>
-        <figcaption><strong>VIP hosté</strong>Vyhledání podle jména a tlačítko Vpustit.</figcaption></figure>
+        <figcaption><strong>VIP hosté</strong>Vyhledání podle jména, u každého hosta jeho místa a tlačítko Vpustit.</figcaption></figure>
     </div>
 
     <div class="group-head"><h3>Účetní / správce</h3><span class="where">počítač · správa</span></div>
     <div class="screens-wide">
       <figure><div class="desktop"><img src="13-admin-rezervace.jpg" alt="Seznam rezervací" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>Rezervace</strong>Obsazenost představení, vyhledávání podle VS nebo jména, potvrzení platby, zrušení, vracení peněz.</figcaption></figure>
+        <figcaption><strong>Rezervace</strong>Obsazenost představení, vyhledávání podle VS nebo jména, zápis přijaté částky, zrušení, vracení peněz.</figcaption></figure>
       <figure><div class="desktop"><img src="15-admin-poradatele.jpg" alt="Pozvánky pořadatelů" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>Pořadatelé</strong>Pozvánky pro mobily u vchodu, vždy jen na vybraná představení. Přístup lze kdykoli zrušit.</figcaption></figure>
       <figure><div class="desktop"><img src="14-admin-vip.jpg" alt="VIP hosté" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>VIP hosté</strong>Seznam hostů zdarma pro každé představení. Je vidět, kdo už přišel.</figcaption></figure>
+        <figcaption><strong>VIP hosté</strong>Hosté zdarma pro každé představení. Místa se vybírají na plánku – šedá obsadily rezervace, zlatá jiní VIP. Je vidět, kdo už přišel.</figcaption></figure>
       <figure><div class="desktop"><img src="16-admin-terminy.jpg" alt="Nastavení představení" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>Představení a storno</strong>Datum a čas každého představení a jeho storno poplatky. Po první rezervaci jsou zamčené.</figcaption></figure>
     </div>
@@ -206,16 +206,17 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
     <h2 id="rules">Důležitá pravidla</h2>
     <div class="rules">
       <div class="rule"><strong>Kdo nezaplatí, přijde o místa</strong><p>Na platbu jsou 3 dny (nejpozději do začátku představení). Den předem přijde připomínka. Když platba nedorazí ani 2 dny po splatnosti, místa se uvolní.</p></div>
-      <div class="rule"><strong>Platby potvrzuje člověk</strong><p>Aplikace není napojená na banku. Účetní páruje platby podle variabilního symbolu, vstupenka proto přijde až po potvrzení.</p></div>
+      <div class="rule"><strong>Platby potvrzuje člověk</strong><p>Aplikace není napojená na banku. Účetní páruje platby podle variabilního symbolu a zapíše, kolik skutečně přišlo. Vstupenka proto přijde až po potvrzení.</p></div>
+      <div class="rule"><strong>Málo nebo moc peněz</strong><p>Když přijde méně, návštěvník dostane e-mail, kolik má doplatit, a vstupenka přijde po doplacení. Přeplatek se vrací na účet, ze kterého platba přišla.</p></div>
       <div class="rule"><strong>Zrušení a storno</strong><p>Návštěvník ruší sám přes odkaz z e-mailu, celou rezervaci i jednotlivá místa. Poplatek podle storno podmínek představení, zbytek se do 14 dnů vrátí na účet, ze kterého platba přišla.</p></div>
       <div class="rule"><strong>Vstupenku nejde padělat</strong><p>QR kód je elektronicky podepsaný. Pořadatel vždy vidí aktuální stav: zaplaceno, zrušeno nebo už prošel.</p></div>
       <div class="rule"><strong>Vstupenka platí jen na své představení</strong><p>Kdo přijde jiný den, scanner ukáže „Jiný termín“ a dotyčného nepustí jako odbaveného.</p></div>
       <div class="rule"><strong>Odbavení jen v pravý čas</strong><p>Od hodiny před do hodiny po začátku představení. Jindy scanner varuje, aby se omylem neodbavovalo jiné představení.</p></div>
       <div class="rule"><strong>Čas a storno podmínky se nemění</strong><p>Jakmile má představení první rezervaci, nelze už změnit jeho začátek ani storno podmínky – platí to, za co si lidé místa koupili.</p></div>
-      <div class="rule"><strong>Platba po představení</strong><p>Když peníze dorazí až po představení, rezervace se neobnoví. Účetní platbu zaznamená k vrácení a návštěvník dostane e-mail.</p></div>
-      <div class="rule"><strong>VIP hosté</strong><p>Neplatí a nemají vstupenku. Pořadatel je najde na seznamu podle jména.</p></div>
+      <div class="rule"><strong>Platba, která už nejde použít</strong><p>Peníze po propadnutí rezervace ji obnoví, pokud představení ještě nezačalo a místa jsou volná. Jinak – a také u zrušené rezervace nebo platby poslané dvakrát – se peníze vrací na účet plátce a návštěvník dostane e-mail.</p></div>
+      <div class="rule"><strong>VIP hosté</strong><p>Neplatí a nemají vstupenku, ale mají přidělená konkrétní místa – na webu se ukazují jako obsazená. Pořadatel je najde na seznamu podle jména.</p></div>
       <div class="rule"><strong>Ochrana proti robotům</strong><p>Formulář chrání neviditelná kontrola – návštěvník nic nevyplňuje ani nevybírá obrázky, prohlížeč se ověří sám na pozadí.</p></div>
-      <div class="rule"><strong>Ochrana osobních údajů</strong><p>Ukládá se jen jméno a e-mail. 30 dní po posledním představení se automaticky smažou.</p></div>
+      <div class="rule"><strong>Ochrana osobních údajů</strong><p>Ukládá se jen jméno a e-mail. 30 dní po posledním představení se automaticky smažou – u rezervací, kde se ještě vrací peníze, až po jejich vrácení.</p></div>
     </div>
   </section>
 
@@ -226,7 +227,7 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <li>Přístup k odesílání e-mailů (SMTP): server, port, e-mailová adresa odesílatele a její heslo.</li>
       <li>Kontaktní e-mail a telefon pořadatelů – zobrazí se na webu a v každém e-mailu, odpovědi na e-maily půjdou na tento kontakt.</li>
       <li>Data a časy všech představení a jejich storno podmínky – musí být hotové před spuštěním prodeje, po první rezervaci je už nelze změnit.</li>
-      <li>Seznam VIP hostů pro každé představení.</li>
+      <li>Seznam VIP hostů pro každé představení a jejich místa.</li>
       <li>Jména pořadatelů u vchodu a na která představení přijdou (dostanou pozvánku).</li>
       <li>Kdo bude potvrzovat platby a vracet peníze.</li>
       <li>Zkušební rezervace „naostro“: rezervace → platba → vstupenka → načtení u vchodu.</li>

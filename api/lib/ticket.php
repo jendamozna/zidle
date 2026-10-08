@@ -99,7 +99,11 @@ function qr_png(string $text, int $scale = 8): string
  * the message was handed over to the mail system. $intro replaces the default
  * "payment received" text (used for a new ticket after seats were cancelled).
  */
-function send_ticket_email(array $r, array $intro = []): bool
+/**
+ * $intro replaces the default first paragraph; $subject defaults to "Nová vstupenka"
+ * with an intro (replacement ticket) and "Vstupenka" without.
+ */
+function send_ticket_email(array $r, array $intro = [], ?string $subject = null): bool
 {
     if ($r['email'] === '') {
         return false;
@@ -141,7 +145,7 @@ function send_ticket_email(array $r, array $intro = []): bool
         . (contact_line() !== '' ? '<br>' . $h(contact_line()) : '') . '</p>'
         . '</div></body></html>';
 
-    $subject = ($intro ? 'Nová vstupenka' : 'Vstupenka') . ' – Moje židle 2026';
+    $subject = ($subject ?? ($intro ? 'Nová vstupenka' : 'Vstupenka')) . ' – Moje židle 2026';
     $ok = deliver_mail($r['email'], $subject, $text, $html, [
         ['cid' => 'ticket-qr', 'data' => $png, 'name' => 'vstupenka.png', 'type' => 'image/png'],
     ]);

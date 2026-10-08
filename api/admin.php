@@ -135,21 +135,15 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run
 if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-delete', 'vip-reset'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     if ($action === 'vip-add') {
-        $name = trim(preg_replace('/\s+/u', ' ', (string) ($_POST['name'] ?? '')));
-        $section = (string) ($_POST['section'] ?? '');
-        $runId = (int) ($_POST['run_id'] ?? 0);
-        $persons = max(1, min(50, (int) ($_POST['persons'] ?? 1)));
-        $note = trim((string) ($_POST['note'] ?? ''));
-        if ($name === '' || mb_strlen($name) > 200 || !isset(SECTIONS[$section]) || mb_strlen($note) > 255 || !run_by_id($runId)) {
-            $flash = 'Vyplňte termín, jméno a sekci.';
-        } else {
-            db()->prepare('INSERT INTO vip_guests (run_id, name, section, persons, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-                ->execute([$runId, $name, $section, $persons, $note, db_time(now_utc())]);
-            $flash = "VIP host {$name} přidán.";
-        }
+        $flash = add_vip_guest(
+            (int) ($_POST['run_id'] ?? 0),
+            trim(preg_replace('/\s+/u', ' ', (string) ($_POST['name'] ?? ''))),
+            array_values(array_unique(array_map('strval', (array) ($_POST['seats'] ?? [])))),
+            trim((string) ($_POST['note'] ?? ''))
+        );
     } elseif ($action === 'vip-delete') {
         db()->prepare('DELETE FROM vip_guests WHERE id = ?')->execute([$id]);
-        $flash = 'VIP host odstraněn.';
+        $flash = 'VIP host odstraněn, jeho místa jsou volná.';
     } else {
         db()->prepare('UPDATE vip_guests SET checked_in_at = NULL WHERE id = ?')->execute([$id]);
         $flash = 'Příchod zrušen.';
@@ -159,15 +153,11 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-
     exit;
 }
 
-if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-late', 'cancel', 'cancel-seats', 'ticket', 'email', 'refunded'], true)) {
+if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['payment', 'cancel', 'cancel-seats', 'ticket', 'email', 'refunded'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     $now = db_time(now_utc());
-    if ($action === 'paid') {
-        $stmt = db()->prepare("UPDATE reservations SET status = 'paid', paid_at = ?, paid_amount = amount WHERE id = ? AND status = 'pending'");
-        $stmt->execute([$now, $id]);
-        $flash = $stmt->rowCount() ? 'Platba potvrzena.' . send_ticket_for($id) : 'Rezervaci nelze označit jako zaplacenou.';
-    } elseif ($action === 'paid-late') {
-        $flash = accept_late_payment($id);
+    if ($action === 'payment') {
+        $flash = record_payment($id, (int) ($_POST['received'] ?? 0));
     } elseif ($action === 'email') {
         $email = trim((string) ($_POST['email'] ?? ''));
         if (mb_strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -202,53 +192,41 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-la
 $flash = $_SESSION['flash'] ?? null;
 
 /**
- * Payment arrived after the reservation expired: restore it as paid if all
- * its seats are still free, otherwise report which seats were taken meanwhile.
- * When the run has already started, the reservation is not restored; the
- * payment is recorded as received and due for refund, and the customer is e-mailed.
+ * Adds a VIP guest holding the given seats of the run (free of charge). The seats
+ * show as taken on the public map; fails when one of them is no longer free.
  */
-function accept_late_payment(int $id): string
+function add_vip_guest(int $runId, string $name, array $seats, string $note): string
 {
+    if ($name === '' || mb_strlen($name) > 200 || mb_strlen($note) > 255 || !run_by_id($runId)) {
+        return 'Vyplňte termín a jméno.';
+    }
+    if (!$seats || count($seats) > 50 || array_filter($seats, static fn ($s) => !is_valid_seat_id($s))) {
+        return 'Vyberte na plánku 1 až 50 míst.';
+    }
+    usort($seats, 'compare_seat_ids');
     $pdo = db();
     $pdo->beginTransaction();
-    $stmt = $pdo->prepare("SELECT * FROM reservations WHERE id = ? AND status = 'expired' FOR UPDATE");
-    $stmt->execute([$id]);
-    $r = $stmt->fetch();
-    if (!$r) {
-        $pdo->rollBack();
-        return 'Rezervaci nelze obnovit.';
-    }
-    $run = run_by_id((int) $r['run_id']);
-    if ($run === null || run_started($run)) {
-        $pdo->prepare(
-            'UPDATE reservations SET paid_at = ?, paid_amount = amount, cancel_fee = 0,
-               refund_amount = amount, refunded_amount = 0, refunded_at = NULL WHERE id = ?'
-        )->execute([db_time(now_utc()), $id]);
+    try {
+        $placeholders = implode(',', array_fill(0, count($seats), '?'));
+        $taken = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE run_id = ? AND seat_id IN ($placeholders) FOR UPDATE");
+        $taken->execute([$runId, ...$seats]);
+        if ($conflict = $taken->fetchAll(PDO::FETCH_COLUMN)) {
+            $pdo->rollBack();
+            return 'Místa ' . implode(', ', $conflict) . ' už jsou obsazená. Vyberte jiná.';
+        }
+        $pdo->prepare('INSERT INTO vip_guests (run_id, name, section, seats, persons, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$runId, $name, explode('-', $seats[0])[0], implode(',', $seats), count($seats), $note, db_time(now_utc())]);
+        $vipId = (int) $pdo->lastInsertId();
+        $insert = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, vip_guest_id) VALUES (?, ?, ?)');
+        foreach ($seats as $seat) {
+            $insert->execute([$runId, $seat, $vipId]);
+        }
         $pdo->commit();
-        $stmt = db()->prepare('SELECT * FROM reservations WHERE id = ?');
-        $stmt->execute([$id]);
-        $r = $stmt->fetch();
-        $mailed = send_late_payment_refund_email($r);
-        return 'Představení už proběhlo – platba zaznamenána k vrácení (' . format_czk((int) $r['refund_amount']) . ').'
-            . ($mailed ? ' Zákazník dostal e-mail.' : '');
-    }
-    $seats = explode(',', $r['seats']);
-    $placeholders = implode(',', array_fill(0, count($seats), '?'));
-    $taken = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE run_id = ? AND seat_id IN ($placeholders) FOR UPDATE");
-    $taken->execute([$r['run_id'], ...$seats]);
-    $conflict = $taken->fetchAll(PDO::FETCH_COLUMN);
-    if ($conflict) {
+    } catch (Throwable $e) {
         $pdo->rollBack();
-        return 'Místa ' . implode(', ', $conflict) . ' už mezitím obsadil někdo jiný. Platbu je nutné vrátit nebo domluvit jiná místa.';
+        throw $e;
     }
-    $insert = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, reservation_id) VALUES (?, ?, ?)');
-    foreach ($seats as $seat) {
-        $insert->execute([$r['run_id'], $seat, $id]);
-    }
-    $pdo->prepare("UPDATE reservations SET status = 'paid', paid_at = ?, paid_amount = amount, cancelled_at = NULL WHERE id = ?")
-        ->execute([db_time(now_utc()), $id]);
-    $pdo->commit();
-    return 'Pozdní platba přijata, rezervace obnovena.' . send_ticket_for($id);
+    return "VIP host {$name} přidán (" . count($seats) . ' ' . (count($seats) === 1 ? 'místo' : (count($seats) < 5 ? 'místa' : 'míst')) . ').';
 }
 
 /** True once any reservation (in any status) exists for the run. */
@@ -259,30 +237,6 @@ function run_has_reservations(int $runId): bool
     return (bool) $stmt->fetchColumn();
 }
 
-/** Sends the ticket e-mail for a paid reservation; returns a message for the flash. */
-function send_ticket_for(int $id): string
-{
-    $stmt = db()->prepare("SELECT * FROM reservations WHERE id = ? AND status = 'paid'");
-    $stmt->execute([$id]);
-    $r = $stmt->fetch();
-    if (!$r) {
-        return '';
-    }
-    if (!filter_var(config('MAIL_ENABLED'), FILTER_VALIDATE_BOOLEAN)) {
-        return ' E-maily jsou vypnuté (MAIL_ENABLED), vstupenka nebyla odeslána.';
-    }
-    try {
-        $sent = send_ticket_email($r);
-    } catch (Throwable $e) {
-        error_log('[zidle] ' . $e);
-        $sent = false;
-    }
-    if (!$sent) {
-        return ' Vstupenku se nepodařilo odeslat.';
-    }
-    db()->prepare('UPDATE reservations SET ticket_sent_at = ? WHERE id = ?')->execute([db_time(now_utc()), $id]);
-    return ' Vstupenka odeslána na ' . $r['email'] . '.';
-}
 unset($_SESSION['flash']);
 
 $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expired' => 'Propadlo', 'cancelled' => 'Zrušeno'];
@@ -321,6 +275,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .seats { max-width:260px; font-size:.85rem; color:var(--ink-2); }
   .actions { display:flex; gap:6px; flex-wrap:wrap; } .actions form { margin:0; }
   .flash { margin-bottom:16px; padding:10px 14px; border-radius:10px; background:#dcefd9; color:#1f5a2c; }
+  .flash.warn { background:#f9e4b7; color:#6d4a04; }
+  .pay-form { display:flex; gap:6px; align-items:center; margin:0; }
+  .pay-form input[type=number] { width:96px; padding:6px 8px; }
+  details .pay-form { margin-top:6px; }
   .error { color:#8f2a20; }
   .tabs { display:flex; gap:4px; padding:4px; border-radius:999px; background:#efe9df; margin-right:auto; }
   .tabs a { padding:6px 16px; border-radius:999px; color:var(--ink-2); text-decoration:none; font-weight:600; }
@@ -328,7 +286,20 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .vip-form { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
   .vip-form label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; font-weight:600; color:var(--ink-2); }
   .vip-form label.grow { flex:1 1 200px; }
-  .vip-form input[name=persons] { width:80px; }
+  .vip-add { margin-bottom:16px; }
+  .vip-add .vip-form { margin-bottom:8px; }
+  .vip-map { display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; }
+  .vip-section { border:1px solid var(--wall); border-radius:12px; padding:8px 10px; margin:0; }
+  .vip-section legend { font-size:.8rem; font-weight:600; color:var(--ink-2); padding:0 4px; }
+  .vip-row { display:flex; gap:3px; align-items:center; margin-bottom:3px; }
+  .vip-row-label { width:18px; font-size:.7rem; color:var(--ink-2); text-align:right; margin-right:3px; }
+  .vip-seat { position:relative; cursor:pointer; }
+  .vip-seat input { position:absolute; opacity:0; pointer-events:none; }
+  .vip-seat span { display:grid; place-items:center; width:24px; height:24px; border-radius:6px; border:1px solid var(--wall); background:#fff; font-size:.7rem; }
+  .vip-seat input:checked + span { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+  .vip-seat input:focus-visible + span { outline:2px solid var(--accent); outline-offset:1px; }
+  .vip-seat.is-taken span { background:#e4dccf; color:#a59a8a; border-color:#e4dccf; cursor:not-allowed; }
+  .vip-seat.is-vip span { background:#f1d98f; color:#7a5d0c; border-color:#f1d98f; cursor:not-allowed; }
   .edit-email summary { cursor:pointer; font-size:.78rem; color:var(--ink-2); margin-top:2px; }
   .edit-email form { display:flex; gap:6px; margin-top:6px; }
   .edit-email input { width:200px; padding:4px 8px; }
@@ -573,30 +544,58 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     </select>
   </form>
 
-  <form class="card vip-form" method="post">
+  <?php if ($runFilter && ($vipRun = run_by_id($runFilter))):
+      $heldStmt = db()->prepare('SELECT seat_id, vip_guest_id FROM reservation_seats WHERE run_id = ?');
+      $heldStmt->execute([$runFilter]);
+      $held = $heldStmt->fetchAll(PDO::FETCH_KEY_PAIR); ?>
+  <form class="card vip-add" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <input type="hidden" name="action" value="vip-add">
-    <label>Termín<select name="run_id" required>
-      <?php foreach (runs() as $run): ?><option value="<?= (int) $run['id'] ?>" <?= $runFilter === $run['id'] ? 'selected' : '' ?>><?= $h(run_label($run)) ?></option><?php endforeach ?>
-    </select></label>
-    <label>Jméno<input name="name" required maxlength="200" placeholder="Jméno a příjmení"></label>
-    <label>Sekce<select name="section" required>
-      <?php foreach (SECTIONS as $id => $def): ?><option value="<?= $h($id) ?>"><?= $h($def['name']) ?></option><?php endforeach ?>
-    </select></label>
-    <label>Osob<input name="persons" type="number" min="1" max="50" value="1" required></label>
-    <label class="grow">Poznámka<input name="note" maxlength="255" placeholder="nepovinné"></label>
-    <button>Přidat VIP</button>
+    <input type="hidden" name="run_id" value="<?= (int) $runFilter ?>">
+    <div class="vip-form">
+      <label>Jméno<input name="name" required maxlength="200" placeholder="Jméno a příjmení"></label>
+      <label class="grow">Poznámka<input name="note" maxlength="255" placeholder="nepovinné"></label>
+      <span class="hint">Vybraná místa: <strong id="vip-count">0</strong></span>
+      <button>Přidat VIP</button>
+    </div>
+    <p class="hint">Vyberte místa na plánku (<?= $h(run_label($vipRun)) ?>). Šedá jsou obsazená rezervacemi, zlatá jinými VIP hosty. Místa VIP se na webu zobrazí jako obsazená.</p>
+    <div class="vip-map">
+      <?php foreach (SECTIONS as $sid => $def): ?>
+        <fieldset class="vip-section"><legend><?= $h($def['name']) ?></legend>
+          <?php for ($row = 1; $row <= $def['rows']; $row++): ?>
+            <div class="vip-row"><span class="vip-row-label"><?= $row ?></span>
+              <?php for ($seat = 1; $seat <= $def['seats']; $seat++):
+                  $seatId = "{$sid}-{$row}-{$seat}";
+                  $isHeld = array_key_exists($seatId, $held);
+                  $cls = $isHeld ? ($held[$seatId] !== null ? 'is-vip' : 'is-taken') : ''; ?>
+                <label class="vip-seat <?= $cls ?>" title="<?= $h($seatId) ?>"><input type="checkbox" name="seats[]" value="<?= $h($seatId) ?>" <?= $isHeld ? 'disabled' : '' ?>><span><?= $seat ?></span></label>
+              <?php endfor ?>
+            </div>
+          <?php endfor ?>
+        </fieldset>
+      <?php endforeach ?>
+    </div>
   </form>
+  <script>
+    document.querySelector('.vip-map').addEventListener('change', () => {
+      document.getElementById('vip-count').textContent = document.querySelectorAll('.vip-map input:checked').length;
+    });
+  </script>
+  <?php else: ?>
+  <p class="card hint">Pro přidání VIP hosta vyberte nahoře termín – zobrazí se plánek s volnými místy.</p>
+  <?php endif ?>
 
   <div class="card table">
     <table>
-      <thead><tr><th>Termín</th><th>Jméno</th><th>Sekce</th><th>Osob</th><th>Poznámka</th><th>Příchod</th><th></th></tr></thead>
+      <thead><tr><th>Termín</th><th>Jméno</th><th>Místa</th><th>Osob</th><th>Poznámka</th><th>Příchod</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($vips as $v): ?>
         <tr>
           <td><?= ($vr = run_by_id((int) $v['run_id'])) ? $h(run_label($vr)) : '–' ?></td>
           <td><strong><?= $h($v['name']) ?></strong></td>
-          <td><?= $h(SECTIONS[$v['section']]['name'] ?? $v['section']) ?></td>
+          <td class="seats"><?= $v['seats'] !== ''
+              ? implode('<br>', array_map($h, seat_labels($v['seats'])))
+              : $h(SECTIONS[$v['section']]['name'] ?? $v['section']) . '<br><small class="overdue">bez přidělených míst – odstraňte a přidejte znovu</small>' ?></td>
           <td><?= (int) $v['persons'] ?></td>
           <td><?= $h($v['note']) ?></td>
           <td><?= $v['checked_in_at'] ? '<span class="badge s-paid">' . $h($fmt($v['checked_in_at'])) . '</span>' . ($v['checked_in_by'] ? '<br><small>' . $h($v['checked_in_by']) . '</small>' : '') : '' ?></td>
@@ -609,7 +608,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                   <button class="secondary" name="action" value="vip-reset">Zrušit příchod</button>
                 </form>
               <?php endif ?>
-              <form method="post" onsubmit="return confirm('Odstranit VIP hosta?')">
+              <form method="post" onsubmit="return confirm('Odstranit VIP hosta a uvolnit jeho místa?')">
                 <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                 <input type="hidden" name="id" value="<?= (int) $v['id'] ?>">
                 <button class="danger" name="action" value="vip-delete">Odstranit</button>
@@ -633,6 +632,11 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <a class="card attention" href="admin.php?status=refund">K vrácení<strong><?= $kc($refunds['amount']) ?></strong><?= (int) $refunds['n'] ?> rez.</a>
     <?php endif ?>
   </div>
+
+  <?php $deleteAt = data_deletion_at();
+  if ($refunds['n'] > 0 && $deleteAt !== null && now_utc() > $deleteAt->modify('-14 days')): ?>
+    <div class="flash warn">Osobní údaje se mažou <?= $h(format_prague(db_time($deleteAt))) ?>. U <?= (int) $refunds['n'] ?> rez. zbývá vrátit peníze – jejich jméno a e-mail se smažou až po označení „Vráceno“.</div>
+  <?php endif ?>
 
   <?php $perRun = db()->query("SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id")->fetchAll(PDO::FETCH_KEY_PAIR); ?>
   <div class="stats">
@@ -689,7 +693,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
               </details>
             <?php endif ?></td>
           <td><?= $kc($r['amount']) ?>
-            <?php if ($r['paid_amount'] !== null && (int) $r['paid_amount'] !== (int) $r['amount']): ?><br><small>přijato <?= $kc($r['paid_amount']) ?></small><?php endif ?></td>
+            <?php if ($r['paid_amount'] !== null && (int) $r['paid_amount'] !== (int) $r['amount']): ?><br><small>přijato <?= $kc($r['paid_amount']) ?></small><?php endif ?>
+            <?php if ($r['status'] === 'pending' && (int) $r['paid_amount'] > 0): ?><br><small class="overdue">zbývá doplatit <?= $kc(amount_due($r)) ?></small><?php endif ?></td>
           <td><span class="badge s-<?= $h($r['status']) ?>"><?= $h($statusLabels[$r['status']]) ?></span>
             <?php if ($r['paid_at']): ?><br><small>zaplaceno <?= $h($fmt($r['paid_at'])) ?></small><?php endif ?>
             <?php if ($r['ticket_sent_at']): ?><br><small>vstupenka <?= $h($fmt($r['ticket_sent_at'])) ?></small><?php endif ?>
@@ -706,10 +711,11 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td>
             <div class="actions">
               <?php if ($r['status'] === 'pending'): ?>
-                <form method="post">
+                <form method="post" class="pay-form" title="Zadejte částku, která skutečně přišla na účet">
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
-                  <button name="action" value="paid">Zaplaceno</button>
+                  <input type="number" name="received" min="1" max="1000000" value="<?= amount_due($r) ?>" required aria-label="Přijatá částka v Kč"> Kč
+                  <button name="action" value="payment">Zaplaceno</button>
                 </form>
               <?php endif ?>
               <?php if ($r['refund_amount'] > $r['refunded_amount']): ?>
@@ -719,15 +725,17 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                   <button name="action" value="refunded">Vráceno</button>
                 </form>
               <?php endif ?>
-              <?php if ($r['status'] === 'expired' && $r['paid_at'] === null):
-                  $afterRun = ($lr = run_by_id((int) $r['run_id'])) === null || run_started($lr); ?>
-                <form method="post" onsubmit="return confirm('<?= $afterRun
-                    ? 'Platba dorazila po představení. Zaznamenat ji k vrácení a poslat zákazníkovi e-mail?'
-                    : 'Platba dorazila po splatnosti. Obnovit rezervaci jako zaplacenou?' ?>')">
-                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-                  <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
-                  <button class="secondary" name="action" value="paid-late"><?= $afterRun ? 'Platba po představení – vrátit' : 'Přijmout pozdní platbu' ?></button>
-                </form>
+              <?php if ($r['status'] !== 'pending'): ?>
+                <details class="edit-email"><summary>přišla platba</summary>
+                  <form method="post" class="pay-form" onsubmit="return confirm('<?= $r['status'] === 'expired'
+                      ? 'Zapsat platbu? Pokud představení ještě nezačalo, částka stačí a místa jsou volná, rezervace se obnoví jako zaplacená. Jinak bude platba k vrácení a zákazník dostane e-mail.'
+                      : 'Zapsat platbu? Rezervace je ' . ($r['status'] === 'paid' ? 'už zaplacená' : 'zrušená') . ' – platba bude k vrácení na účet plátce a zákazník dostane e-mail.' ?>')">
+                    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                    <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                    <input type="number" name="received" min="1" max="1000000" value="<?= $r['status'] === 'expired' ? amount_due($r) : (int) $r['amount'] ?>" required aria-label="Přijatá částka v Kč"> Kč
+                    <button class="secondary" name="action" value="payment">Zapsat platbu</button>
+                  </form>
+                </details>
               <?php endif ?>
               <?php if ($r['status'] === 'paid'): ?>
                 <form method="post">
