@@ -14,7 +14,7 @@ return (static function (): array {
         'PAYMENT_DEADLINE_HOURS' => 72,  // due date shown to the customer
         'PAYMENT_GRACE_HOURS' => 48,     // unpaid reservations are cancelled this long after the due date (bank transfer delay)
         'REFUND_DAYS' => 14,             // refunds are promised within this many days (e-mails)
-        'DATA_RETENTION_DAYS' => 30,     // personal data is deleted this many days after the event (event date is set in admin)
+        'DATA_RETENTION_DAYS' => 30,     // personal data is deleted this many days after the start of the last run
         'MAX_SEATS_PER_RESERVATION' => 20,
 
         // Spam / bot protection

@@ -1,0 +1,234 @@
+<title>Jak funguje Moje židle 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: one reading column; screens shown as phone frames (wrapping grid) and desktop frames. Mobile-first. */
+:root {
+  --bg: #f5f1ea;
+  --surface: #fffdf9;
+  --surface-2: #efe9df;
+  --line: #e2d9cb;
+  --fg: #2b2620;
+  --fg-2: #6b6256;
+  --accent: #8a5a2b;
+  --accent-soft: #f3e6d6;
+  --ok: #2f7a43;
+  --ok-soft: #dcefd9;
+  --warn-soft: #f9e4b7;
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1c1915; --surface: #25211c; --surface-2: #2e2923; --line: #3a342c;
+    --fg: #ece5da; --fg-2: #b3a898; --accent: #d9a46c; --accent-soft: #3a2e22;
+    --ok: #8fd19e; --ok-soft: #22362a; --warn-soft: #3d3220;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1c1915; --surface: #25211c; --surface-2: #2e2923; --line: #3a342c;
+  --fg: #ece5da; --fg-2: #b3a898; --accent: #d9a46c; --accent-soft: #3a2e22;
+  --ok: #8fd19e; --ok-soft: #22362a; --warn-soft: #3d3220;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font-body); }
+.page { max-width: 1080px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 72px; display: flex; flex-direction: column; gap: 56px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+h1 { font: 600 clamp(2.1rem, 7vw, 3.2rem)/1.05 var(--font-display); letter-spacing: -.01em; }
+h1 span, .accent { color: var(--accent); }
+h2 { font: 600 clamp(1.5rem, 4.5vw, 2rem)/1.15 var(--font-display); }
+h3 { font: 600 1.1rem/1.3 var(--font-body); }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); }
+.lead { font-size: 1.12rem; color: var(--fg-2); }
+section { display: flex; flex-direction: column; gap: 20px; }
+header.hero { display: flex; flex-direction: column; gap: 14px; }
+
+/* the journey */
+.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; counter-reset: step; }
+.flow li { counter-increment: step; display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); gap: 4px 14px; padding: 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.flow li::before { content: counter(step); grid-row: span 2; width: 2.4rem; height: 2.4rem; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--surface); font: 600 1.1rem var(--font-display); }
+.flow strong { font-size: 1.02rem; }
+.flow span { color: var(--fg-2); font-size: .95rem; }
+@media (min-width: 760px) { .flow { grid-template-columns: repeat(5, minmax(0, 1fr)); } .flow li { grid-template-columns: minmax(0, 1fr); } .flow li::before { grid-row: auto; } }
+
+/* roles */
+.roles { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@media (min-width: 640px) { .roles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.role { padding: 18px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.role .where { font-size: .8rem; font-weight: 600; color: var(--accent); }
+.role ul { margin: 0; padding-left: 1.1em; color: var(--fg-2); font-size: .95rem; }
+
+/* screens */
+.screens { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 22px 18px; }
+figure { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.phone { border-radius: 26px; padding: 8px; background: var(--surface-2); border: 1px solid var(--line); }
+.phone img { display: block; width: 100%; height: auto; border-radius: 18px; }
+.desktop { border-radius: 14px; padding: 26px 8px 8px; background: var(--surface-2); border: 1px solid var(--line); position: relative; }
+.desktop::before { content: ''; position: absolute; top: 10px; left: 12px; width: 42px; height: 8px; border-radius: 4px;
+  background: radial-gradient(circle at 4px 4px, var(--line) 3.5px, transparent 4px) 0 0 / 14px 8px repeat-x; }
+.desktop img { display: block; width: 100%; height: auto; border-radius: 6px; }
+figcaption { font-size: .92rem; color: var(--fg-2); }
+figcaption strong { display: block; color: var(--fg); font-size: 1rem; margin-bottom: 2px; }
+.screens-wide { display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; }
+@media (min-width: 900px) { .screens-wide { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding-top: 6px; border-top: 1px solid var(--line); }
+.group-head .where { font-size: .85rem; color: var(--fg-2); }
+
+/* rules */
+.rules { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+@media (min-width: 700px) { .rules { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rule { padding: 14px 16px; border-radius: 14px; background: var(--surface); border-left: 4px solid var(--accent); }
+.rule strong { display: block; margin-bottom: 2px; }
+.rule p { color: var(--fg-2); font-size: .95rem; }
+
+.checklist { list-style: none; margin: 0; padding: 18px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+.checklist li { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); gap: 10px; }
+.checklist li::before { content: ''; width: 1.1rem; height: 1.1rem; margin-top: .2rem; border-radius: 5px; border: 2px solid var(--accent); }
+.note { padding: 14px 16px; border-radius: 14px; background: var(--warn-soft); font-size: .95rem; }
+footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+
+<div class="page">
+  <header class="hero">
+    <span class="eyebrow">Přehled pro pořadatele a farnost</span>
+    <h1>Jak funguje <span>Moje židle 2026</span></h1>
+    <p class="lead">Rezervace míst na představení v kostele – od výběru židle přes platbu až po vstup. Stručně, bez
+      technických podrobností.</p>
+  </header>
+
+  <section aria-labelledby="flow">
+    <h2 id="flow">V pěti krocích</h2>
+    <ol class="flow">
+      <li><strong>Výběr</strong><span>Návštěvník vybere představení a na plánku kostela naklikne místa (300 Kč, nejvýše 20 najednou).</span></li>
+      <li><strong>Rezervace</strong><span>Vyplní jméno a e-mail. Místa jsou od té chvíle držena jen pro něj.</span></li>
+      <li><strong>Platba</strong><span>Zaplatí převodem – nejsnáz QR platbou v bankovní aplikaci. Má na to 3 dny.</span></li>
+      <li><strong>Vstupenka</strong><span>Účetní platbu potvrdí a návštěvníkovi přijde e-mailem vstupenka s QR kódem.</span></li>
+      <li><strong>Vstup</strong><span>U vchodu ji ukáže v mobilu, pořadatel ji načte telefonem a pustí ho dál.</span></li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="roles">
+    <h2 id="roles">Kdo s aplikací pracuje</h2>
+    <div class="roles">
+      <article class="role">
+        <h3>Návštěvník</h3>
+        <span class="where">webová stránka · mobil i počítač</span>
+        <ul>
+          <li>vybere představení a místa, rezervuje a zaplatí</li>
+          <li>dostane vstupenku e-mailem</li>
+          <li>může zrušit celou rezervaci nebo jen některá místa</li>
+        </ul>
+      </article>
+      <article class="role">
+        <h3>Účetní / správce</h3>
+        <span class="where">správa · počítač</span>
+        <ul>
+          <li>kontroluje platby ve výpisu a potvrzuje je</li>
+          <li>vrací peníze při zrušení</li>
+          <li>zakládá představení, storno podmínky a VIP hosty</li>
+          <li>posílá pozvánky pořadatelům u vchodu</li>
+        </ul>
+      </article>
+      <article class="role">
+        <h3>Pořadatel u vchodu</h3>
+        <span class="where">scanner · vlastní mobil s pozvánkou</span>
+        <ul>
+          <li>načítá vstupenky kamerou telefonu</li>
+          <li>vpouští VIP hosty podle jména</li>
+          <li>vidí jen představení, na která dostal pozvánku</li>
+        </ul>
+      </article>
+      <article class="role">
+        <h3>Systém</h3>
+        <span class="where">automaticky</span>
+        <ul>
+          <li>posílá e-maily a připomínky platby</li>
+          <li>ruší nezaplacené rezervace a uvolňuje místa</li>
+          <li>po akci maže osobní údaje</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="screens">
+    <h2 id="screens">Obrazovky</h2>
+
+    <div class="group-head"><h3>Návštěvník</h3><span class="where">mobil</span></div>
+    <div class="screens">
+      <figure><div class="phone"><img src="01-terminy.jpg" alt="Výběr představení" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>1. Výběr představení</strong>Každé představení s počtem volných míst. Vyprodaná a uzavřená nejdou vybrat.</figcaption></figure>
+      <figure><div class="phone"><img src="02-planek.jpg" alt="Plánek kostela" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>2. Plánek kostela</strong>Sekce podle skutečného rozmístění. Barva ukazuje obsazenost, červené číslo vlastní vybraná místa.</figcaption></figure>
+      <figure><div class="phone"><img src="03-sekce.jpg" alt="Detail sekce s místy" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>3. Výběr míst</strong>Řada a číslo na každé židli. Zelená volná, červená vybraná nebo obsazená.</figcaption></figure>
+      <figure><div class="phone"><img src="04-formular.jpg" alt="Formulář rezervace" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>4. Rezervace</strong>Jméno a e-mail, cena, storno podmínky a informace o ochraně údajů.</figcaption></figure>
+      <figure><div class="phone"><img src="05-platba.jpg" alt="Stránka s QR platbou" width="585" height="1770" loading="lazy"></div>
+        <figcaption><strong>5. Platba</strong>QR platba a všechny platební údaje ke zkopírování. Stejné údaje přijdou e-mailem.</figcaption></figure>
+      <figure><div class="phone"><img src="06-vstupenka-storno.jpg" alt="Vstupenka a zrušení míst" width="585" height="1770" loading="lazy"></div>
+        <figcaption><strong>6. Vstupenka a zrušení</strong>Po zaplacení vstupenka. Zde lze zrušit celou rezervaci nebo jen některá místa.</figcaption></figure>
+      <figure><div class="phone"><img src="07-email.jpg" alt="E-mail se vstupenkou" width="630" height="1050" loading="lazy"></div>
+        <figcaption><strong>7. Vstupenka e-mailem</strong>QR kód, představení, jméno a místa.</figcaption></figure>
+    </div>
+
+    <div class="group-head"><h3>Pořadatel u vchodu</h3><span class="where">mobil · scanner</span></div>
+    <div class="screens">
+      <figure><div class="phone"><img src="08-scanner-login.jpg" alt="Scanner bez pozvánky" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>Přihlášení pozvánkou</strong>Scanner se otevře jen přes odkaz nebo QR kód od správce.</figcaption></figure>
+      <figure><div class="phone"><img src="09-scanner-mimo-cas.jpg" alt="Varování mimo čas odbavení" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>Hlídání času</strong>Mimo hodinu před a po začátku představení scanner varuje. Odbavit lze jen po potvrzení.</figcaption></figure>
+      <figure><div class="phone"><img src="10-scanner-platna.jpg" alt="Platná vstupenka" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>Platná vstupenka</strong>Zelená = pustit dál. Ukáže jméno a místa.</figcaption></figure>
+      <figure><div class="phone"><img src="11-scanner-uz-odbaveno.jpg" alt="Vstupenka už použita" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>Už odbaveno</strong>Druhé načtení stejné vstupenky ukáže, kdy prošla poprvé.</figcaption></figure>
+      <figure><div class="phone"><img src="12-scanner-vip.jpg" alt="Seznam VIP hostů" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>VIP hosté</strong>Vyhledání podle jména a tlačítko Vpustit.</figcaption></figure>
+    </div>
+
+    <div class="group-head"><h3>Účetní / správce</h3><span class="where">počítač · správa</span></div>
+    <div class="screens-wide">
+      <figure><div class="desktop"><img src="13-admin-rezervace.jpg" alt="Seznam rezervací" width="1360" height="860" loading="lazy"></div>
+        <figcaption><strong>Rezervace</strong>Obsazenost představení, vyhledávání podle VS nebo jména, potvrzení platby, zrušení, vracení peněz.</figcaption></figure>
+      <figure><div class="desktop"><img src="15-admin-poradatele.jpg" alt="Pozvánky pořadatelů" width="1360" height="860" loading="lazy"></div>
+        <figcaption><strong>Pořadatelé</strong>Pozvánky pro mobily u vchodu, vždy jen na vybraná představení. Přístup lze kdykoli zrušit.</figcaption></figure>
+      <figure><div class="desktop"><img src="14-admin-vip.jpg" alt="VIP hosté" width="1360" height="860" loading="lazy"></div>
+        <figcaption><strong>VIP hosté</strong>Seznam hostů zdarma pro každé představení. Je vidět, kdo už přišel.</figcaption></figure>
+      <figure><div class="desktop"><img src="16-admin-terminy.jpg" alt="Nastavení představení" width="1360" height="860" loading="lazy"></div>
+        <figcaption><strong>Představení a storno</strong>Datum a čas každého představení a jeho storno poplatky.</figcaption></figure>
+    </div>
+  </section>
+
+  <section aria-labelledby="rules">
+    <h2 id="rules">Důležitá pravidla</h2>
+    <div class="rules">
+      <div class="rule"><strong>Kdo nezaplatí, přijde o místa</strong><p>Na platbu jsou 3 dny (nejpozději do začátku představení). Den předem přijde připomínka. Když platba nedorazí ani 2 dny po splatnosti, místa se uvolní.</p></div>
+      <div class="rule"><strong>Platby potvrzuje člověk</strong><p>Aplikace není napojená na banku. Účetní páruje platby podle variabilního symbolu, vstupenka proto přijde až po potvrzení.</p></div>
+      <div class="rule"><strong>Zrušení a storno</strong><p>Návštěvník ruší sám přes odkaz z e-mailu, celou rezervaci i jednotlivá místa. Poplatek podle storno podmínek představení, zbytek se do 14 dnů vrátí na účet, ze kterého platba přišla.</p></div>
+      <div class="rule"><strong>Vstupenku nejde padělat</strong><p>QR kód je elektronicky podepsaný. Pořadatel vždy vidí aktuální stav: zaplaceno, zrušeno nebo už prošel.</p></div>
+      <div class="rule"><strong>Vstupenka platí jen na své představení</strong><p>Kdo přijde jiný den, scanner ukáže „Jiný termín“ a dotyčného nepustí jako odbaveného.</p></div>
+      <div class="rule"><strong>Odbavení jen v pravý čas</strong><p>Od hodiny před do hodiny po začátku představení. Jindy scanner varuje, aby se omylem neodbavovalo jiné představení.</p></div>
+      <div class="rule"><strong>VIP hosté</strong><p>Neplatí a nemají vstupenku. Pořadatel je najde na seznamu podle jména.</p></div>
+      <div class="rule"><strong>Ochrana osobních údajů</strong><p>Ukládá se jen jméno a e-mail. 30 dní po posledním představení se automaticky smažou.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="launch">
+    <h2 id="launch">Co je potřeba před spuštěním</h2>
+    <ul class="checklist">
+      <li>Bankovní účet pro platby a specifický symbol.</li>
+      <li>Data a časy všech představení a jejich storno podmínky.</li>
+      <li>Seznam VIP hostů pro každé představení.</li>
+      <li>Jména pořadatelů u vchodu a na která představení přijdou (dostanou pozvánku).</li>
+      <li>Kdo bude potvrzovat platby a vracet peníze.</li>
+      <li>Zkušební rezervace „naostro“: rezervace → platba → vstupenka → načtení u vchodu.</li>
+    </ul>
+    <p class="note">Snímky obrazovek ukazují zkušební data – jména a rezervace jsou smyšlené.</p>
+  </section>
+
+  <footer>Moje židle 2026 · přehled pro zúčastněné. Technická dokumentace pro programátory je v repozitáři
+    (<code>docs/DEVELOPER.md</code>).</footer>
+</div>
