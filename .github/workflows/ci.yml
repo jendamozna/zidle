@@ -38,7 +38,7 @@ jobs:
       MAIL_ENABLED: '0'
       TICKET_SECRET: ci-ticket-secret-0123456789
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
@@ -72,8 +72,8 @@ jobs:
     name: Frontend – ESLint, build, PHP/JS consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -108,14 +108,14 @@ jobs:
       DB_PASS: root
       DB_NAME: zidle_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
           extensions: gd, intl, pdo_mysql, mbstring
           tools: composer
           coverage: none
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm

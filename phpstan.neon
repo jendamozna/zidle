@@ -6,7 +6,7 @@ parameters:
         - tests/php
     excludePaths:
         - api/vendor
-        - api/config.local.php
+        - api/config.local.php (?)
     bootstrapFiles:
         - api/vendor/autoload.php
     ignoreErrors:
