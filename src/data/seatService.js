@@ -26,7 +26,7 @@ async function request(path, options = {}) {
   return data;
 }
 
-/** { taken: string[], price, deadlineHours, maxSeats, bookingOpen, formToken } */
+/** { taken: string[], price, deadlineHours, maxSeats, bookingOpen, formToken, stornoRules, eventAt, dataRetentionDays } */
 export const fetchSeats = () => request('seats.php');
 
 /** Creates a pending reservation; returns it with payment details. */
@@ -38,3 +38,7 @@ export const createReservation = ({ firstName, lastName, email, seats, formToken
   });
 
 export const fetchReservation = (token) => request(`reservations.php?token=${encodeURIComponent(token)}`);
+
+/** Customer cancellation; refundAccount is required when money will be returned. */
+export const cancelReservation = (token, refundAccount = '') =>
+  request('cancel.php', { method: 'POST', body: JSON.stringify({ token, refundAccount }) });

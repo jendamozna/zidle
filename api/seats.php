@@ -19,5 +19,8 @@ run_api(function (): void {
         'maxSeats' => (int) config('MAX_SEATS_PER_RESERVATION'),
         'bookingOpen' => booking_open(),
         'formToken' => form_token(),
+        'stornoRules' => storno_rules_public(),
+        'eventAt' => event_at_public(),
+        'dataRetentionDays' => (int) config('DATA_RETENTION_DAYS'),
     ]);
 });

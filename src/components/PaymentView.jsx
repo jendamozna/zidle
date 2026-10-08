@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { SECTION_BY_ID, compareSeatIds, formatCzk, parseSeatId } from '../data/layout.js';
+import { cancelReservation } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
+import { stornoText } from '../storno.js';
 
 const STATUS = {
   pending: { label: 'Čeká na platbu', cls: 'occ-medium' },
@@ -44,7 +46,93 @@ function CopyValue({ label, value }) {
   );
 }
 
-export default function PaymentView({ reservation, onBack }) {
+function CancellationInfo({ reservation }) {
+  const { cancelFee, refundAmount, refundAccount, refundedAt, cancelledBy } = reservation;
+  return (
+    <div className="cancel-info">
+      <strong>{cancelledBy === 'customer' ? 'Rezervaci jste zrušili.' : 'Rezervace byla zrušena.'}</strong>
+      {cancelFee > 0 && <span>Storno poplatek {formatCzk(cancelFee)}.</span>}
+      {refundAmount > 0 &&
+        (refundedAt ? (
+          <span>
+            {formatCzk(refundAmount)} vráceno {formatDeadline(refundedAt)}.
+          </span>
+        ) : (
+          <span>
+            Vrátíme {formatCzk(refundAmount)}
+            {refundAccount ? ` na účet ${refundAccount}` : ''}.
+          </span>
+        ))}
+    </div>
+  );
+}
+
+function CancelPanel({ reservation, onCancelled }) {
+  const [open, setOpen] = useState(false);
+  const [account, setAccount] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const { percent, fee, refund } = reservation.cancellation;
+  const isPaid = reservation.status === 'paid';
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      onCancelled(await cancelReservation(reservation.token, account));
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="btn btn-danger-ghost" onClick={() => setOpen(true)}>
+        Zrušit rezervaci
+      </button>
+    );
+  }
+
+  return (
+    <form className="cancel-panel" onSubmit={submit}>
+      <strong>Opravdu zrušit rezervaci?</strong>
+      {!isPaid && <p>Místa se uvolní. Nic neplatíte.</p>}
+      {isPaid && percent === 0 && <p>Místa se uvolní a vrátíme Vám celou částku {formatCzk(refund)}.</p>}
+      {isPaid && percent > 0 && percent < 100 && (
+        <p>
+          Storno poplatek {percent} % ({formatCzk(fee)}). Vrátíme Vám {formatCzk(refund)}.
+        </p>
+      )}
+      {isPaid && percent >= 100 && <p>Storno poplatek je 100 %, peníze se nevracejí. Místa se uvolní pro ostatní.</p>}
+      {refund > 0 && (
+        <label className="field">
+          <span>Číslo účtu pro vrácení peněz</span>
+          <input
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
+            placeholder="123456789/0800"
+            autoComplete="off"
+            required
+            disabled={busy}
+          />
+        </label>
+      )}
+      {error && <p className="form-error">{error}</p>}
+      <div className="cancel-actions">
+        <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)} disabled={busy}>
+          Ponechat
+        </button>
+        <button type="submit" className="btn btn-danger" disabled={busy}>
+          {busy ? 'Ruším…' : 'Zrušit rezervaci'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export default function PaymentView({ reservation, onChange, onBack }) {
   const [qr, setQr] = useState(null);
   const { payment, status } = reservation;
   const isPending = status === 'pending';
@@ -134,6 +222,16 @@ export default function PaymentView({ reservation, onBack }) {
             ))}
           </ul>
           <p className="muted small">{reservation.email}</p>
+
+          {status === 'cancelled' && <CancellationInfo reservation={reservation} />}
+          {reservation.cancellation?.allowed && (
+            <div className="cancel-box">
+              {status === 'paid' && stornoText(reservation.stornoRules) && (
+                <p className="muted small">Storno: {stornoText(reservation.stornoRules)}.</p>
+              )}
+              <CancelPanel reservation={reservation} onCancelled={onChange} />
+            </div>
+          )}
         </div>
       </div>
     </div>

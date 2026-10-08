@@ -899,7 +899,7 @@ h2 {
 
 .field-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
@@ -952,11 +952,6 @@ h2 {
   font-size: 0.9rem;
 }
 
-.modal-note {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--ink-2);
-}
 
 /* ---------- Payment ---------- */
 
@@ -1148,4 +1143,89 @@ h2 {
 
 .deadline.is-overdue strong {
   color: inherit;
+}
+
+.modal-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
+.modal-notes p {
+  margin: 0;
+}
+
+/* ---------- Cancellation ---------- */
+
+.cancel-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--wall);
+}
+
+.btn-danger-ghost {
+  background: transparent;
+  color: #9a2c21;
+  border: 1.5px solid #e49a8e;
+  padding: 0.55rem 1.1rem;
+}
+
+.btn-danger-ghost:hover {
+  background: var(--occ-high-bg);
+}
+
+.btn-danger {
+  background: #b0332a;
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #962a22;
+  transform: translateY(-1px);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+}
+
+.cancel-panel {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--occ-high-bg);
+  color: var(--occ-high-ink);
+}
+
+.cancel-panel p {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.cancel-panel .field span {
+  color: var(--occ-high-ink);
+}
+
+.cancel-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.cancel-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 0.92rem;
 }

@@ -85,7 +85,7 @@ export default function App() {
     !reservation && (section ? stats.bySection[section.id].mine.length > 0 : stats.selectedCount > 0);
 
   let view;
-  if (reservation) view = <PaymentView reservation={reservation} onBack={closePayment} />;
+  if (reservation) view = <PaymentView reservation={reservation} onChange={setReservation} onBack={closePayment} />;
   else if (section) view = <SectionDetail section={section} seats={seats} onBack={() => setSectionId(null)} />;
   else view = <Overview stats={stats} loading={seats.loading} onOpen={setSectionId} />;
 
@@ -141,6 +141,7 @@ export default function App() {
         <ReservationForm
           stats={stats}
           deadlineHours={seats.deadlineHours}
+          terms={seats.terms}
           submitting={seats.submitting}
           onSubmit={handleSubmit}
           onClose={closeForm}

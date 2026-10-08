@@ -4,6 +4,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/ticket.php';
 require_once __DIR__ . '/antispam.php';
+require_once __DIR__ . '/settings.php';
+require_once __DIR__ . '/mail.php';
+require_once __DIR__ . '/cancellation.php';
 
 function config(string $key)
 {
@@ -209,6 +212,14 @@ function reservation_payload(array $r): array
         'expiresAt' => iso_time($r['expires_at']),
         'paidAt' => iso_time($r['paid_at']),
         'ticket' => $ticket,
+        'checkedInAt' => iso_time($r['checked_in_at']),
+        'cancellation' => cancellation_terms($r),
+        'cancelledBy' => $r['cancelled_by'],
+        'cancelFee' => $r['cancel_fee'] === null ? null : (int) $r['cancel_fee'],
+        'refundAmount' => $r['refund_amount'] === null ? null : (int) $r['refund_amount'],
+        'refundAccount' => $r['refund_account'],
+        'refundedAt' => iso_time($r['refunded_at']),
+        'stornoRules' => storno_rules_public(),
         'payment' => [
             'iban' => (string) config('BANK_IBAN'),
             'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
@@ -228,41 +239,4 @@ function find_reservation_by_token(string $token): ?array
     $stmt->execute([$token]);
     $row = $stmt->fetch();
     return $row ?: null;
-}
-
-function send_payment_email(array $r): void
-{
-    if (!filter_var(config('MAIL_ENABLED'), FILTER_VALIDATE_BOOLEAN)) {
-        return;
-    }
-    $deadline = (new DateTimeImmutable($r['expires_at'], new DateTimeZone('UTC')))
-        ->setTimezone(new DateTimeZone('Europe/Prague'))->format('j. n. Y H:i');
-    $link = rtrim((string) config('PUBLIC_URL'), '/');
-    $lines = [
-        "Dobrý den, {$r['first_name']} {$r['last_name']},",
-        '',
-        'děkujeme za rezervaci míst: ' . str_replace(',', ', ', $r['seats']) . '.',
-        '',
-        'Platební údaje:',
-        'Částka: ' . number_format((int) $r['amount'], 0, ',', ' ') . ' Kč',
-        'Účet: ' . config('BANK_ACCOUNT_DISPLAY') . ' (IBAN ' . config('BANK_IBAN') . ')',
-        'Variabilní symbol: ' . $r['variable_symbol'],
-        ...(specific_symbol() !== '' ? ['Specifický symbol: ' . specific_symbol()] : []),
-        "Splatnost: {$deadline}",
-        '',
-        'Pokud platba nedorazí do data splatnosti, rezervace bude zrušena a místa uvolněna.',
-    ];
-    if ($link !== '') {
-        $lines[] = '';
-        $lines[] = 'QR kód pro platbu: ' . $link . '/?r=' . $r['token'];
-    }
-    $headers = [
-        'From: ' . config('MAIL_FROM'),
-        'Content-Type: text/plain; charset=UTF-8',
-        'Content-Transfer-Encoding: 8bit',
-    ];
-    $subject = '=?UTF-8?B?' . base64_encode('Rezervace míst – Moje židle 2026') . '?=';
-    if (!@mail($r['email'], $subject, implode("\r\n", $lines), implode("\r\n", $headers))) {
-        error_log('[zidle] Failed to send e-mail for reservation ' . $r['id']);
-    }
 }

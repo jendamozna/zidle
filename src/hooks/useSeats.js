@@ -14,6 +14,7 @@ export function useSeats() {
   const [maxSeats, setMaxSeats] = useState(20);
   const [bookingOpen, setBookingOpen] = useState(true);
   const [notice, setNotice] = useState(null); // {text} – shown as a toast
+  const [terms, setTerms] = useState({ stornoRules: [], eventAt: null, dataRetentionDays: null });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -30,6 +31,7 @@ export function useSeats() {
       formToken.current = data.formToken;
       setMaxSeats(data.maxSeats);
       setBookingOpen(data.bookingOpen);
+      setTerms({ stornoRules: data.stornoRules, eventAt: data.eventAt, dataRetentionDays: data.dataRetentionDays });
       if (!data.bookingOpen) setSelected(new Set());
       // Drop seats someone else reserved in the meantime and tell the user.
       setSelected((prev) => {
@@ -138,6 +140,7 @@ export function useSeats() {
     deadlineHours,
     bookingOpen,
     notice,
+    terms,
     stats,
     seatState,
     toggleSeat,

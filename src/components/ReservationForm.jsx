@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatCzk } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
+import { stornoText } from '../storno.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -12,7 +13,8 @@ function validate(values) {
   return errors;
 }
 
-export default function ReservationForm({ stats, deadlineHours, submitting, onSubmit, onClose }) {
+export default function ReservationForm({ stats, deadlineHours, terms, submitting, onSubmit, onClose }) {
+  const storno = stornoText(terms?.stornoRules);
   const [values, setValues] = useState({ firstName: '', lastName: '', email: '', hp: '' });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
@@ -94,7 +96,14 @@ export default function ReservationForm({ stats, deadlineHours, submitting, onSu
           </label>
         </div>
 
-        {deadlineHours ? <p className="modal-note">Splatnost {deadlineHours} hodin, poté se místa uvolní.</p> : null}
+        <div className="modal-notes">
+          {deadlineHours ? <p>Splatnost {deadlineHours} hodin, poté se místa uvolní.</p> : null}
+          {storno && <p>Storno: {storno}.</p>}
+          <p>
+            Jméno a e-mail použijeme jen pro vyřízení této rezervace a
+            {terms?.dataRetentionDays ? ` do ${terms.dataRetentionDays} dnů` : ''} po skončení akce je smažeme.
+          </p>
+        </div>
         {formError && <p className="form-error" role="alert">{formError}</p>}
 
         <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>

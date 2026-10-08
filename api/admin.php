@@ -42,7 +42,38 @@ if ($action === 'logout' && $csrfOk) {
 }
 
 $flash = null;
-$view = ($_GET['view'] ?? '') === 'vip' ? 'vip' : 'reservations';
+$view = in_array($_GET['view'] ?? '', ['vip', 'settings'], true) ? $_GET['view'] : 'reservations';
+
+if (!empty($_SESSION['admin']) && $csrfOk && $action === 'settings') {
+    $event = trim((string) ($_POST['event_at'] ?? ''));
+    $rules = [];
+    $errors = [];
+    if ($event !== '' && prague_time($event) === null) {
+        $errors[] = 'Neplatné datum akce.';
+    }
+    foreach ((array) ($_POST['rule_from'] ?? []) as $i => $from) {
+        $from = trim((string) $from);
+        $percent = trim((string) ($_POST['rule_percent'][$i] ?? ''));
+        if ($from === '' && $percent === '') {
+            continue;
+        }
+        if (prague_time($from) === null || !ctype_digit($percent) || (int) $percent > 100) {
+            $errors[] = 'Storno pravidlo ' . ($i + 1) . ': zadejte datum a procento 0–100.';
+            continue;
+        }
+        $rules[] = ['from' => str_replace('T', ' ', $from), 'percent' => (int) $percent];
+    }
+    if ($errors) {
+        $_SESSION['flash'] = implode(' ', $errors);
+    } else {
+        usort($rules, static fn ($a, $b) => strcmp($a['from'], $b['from']));
+        save_setting('event_at', str_replace('T', ' ', $event));
+        save_setting('storno_rules', $rules);
+        $_SESSION['flash'] = 'Nastavení uloženo.';
+    }
+    header('Location: admin.php?view=settings');
+    exit;
+}
 
 if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-delete', 'vip-reset'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
@@ -70,7 +101,7 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-
     exit;
 }
 
-if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-late', 'cancel', 'ticket', 'email'], true)) {
+if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-late', 'cancel', 'ticket', 'email', 'refunded'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     $now = db_time(now_utc());
     if ($action === 'paid') {
@@ -87,10 +118,20 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-la
             db()->prepare('UPDATE reservations SET email = ? WHERE id = ?')->execute([$email, $id]);
             $flash = "E-mail změněn na {$email}.";
         }
+    } elseif ($action === 'refunded') {
+        $stmt = db()->prepare('UPDATE reservations SET refunded_at = ? WHERE id = ? AND refund_amount > 0 AND refunded_at IS NULL');
+        $stmt->execute([$now, $id]);
+        $flash = $stmt->rowCount() ? 'Vrácení peněz zaznamenáno.' : 'Nelze označit jako vráceno.';
     } elseif ($action === 'ticket') {
         $flash = trim(send_ticket_for($id)) ?: 'Vstupenku nelze odeslat.';
     } else {
-        $stmt = db()->prepare("UPDATE reservations SET status = 'cancelled', cancelled_at = ? WHERE id = ? AND status IN ('pending', 'paid')");
+        // Cancelled by the organizers: a paid reservation is refunded in full.
+        $stmt = db()->prepare(
+            // refund/fee are assigned before status: MariaDB applies SET left to right.
+            "UPDATE reservations SET refund_amount = IF(status = 'paid', amount, NULL), cancel_fee = IF(status = 'paid', 0, NULL),
+               status = 'cancelled', cancelled_at = ?, cancelled_by = 'admin'
+             WHERE id = ? AND status IN ('pending', 'paid')"
+        );
         $stmt->execute([$now, $id]);
         expire_reservations(); // frees the seats
         $flash = $stmt->rowCount() ? 'Rezervace zrušena, místa uvolněna.' : 'Rezervaci nelze zrušit.';
@@ -208,6 +249,15 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .edit-email input { width:200px; padding:4px 8px; }
   .edit-email button { padding:4px 10px; }
   .overdue { color:#8f2a20; font-weight:600; }
+  .card.attention { background:#f6cdc6; color:#7d2117; text-decoration:none; }
+  .settings { max-width:640px; display:flex; flex-direction:column; gap:12px; }
+  .settings h2 { margin:8px 0 0; font:600 1.15rem Georgia, serif; }
+  .settings label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; font-weight:600; color:var(--ink-2); max-width:280px; }
+  .settings .rules { display:flex; flex-direction:column; gap:8px; }
+  .settings .rule { display:flex; gap:10px; flex-wrap:wrap; }
+  .settings .rule input[type=number] { width:110px; }
+  .settings button { align-self:flex-start; }
+  .hint { margin:0; font-size:.85rem; color:var(--ink-2); }
   .login { max-width:340px; margin:15vh auto; display:flex; flex-direction:column; gap:12px; }
 </style>
 </head>
@@ -231,6 +281,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     if (isset($statusLabels[$status])) {
         $where[] = 'status = ?';
         $params[] = $status;
+    } elseif ($status === 'refund') {
+        $where[] = 'refund_amount > 0 AND refunded_at IS NULL';
     }
     if ($q !== '') {
         $where[] = '(variable_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ? OR seats LIKE ?)';
@@ -251,6 +303,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
       <a href="admin.php?view=vip" class="<?= $view === 'vip' ? 'active' : '' ?>">VIP</a>
+      <a href="admin.php?view=settings" class="<?= $view === 'settings' ? 'active' : '' ?>">Nastavení</a>
     </nav>
     <form method="post">
       <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
@@ -261,7 +314,36 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <?php if ($flash): ?><div class="flash"><?= $h($flash) ?></div><?php endif ?>
 
-  <?php if ($view === 'vip'):
+  <?php if ($view === 'settings'):
+      $eventValue = str_replace(' ', 'T', (string) setting('event_at', ''));
+      $rules = storno_rules();
+      $rows = array_pad($rules, max(4, count($rules) + 1), ['from' => '', 'percent' => '']);
+      $deleteAt = data_deletion_at();
+  ?>
+  <form class="card settings" method="post">
+    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+    <input type="hidden" name="action" value="settings">
+
+    <h2>Akce</h2>
+    <label>Začátek akce<input type="datetime-local" name="event_at" value="<?= $h($eventValue) ?>"></label>
+    <p class="hint">Od začátku akce už nelze rezervace rušit.
+      <?php if ($deleteAt): ?>Osobní údaje budou smazány <?= $h($deleteAt->format('j. n. Y')) ?> (<?= (int) config('DATA_RETENTION_DAYS') ?> dní po akci).<?php endif ?></p>
+
+    <h2>Storno poplatky</h2>
+    <p class="hint">Platí pro zaplacené rezervace zrušené zákazníkem. Nezaplacené lze zrušit vždy zdarma. Před prvním datem je storno zdarma.</p>
+    <div class="rules">
+      <?php foreach ($rows as $rule): ?>
+        <div class="rule">
+          <label>Od<input type="datetime-local" name="rule_from[]" value="<?= $h(str_replace(' ', 'T', (string) $rule['from'])) ?>"></label>
+          <label>Poplatek %<input type="number" name="rule_percent[]" min="0" max="100" value="<?= $h($rule['percent']) ?>"></label>
+        </div>
+      <?php endforeach ?>
+    </div>
+    <p class="hint">Prázdné řádky se ignorují. Pro další pravidla uložte a objeví se nový prázdný řádek.</p>
+    <button>Uložit nastavení</button>
+  </form>
+
+  <?php elseif ($view === 'vip'):
       $vips = db()->query('SELECT * FROM vip_guests ORDER BY section, name')->fetchAll();
       $vipPersons = array_sum(array_column($vips, 'persons'));
       $vipArrived = array_sum(array_map(fn ($v) => $v['checked_in_at'] ? (int) $v['persons'] : 0, $vips));
@@ -322,6 +404,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <?php foreach (['pending', 'paid'] as $s): $t = $totals[$s] ?? ['n' => 0, 'seats' => 0, 'amount' => 0]; ?>
       <div class="card"><?= $h($statusLabels[$s]) ?><strong><?= (int) $t['seats'] ?> míst</strong><?= $kc($t['amount']) ?> · <?= (int) $t['n'] ?> rez.</div>
     <?php endforeach ?>
+    <?php $refunds = db()->query('SELECT COUNT(*) n, COALESCE(SUM(refund_amount), 0) amount FROM reservations WHERE refund_amount > 0 AND refunded_at IS NULL')->fetch(); ?>
+    <?php if ($refunds['n'] > 0): ?>
+      <a class="card attention" href="admin.php?status=refund">K vrácení<strong><?= $kc($refunds['amount']) ?></strong><?= (int) $refunds['n'] ?> rez.</a>
+    <?php endif ?>
   </div>
 
   <form class="filters" method="get">
@@ -330,6 +416,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <?php foreach ($statusLabels as $k => $label): ?>
         <option value="<?= $h($k) ?>" <?= $status === $k ? 'selected' : '' ?>><?= $h($label) ?></option>
       <?php endforeach ?>
+      <option value="refund" <?= $status === 'refund' ? 'selected' : '' ?>>K vrácení peněz</option>
     </select>
     <input type="search" name="q" value="<?= $h($q) ?>" placeholder="VS, jméno, e-mail, místo">
     <button class="secondary">Filtrovat</button>
@@ -356,7 +443,15 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td><span class="badge s-<?= $h($r['status']) ?>"><?= $h($statusLabels[$r['status']]) ?></span>
             <?php if ($r['paid_at']): ?><br><small>zaplaceno <?= $h($fmt($r['paid_at'])) ?></small><?php endif ?>
             <?php if ($r['ticket_sent_at']): ?><br><small>vstupenka <?= $h($fmt($r['ticket_sent_at'])) ?></small><?php endif ?>
-            <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= $h($fmt($r['checked_in_at'])) ?></small><?php endif ?></td>
+            <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= $h($fmt($r['checked_in_at'])) ?></small><?php endif ?>
+            <?php if ($r['status'] === 'cancelled'): ?><br><small><?= $r['cancelled_by'] === 'customer' ? 'zrušil zákazník' : 'zrušeno správcem' ?> <?= $h($fmt($r['cancelled_at'])) ?></small><?php endif ?>
+            <?php if ($r['cancel_fee'] > 0): ?><br><small>storno <?= $kc($r['cancel_fee']) ?></small><?php endif ?>
+            <?php if ($r['refund_amount'] > 0): ?>
+              <br><small class="<?= $r['refunded_at'] ? '' : 'overdue' ?>">
+                <?= $r['refunded_at'] ? 'vráceno ' . $h($fmt($r['refunded_at'])) . ': ' : 'vrátit: ' ?><?= $kc($r['refund_amount']) ?>
+                <?= $r['refund_account'] ? ' na ' . $h($r['refund_account']) : ' (účet zjistit e-mailem)' ?>
+              </small>
+            <?php endif ?></td>
           <td><?= $h($fmt($r['created_at'])) ?></td>
           <td class="<?= $r['status'] === 'pending' && $r['expires_at'] < db_time(now_utc()) ? 'overdue' : '' ?>"><?= $h($fmt($r['expires_at'])) ?></td>
           <td>
@@ -366,6 +461,13 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
                   <button name="action" value="paid">Zaplaceno</button>
+                </form>
+              <?php endif ?>
+              <?php if ($r['refund_amount'] > 0 && !$r['refunded_at']): ?>
+                <form method="post" onsubmit="return confirm('Peníze byly vráceny?')">
+                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                  <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                  <button name="action" value="refunded">Vráceno</button>
                 </form>
               <?php endif ?>
               <?php if ($r['status'] === 'expired'): ?>

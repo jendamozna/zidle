@@ -24,6 +24,21 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
    payment has to be refunded or other seats agreed.
    Admin can also fix a mistyped customer e-mail and resend the ticket.
    New reservations stop at `BOOKING_CLOSES_AT` (optional).
+   E-mails: a payment **reminder 24 h before the due date** and an **expiry
+   notice** when an unpaid reservation is cancelled (sent by `cron.php`).
+8. **Cancellation by the customer** on the reservation page (`?r=<token>`).
+   Unpaid reservations are cancelled free of charge. For paid ones the
+   **storno fee** set in admin → *Nastavení* applies (e.g. 50 % from one date,
+   100 % from another; free before the first date) and the customer enters a
+   bank account for the refund. Cancelling is possible until the event starts
+   and not after check-in. Refunds due are listed in admin (*K vrácení*) and
+   marked **Vráceno** once paid out. A paid reservation cancelled by admin is
+   refunded in full.
+9. **GDPR**: the form says that names and e-mails are used only for the
+   reservation and deleted `DATA_RETENTION_DAYS` (30) after the event.
+   `cron.php` then removes names, e-mails and refund accounts (VS, amounts
+   and seats stay for accounting) and deletes the VIP list. Requires the
+   event date in admin → *Nastavení*.
 6. At the entrance, organizers open `scanner.html` on a phone, log in with
    `ORGANIZER_PASSWORD` and scan tickets with the rear camera. The scanner
    shows the name and seats and whether the ticket is valid, already used
@@ -105,10 +120,11 @@ Upload the contents of `dist/` together with the `api/` folder including
 MariaDB and the GD extension. The site must run on **HTTPS** – phone browsers
 only allow camera access for the scanner on secure pages. Keep
 `api/config.local.php` and `api/lib/` non-public (`.htaccess` files are
-included for Apache). Add a cron job so seats are freed even without traffic:
+included for Apache). Add a cron job – it frees seats of unpaid reservations, sends reminders and
+expiry notices and deletes personal data after the event:
 
 ```
-*/10 * * * * php /path/to/api/cron-expire.php
+*/10 * * * * php /path/to/api/cron.php
 ```
 
 If the API runs on a different domain, build with `VITE_API_URL=https://…/api`
@@ -121,6 +137,7 @@ and set `CORS_ORIGIN`.
 | GET | `api/seats.php` | `{taken: [seatId], price, deadlineHours}` |
 | POST | `api/reservations.php` | body `{firstName, lastName, email, seats}` → reservation with payment details (201), `409` with `conflict` when a seat is already taken, `422` with `fields` on validation errors |
 | GET | `api/reservations.php?token=` | reservation status, payment details and `ticket` (QR text) once paid |
+| POST | `api/cancel.php` | body `{token, refundAccount}` – customer cancellation; `refundAccount` required when money is returned |
 | GET/POST | `api/organizer.php` | organizer session (`login`, `logout`), `verify` of a scanned ticket code, `vip-list`, `vip-checkin`, `vip-undo` |
 
 Seat IDs: `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-4-12`. Sections: `WL` Left
@@ -131,5 +148,6 @@ Wing, `ML` Left Main, `MR` Right Main, `WR` Right Wing, `BL` Balcony left,
 ## Database
 
 - `reservations` – one row per reservation incl. history (`pending`, `paid`, `expired`, `cancelled`), ticket e-mail time and check-in time.
+- `settings` – admin-editable event date and storno rules (JSON).
 - `vip_guests` – VIP guests (name, section, persons, note, arrival time).
 - `reservation_seats` – currently held seats; the primary key on `seat_id` prevents double booking. Rows are removed when a reservation expires or is cancelled.

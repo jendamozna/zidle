@@ -16,7 +16,14 @@ CREATE TABLE IF NOT EXISTS reservations (
   expires_at      DATETIME     NOT NULL,
   paid_at         DATETIME     NULL,
   cancelled_at    DATETIME     NULL,
+  cancelled_by    ENUM('customer', 'admin') NULL,
+  cancel_fee      INT UNSIGNED NULL COMMENT 'CZK kept as storno fee',
+  refund_amount   INT UNSIGNED NULL COMMENT 'CZK to return to the customer',
+  refund_account  VARCHAR(64)  NULL,
+  refunded_at     DATETIME     NULL,
   ticket_sent_at  DATETIME     NULL COMMENT 'When the e-mail with the ticket QR code was sent',
+  reminder_sent_at      DATETIME NULL,
+  expiry_notice_sent_at DATETIME NULL,
   checked_in_at   DATETIME     NULL COMMENT 'First scan of the ticket at the entrance',
   PRIMARY KEY (id),
   UNIQUE KEY uq_token (token),
@@ -58,3 +65,10 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   PRIMARY KEY (bucket),
   KEY idx_window (window_start)
 ) ENGINE=InnoDB DEFAULT CHARSET=ascii;
+
+-- Admin-editable settings (event date, storno rules), JSON values.
+CREATE TABLE IF NOT EXISTS settings (
+  name  VARCHAR(64) NOT NULL,
+  value TEXT        NOT NULL,
+  PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
