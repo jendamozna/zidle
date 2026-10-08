@@ -24,6 +24,13 @@ function reservation_link(array $r): ?string
     return $base === '' ? null : $base . '/?r=' . $r['token'];
 }
 
+/** "Termín: so 19. 12. 2026 18:00" for the reservation's run. */
+function run_line(array $r): string
+{
+    $run = run_by_id((int) $r['run_id']);
+    return 'Termín: ' . ($run ? run_label($run) : '–');
+}
+
 function payment_lines(array $r): array
 {
     $lines = [
@@ -67,7 +74,7 @@ function send_payment_email(array $r): void
 {
     $link = reservation_link($r);
     send_customer_email($r, 'Rezervace míst', array_merge(
-        ['děkujeme za rezervaci míst: ' . implode('; ', seat_labels($r['seats'])) . '.', '', 'Platební údaje:'],
+        ['děkujeme za rezervaci míst: ' . implode('; ', seat_labels($r['seats'])) . '.', run_line($r), '', 'Platební údaje:'],
         payment_lines($r),
         ['', 'Pokud platba nedorazí, rezervace bude zrušena a místa uvolněna.'],
         $link ? ['', "QR kód pro platbu a zrušení rezervace: {$link}"] : []
@@ -78,7 +85,7 @@ function send_reminder_email(array $r): bool
 {
     $link = reservation_link($r);
     return send_customer_email($r, 'Připomínka platby', array_merge(
-        ['zatím jsme neobdrželi platbu za Vaši rezervaci (' . implode('; ', seat_labels($r['seats'])) . ').', '', 'Platební údaje:'],
+        ['zatím jsme neobdrželi platbu za Vaši rezervaci (' . implode('; ', seat_labels($r['seats'])) . ').', run_line($r), '', 'Platební údaje:'],
         payment_lines($r),
         ['', 'Pokud platba nedorazí, rezervace bude zrušena a místa uvolněna.',
          'Pokud jste již zaplatili, považujte tuto zprávu za bezpředmětnou.'],
@@ -92,6 +99,7 @@ function send_expiry_email(array $r): bool
     return send_customer_email($r, 'Rezervace zrušena', array_merge(
         ['platba za Vaši rezervaci (VS ' . $r['variable_symbol'] . ') nedorazila včas, proto byla rezervace zrušena a místa uvolněna:',
          implode('; ', seat_labels($r['seats'])) . '.',
+         run_line($r),
          '',
          'Pokud jste platbu přesto odeslali, ozvěte se nám prosím – vyřešíme to.'],
         $base !== '' ? ['', "Nová rezervace: {$base}/"] : []

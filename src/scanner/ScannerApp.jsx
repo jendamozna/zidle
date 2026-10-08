@@ -5,6 +5,21 @@ import { decodeTicket } from './ticket.js';
 import { getSession, login, logout, verifyTicket } from './api.js';
 import { useQrCamera } from './useQrCamera.js';
 import VipView from './VipView.jsx';
+import { runLabel } from '../runs.js';
+
+const RUN_KEY = 'zidle-scanner-run';
+
+/** Run to check in by default: the first one that started at most 6 h ago or later, else the last. */
+function defaultRunId(runs) {
+  try {
+    const saved = Number(localStorage.getItem(RUN_KEY));
+    if (runs.some((r) => r.id === saved)) return saved;
+  } catch {
+    /* storage unavailable */
+  }
+  const from = Date.now() - 6 * 3600 * 1000;
+  return (runs.find((r) => new Date(r.startsAt).getTime() >= from) ?? runs[runs.length - 1])?.id ?? null;
+}
 
 const RESULT = {
   valid: { tone: 'ok', title: 'Platná vstupenka' },
@@ -13,6 +28,7 @@ const RESULT = {
   cancelled: { tone: 'bad', title: 'Rezervace zrušena' },
   invalid: { tone: 'bad', title: 'Neplatný kód' },
   payment: { tone: 'bad', title: 'To je platební QR kód' },
+  wrong_run: { tone: 'bad', title: 'Jiný termín' },
   offline: { tone: 'warn', title: 'Neověřeno – bez spojení' },
   checking: { tone: 'neutral', title: 'Ověřuji…' },
 };
@@ -95,6 +111,7 @@ function ResultCard({ scan, onNext }) {
         <div>
           <h2>{meta.title}</h2>
           {result === 'used' && checkedInAt && <p>Poprvé načteno {formatTime(checkedInAt)}</p>}
+          {result === 'wrong_run' && scan.run && <p>Vstupenka platí na {scan.run.label}</p>}
           {scan.changed && <p>Část míst byla zrušena – platí jen uvedená místa.</p>}
         </div>
       </div>
@@ -146,9 +163,20 @@ function ResultCard({ scan, onNext }) {
   );
 }
 
-function Scanner({ onLogout }) {
+function Scanner({ runs, onLogout }) {
   const [mode, setMode] = useState('scan'); // scan | vip
   const [scan, setScan] = useState(null);
+  const [runId, setRunId] = useState(() => defaultRunId(runs));
+
+  const changeRun = (id) => {
+    setRunId(id);
+    setScan(null);
+    try {
+      localStorage.setItem(RUN_KEY, String(id));
+    } catch {
+      /* storage unavailable */
+    }
+  };
 
   const handleCode = useCallback(
     async (raw) => {
@@ -160,17 +188,24 @@ function Scanner({ onLogout }) {
       }
       setScan({ raw, ticket: decoded, result: 'checking' });
       try {
-        const res = await verifyTicket(raw);
-        setScan({ raw, ticket: res.ticket ?? decoded, result: res.result, checkedInAt: res.checkedInAt, changed: res.changed });
+        const res = await verifyTicket(raw, runId);
+        setScan({
+          raw,
+          ticket: res.ticket ?? decoded,
+          result: res.result,
+          checkedInAt: res.checkedInAt,
+          changed: res.changed,
+          run: res.run,
+        });
       } catch (err) {
         if (err.status === 401) onLogout();
         else setScan({ raw, ticket: decoded, result: 'offline' });
       }
     },
-    [onLogout],
+    [onLogout, runId],
   );
 
-  const camera = useQrCamera(handleCode, mode === 'scan');
+  const camera = useQrCamera(handleCode, mode === 'scan' && runId !== null);
 
   const next = () => {
     setScan(null);
@@ -207,6 +242,17 @@ function Scanner({ onLogout }) {
         </div>
       </header>
 
+      <label className="run-select">
+        <span>Odbavuji termín</span>
+        <select value={runId ?? ''} onChange={(e) => changeRun(Number(e.target.value))}>
+          {runs.map((r) => (
+            <option key={r.id} value={r.id}>
+              {runLabel(r)}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <div className="mode-switch" role="tablist">
         <button type="button" role="tab" aria-selected={mode === 'scan'} onClick={() => switchMode('scan')}>
           Vstupenky
@@ -217,7 +263,7 @@ function Scanner({ onLogout }) {
       </div>
 
       {mode === 'vip' ? (
-        <VipView onUnauthorized={onLogout} />
+        <VipView key={runId} runId={runId} onUnauthorized={onLogout} />
       ) : (
         <div className={`scan-view ${scan ? 'has-result' : ''}`}>
           <video ref={camera.videoRef} className="scan-video" playsInline muted autoPlay />
@@ -242,16 +288,22 @@ function Scanner({ onLogout }) {
 
 export default function ScannerApp() {
   const [session, setSession] = useState('loading'); // loading | in | out | error
+  const [runs, setRuns] = useState([]);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
+  const loadSession = useCallback(() => {
     getSession()
-      .then((s) => setSession(s.loggedIn ? 'in' : 'out'))
+      .then((s) => {
+        setRuns(s.runs ?? []);
+        setSession(s.loggedIn ? 'in' : 'out');
+      })
       .catch((err) => {
         setError(err.message);
         setSession('error');
       });
   }, []);
+
+  useEffect(loadSession, [loadSession]);
 
   const handleLogout = useCallback(() => {
     logout().catch(() => {});
@@ -260,6 +312,7 @@ export default function ScannerApp() {
 
   if (session === 'loading') return <div className="scan-center muted">Načítám…</div>;
   if (session === 'error') return <div className="scan-center form-error">{error}</div>;
-  if (session === 'out') return <LoginScreen onLoggedIn={() => setSession('in')} />;
-  return <Scanner onLogout={handleLogout} />;
+  if (session === 'out') return <LoginScreen onLoggedIn={loadSession} />;
+  if (!runs.length) return <div className="scan-center muted">Nejsou vypsané žádné termíny.</div>;
+  return <Scanner runs={runs} onLogout={handleLogout} />;
 }

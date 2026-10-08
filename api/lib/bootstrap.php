@@ -142,17 +142,6 @@ function expire_reservations(): int
     }
 }
 
-/** False once BOOKING_CLOSES_AT (Europe/Prague) has passed. */
-function booking_open(): bool
-{
-    $closes = trim((string) config('BOOKING_CLOSES_AT'));
-    if ($closes === '') {
-        return true;
-    }
-    return new DateTimeImmutable('now', new DateTimeZone('UTC'))
-        < new DateTimeImmutable($closes, new DateTimeZone('Europe/Prague'));
-}
-
 function strip_diacritics(string $text): string
 {
     $converted = class_exists('Transliterator')
@@ -220,7 +209,7 @@ function reservation_payload(array $r): array
         'refundedAmount' => (int) $r['refunded_amount'],
         'cancelledSeats' => $r['cancelled_seats'] === '' ? [] : explode(',', $r['cancelled_seats']),
         'refundedAt' => iso_time($r['refunded_at']),
-        'stornoRules' => storno_rules_public(),
+        'run' => ($run = run_by_id((int) $r['run_id'])) ? run_public($run) : null,
         'payment' => [
             'iban' => (string) config('BANK_IBAN'),
             'account' => (string) config('BANK_ACCOUNT_DISPLAY'),

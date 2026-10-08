@@ -44,32 +44,58 @@ if ($action === 'logout' && $csrfOk) {
 $flash = null;
 $view = in_array($_GET['view'] ?? '', ['vip', 'settings'], true) ? $_GET['view'] : 'reservations';
 
-if (!empty($_SESSION['admin']) && $csrfOk && $action === 'settings') {
-    $event = trim((string) ($_POST['event_at'] ?? ''));
-    $rules = [];
-    $errors = [];
-    if ($event !== '' && prague_time($event) === null) {
-        $errors[] = 'Neplatné datum akce.';
-    }
-    foreach ((array) ($_POST['rule_from'] ?? []) as $i => $from) {
-        $from = trim((string) $from);
-        $percent = trim((string) ($_POST['rule_percent'][$i] ?? ''));
-        if ($from === '' && $percent === '') {
-            continue;
+if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run-delete'], true)) {
+    $id = (int) ($_POST['id'] ?? 0);
+    if ($action === 'run-delete') {
+        $used = db()->prepare('SELECT (SELECT COUNT(*) FROM reservations WHERE run_id = ?) + (SELECT COUNT(*) FROM vip_guests WHERE run_id = ?)');
+        $used->execute([$id, $id]);
+        if ((int) $used->fetchColumn() > 0) {
+            $_SESSION['flash'] = 'Termín má rezervace nebo VIP hosty, nelze ho smazat.';
+        } else {
+            db()->prepare('DELETE FROM runs WHERE id = ?')->execute([$id]);
+            $_SESSION['flash'] = 'Termín smazán.';
         }
-        if (prague_time($from) === null || !ctype_digit($percent) || (int) $percent > 100) {
-            $errors[] = 'Storno pravidlo ' . ($i + 1) . ': zadejte datum a procento 0–100.';
-            continue;
-        }
-        $rules[] = ['from' => str_replace('T', ' ', $from), 'percent' => (int) $percent];
-    }
-    if ($errors) {
-        $_SESSION['flash'] = implode(' ', $errors);
     } else {
-        usort($rules, static fn ($a, $b) => strcmp($a['from'], $b['from']));
-        save_setting('event_at', str_replace('T', ' ', $event));
-        save_setting('storno_rules', $rules);
-        $_SESSION['flash'] = 'Nastavení uloženo.';
+        $label = trim((string) ($_POST['label'] ?? ''));
+        $starts = prague_time((string) ($_POST['starts_at'] ?? ''));
+        $closesRaw = trim((string) ($_POST['booking_closes_at'] ?? ''));
+        $closes = $closesRaw === '' ? null : prague_time($closesRaw);
+        $rules = [];
+        $errors = [];
+        if ($starts === null) {
+            $errors[] = 'Zadejte datum a čas začátku.';
+        }
+        if ($closesRaw !== '' && ($closes === null || ($starts && $closes > $starts))) {
+            $errors[] = 'Konec rezervací musí být platné datum před začátkem.';
+        }
+        if (mb_strlen($label) > 100) {
+            $errors[] = 'Název je příliš dlouhý.';
+        }
+        foreach ((array) ($_POST['rule_from'] ?? []) as $i => $from) {
+            $from = trim((string) $from);
+            $percent = trim((string) ($_POST['rule_percent'][$i] ?? ''));
+            if ($from === '' && $percent === '') {
+                continue;
+            }
+            if (prague_time($from) === null || !ctype_digit($percent) || (int) $percent > 100) {
+                $errors[] = 'Storno pravidlo ' . ($i + 1) . ': zadejte datum a procento 0–100.';
+                continue;
+            }
+            $rules[] = ['from' => str_replace('T', ' ', $from), 'percent' => (int) $percent];
+        }
+        if ($errors) {
+            $_SESSION['flash'] = implode(' ', $errors);
+        } else {
+            $values = [$label, db_time($starts), $closes ? db_time($closes) : null, json_encode(normalize_storno_rules($rules), JSON_UNESCAPED_UNICODE)];
+            if ($id > 0) {
+                db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ?, storno_rules = ? WHERE id = ?')
+                    ->execute([...$values, $id]);
+            } else {
+                db()->prepare('INSERT INTO runs (label, starts_at, booking_closes_at, storno_rules) VALUES (?, ?, ?, ?)')
+                    ->execute($values);
+            }
+            $_SESSION['flash'] = $id > 0 ? 'Termín uložen.' : 'Termín přidán.';
+        }
     }
     header('Location: admin.php?view=settings');
     exit;
@@ -80,13 +106,14 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-
     if ($action === 'vip-add') {
         $name = trim(preg_replace('/\s+/u', ' ', (string) ($_POST['name'] ?? '')));
         $section = (string) ($_POST['section'] ?? '');
+        $runId = (int) ($_POST['run_id'] ?? 0);
         $persons = max(1, min(50, (int) ($_POST['persons'] ?? 1)));
         $note = trim((string) ($_POST['note'] ?? ''));
-        if ($name === '' || mb_strlen($name) > 200 || !isset(SECTIONS[$section]) || mb_strlen($note) > 255) {
-            $flash = 'Vyplňte jméno a sekci.';
+        if ($name === '' || mb_strlen($name) > 200 || !isset(SECTIONS[$section]) || mb_strlen($note) > 255 || !run_by_id($runId)) {
+            $flash = 'Vyplňte termín, jméno a sekci.';
         } else {
-            db()->prepare('INSERT INTO vip_guests (name, section, persons, note, created_at) VALUES (?, ?, ?, ?, ?)')
-                ->execute([$name, $section, $persons, $note, db_time(now_utc())]);
+            db()->prepare('INSERT INTO vip_guests (run_id, name, section, persons, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+                ->execute([$runId, $name, $section, $persons, $note, db_time(now_utc())]);
             $flash = "VIP host {$name} přidán.";
         }
     } elseif ($action === 'vip-delete') {
@@ -97,7 +124,7 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-
         $flash = 'Příchod zrušen.';
     }
     $_SESSION['flash'] = $flash;
-    header('Location: admin.php?view=vip');
+    header('Location: admin.php?' . http_build_query(['view' => 'vip', 'run' => $_GET['run'] ?? '']));
     exit;
 }
 
@@ -138,7 +165,7 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-la
         }
     }
     $_SESSION['flash'] = $flash;
-    header('Location: admin.php?' . http_build_query(['status' => $_GET['status'] ?? '', 'q' => $_GET['q'] ?? '']));
+    header('Location: admin.php?' . http_build_query(['status' => $_GET['status'] ?? '', 'q' => $_GET['q'] ?? '', 'run' => $_GET['run'] ?? '']));
     exit;
 }
 $flash = $_SESSION['flash'] ?? null;
@@ -160,16 +187,16 @@ function accept_late_payment(int $id): string
     }
     $seats = explode(',', $r['seats']);
     $placeholders = implode(',', array_fill(0, count($seats), '?'));
-    $taken = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE seat_id IN ($placeholders) FOR UPDATE");
-    $taken->execute($seats);
+    $taken = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE run_id = ? AND seat_id IN ($placeholders) FOR UPDATE");
+    $taken->execute([$r['run_id'], ...$seats]);
     $conflict = $taken->fetchAll(PDO::FETCH_COLUMN);
     if ($conflict) {
         $pdo->rollBack();
         return 'Místa ' . implode(', ', $conflict) . ' už mezitím obsadil někdo jiný. Platbu je nutné vrátit nebo domluvit jiná místa.';
     }
-    $insert = $pdo->prepare('INSERT INTO reservation_seats (seat_id, reservation_id) VALUES (?, ?)');
+    $insert = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, reservation_id) VALUES (?, ?, ?)');
     foreach ($seats as $seat) {
-        $insert->execute([$seat, $id]);
+        $insert->execute([$r['run_id'], $seat, $id]);
     }
     $pdo->prepare("UPDATE reservations SET status = 'paid', paid_at = ?, paid_amount = amount, cancelled_at = NULL WHERE id = ?")
         ->execute([db_time(now_utc()), $id]);
@@ -253,6 +280,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .seat-cancel { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:6px; align-items:center; max-width:260px; }
   .seat-cancel label { font-size:.8rem; white-space:nowrap; }
   .seat-cancel button { padding:4px 10px; }
+  a.card { color:inherit; text-decoration:none; }
+  .card.selected { outline:2px solid var(--accent); }
+  .settings-intro { margin-bottom:12px; max-width:760px; }
+  .settings + .settings { margin-top:12px; }
   .card.attention { background:#f6cdc6; color:#7d2117; text-decoration:none; }
   .settings { max-width:640px; display:flex; flex-direction:column; gap:12px; }
   .settings h2 { margin:8px 0 0; font:600 1.15rem Georgia, serif; }
@@ -279,6 +310,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 <?php else:
     expire_reservations();
     $status = (string) ($_GET['status'] ?? '');
+    $runFilter = (int) ($_GET['run'] ?? 0);
     $q = trim((string) ($_GET['q'] ?? ''));
     $where = [];
     $params = [];
@@ -287,6 +319,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         $params[] = $status;
     } elseif ($status === 'refund') {
         $where[] = 'refund_amount > refunded_amount';
+    }
+    if ($runFilter) {
+        $where[] = 'run_id = ?';
+        $params[] = $runFilter;
     }
     if ($q !== '') {
         $where[] = '(variable_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ? OR seats LIKE ?)';
@@ -319,22 +355,28 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   <?php if ($flash): ?><div class="flash"><?= $h($flash) ?></div><?php endif ?>
 
   <?php if ($view === 'settings'):
-      $eventValue = str_replace(' ', 'T', (string) setting('event_at', ''));
-      $rules = storno_rules();
-      $rows = array_pad($rules, max(4, count($rules) + 1), ['from' => '', 'percent' => '']);
       $deleteAt = data_deletion_at();
+      $local = static fn (?string $utc) => $utc ? utc_time($utc)->setTimezone(new DateTimeZone(PRAGUE))->format('Y-m-d\TH:i') : '';
+      $runForms = array_values(runs());
+      $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null, 'storno_rules' => []];
+  ?>
+  <p class="hint settings-intro">Každý termín má vlastní plánek míst, rezervace, VIP hosty a storno podmínky.
+    Rezervace a rušení zákazníkem končí začátkem termínu (nebo dříve, je-li vyplněn konec rezervací).
+    <?php if ($deleteAt): ?>Osobní údaje budou smazány <?= $h($deleteAt->format('j. n. Y')) ?> (<?= (int) config('DATA_RETENTION_DAYS') ?> dní po posledním termínu).<?php endif ?></p>
+
+  <?php foreach ($runForms as $run):
+      $rows = array_pad($run['storno_rules'], max(3, count($run['storno_rules']) + 1), ['from' => '', 'percent' => '']);
   ?>
   <form class="card settings" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-    <input type="hidden" name="action" value="settings">
-
-    <h2>Akce</h2>
-    <label>Začátek akce<input type="datetime-local" name="event_at" value="<?= $h($eventValue) ?>"></label>
-    <p class="hint">Od začátku akce už nelze rezervace rušit.
-      <?php if ($deleteAt): ?>Osobní údaje budou smazány <?= $h($deleteAt->format('j. n. Y')) ?> (<?= (int) config('DATA_RETENTION_DAYS') ?> dní po akci).<?php endif ?></p>
-
-    <h2>Storno poplatky</h2>
-    <p class="hint">Platí pro zaplacené rezervace zrušené zákazníkem. Nezaplacené lze zrušit vždy zdarma. Před prvním datem je storno zdarma.</p>
+    <input type="hidden" name="id" value="<?= (int) $run['id'] ?>">
+    <h2><?= $run['id'] ? $h(run_label($run)) : 'Nový termín' ?></h2>
+    <div class="rule">
+      <label>Začátek<input type="datetime-local" name="starts_at" value="<?= $h($local($run['starts_at'])) ?>" required></label>
+      <label>Název (nepovinný)<input name="label" maxlength="100" value="<?= $h($run['label']) ?>" placeholder="např. Premiéra"></label>
+      <label>Konec rezervací (nepovinný)<input type="datetime-local" name="booking_closes_at" value="<?= $h($local($run['booking_closes_at'])) ?>"></label>
+    </div>
+    <p class="hint">Storno poplatky zaplacených rezervací tohoto termínu. Před prvním datem je storno zdarma.</p>
     <div class="rules">
       <?php foreach ($rows as $rule): ?>
         <div class="rule">
@@ -343,12 +385,20 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         </div>
       <?php endforeach ?>
     </div>
-    <p class="hint">Prázdné řádky se ignorují. Pro další pravidla uložte a objeví se nový prázdný řádek.</p>
-    <button>Uložit nastavení</button>
+    <div class="actions">
+      <button name="action" value="run-save"><?= $run['id'] ? 'Uložit termín' : 'Přidat termín' ?></button>
+      <?php if ($run['id']): ?>
+        <button class="danger" name="action" value="run-delete" onclick="return confirm('Smazat termín? Lze jen u termínu bez rezervací a VIP.')">Smazat</button>
+      <?php endif ?>
+    </div>
   </form>
+  <?php endforeach ?>
 
   <?php elseif ($view === 'vip'):
-      $vips = db()->query('SELECT * FROM vip_guests ORDER BY section, name')->fetchAll();
+      $runFilter = (int) ($_GET['run'] ?? 0);
+      $stmt = db()->prepare('SELECT * FROM vip_guests' . ($runFilter ? ' WHERE run_id = ?' : '') . ' ORDER BY run_id, section, name');
+      $stmt->execute($runFilter ? [$runFilter] : []);
+      $vips = $stmt->fetchAll();
       $vipPersons = array_sum(array_column($vips, 'persons'));
       $vipArrived = array_sum(array_map(fn ($v) => $v['checked_in_at'] ? (int) $v['persons'] : 0, $vips));
   ?>
@@ -357,9 +407,20 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <div class="card">Přišlo<strong><?= $vipArrived ?> / <?= $vipPersons ?></strong>osob</div>
   </div>
 
+  <form class="filters" method="get">
+    <input type="hidden" name="view" value="vip">
+    <select name="run" onchange="this.form.submit()">
+      <option value="">Všechny termíny</option>
+      <?php foreach (runs() as $run): ?><option value="<?= (int) $run['id'] ?>" <?= $runFilter === $run['id'] ? 'selected' : '' ?>><?= $h(run_label($run)) ?></option><?php endforeach ?>
+    </select>
+  </form>
+
   <form class="card vip-form" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <input type="hidden" name="action" value="vip-add">
+    <label>Termín<select name="run_id" required>
+      <?php foreach (runs() as $run): ?><option value="<?= (int) $run['id'] ?>" <?= $runFilter === $run['id'] ? 'selected' : '' ?>><?= $h(run_label($run)) ?></option><?php endforeach ?>
+    </select></label>
     <label>Jméno<input name="name" required maxlength="200" placeholder="Jméno a příjmení"></label>
     <label>Sekce<select name="section" required>
       <?php foreach (SECTIONS as $id => $def): ?><option value="<?= $h($id) ?>"><?= $h($def['name']) ?></option><?php endforeach ?>
@@ -371,10 +432,11 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <div class="card table">
     <table>
-      <thead><tr><th>Jméno</th><th>Sekce</th><th>Osob</th><th>Poznámka</th><th>Příchod</th><th></th></tr></thead>
+      <thead><tr><th>Termín</th><th>Jméno</th><th>Sekce</th><th>Osob</th><th>Poznámka</th><th>Příchod</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($vips as $v): ?>
         <tr>
+          <td><?= ($vr = run_by_id((int) $v['run_id'])) ? $h(run_label($vr)) : '–' ?></td>
           <td><strong><?= $h($v['name']) ?></strong></td>
           <td><?= $h(SECTIONS[$v['section']]['name'] ?? $v['section']) ?></td>
           <td><?= (int) $v['persons'] ?></td>
@@ -398,7 +460,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           </td>
         </tr>
       <?php endforeach ?>
-      <?php if (!$vips): ?><tr><td colspan="6">Žádní VIP hosté.</td></tr><?php endif ?>
+      <?php if (!$vips): ?><tr><td colspan="7">Žádní VIP hosté.</td></tr><?php endif ?>
       </tbody>
     </table>
   </div>
@@ -414,7 +476,18 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <?php endif ?>
   </div>
 
+  <?php $perRun = db()->query("SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id")->fetchAll(PDO::FETCH_KEY_PAIR); ?>
+  <div class="stats">
+    <?php foreach (runs() as $run): $held = (int) ($perRun[$run['id']] ?? 0); ?>
+      <a class="card <?= $runFilter === $run['id'] ? 'selected' : '' ?>" href="admin.php?run=<?= (int) $run['id'] ?>"><?= $h(run_label($run)) ?><strong><?= $held ?> / <?= total_capacity() ?></strong><?= total_capacity() - $held ?> volných</a>
+    <?php endforeach ?>
+  </div>
+
   <form class="filters" method="get">
+    <select name="run">
+      <option value="">Všechny termíny</option>
+      <?php foreach (runs() as $run): ?><option value="<?= (int) $run['id'] ?>" <?= $runFilter === $run['id'] ? 'selected' : '' ?>><?= $h(run_label($run)) ?></option><?php endforeach ?>
+    </select>
     <select name="status">
       <option value="">Všechny stavy</option>
       <?php foreach ($statusLabels as $k => $label): ?>
@@ -428,11 +501,12 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <div class="card table">
     <table>
-      <thead><tr><th>VS</th><th>Jméno</th><th>Místa</th><th>Částka</th><th>Stav</th><th>Vytvořeno</th><th>Splatnost</th><th></th></tr></thead>
+      <thead><tr><th>VS</th><th>Termín</th><th>Jméno</th><th>Místa</th><th>Částka</th><th>Stav</th><th>Vytvořeno</th><th>Splatnost</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($rows as $r): ?>
         <tr>
           <td><strong><?= $h($r['variable_symbol']) ?></strong></td>
+          <td class="seats"><?= ($rr = run_by_id((int) $r['run_id'])) ? $h(run_label($rr)) : '–' ?></td>
           <td><?= $h($r['first_name'] . ' ' . $r['last_name']) ?><br><a href="mailto:<?= $h($r['email']) ?>"><?= $h($r['email']) ?></a>
             <details class="edit-email"><summary>změnit e-mail</summary>
               <form method="post">
@@ -512,7 +586,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           </td>
         </tr>
       <?php endforeach ?>
-      <?php if (!$rows): ?><tr><td colspan="8">Žádné rezervace.</td></tr><?php endif ?>
+      <?php if (!$rows): ?><tr><td colspan="9">Žádné rezervace.</td></tr><?php endif ?>
       </tbody>
     </table>
   </div>

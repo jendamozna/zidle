@@ -5,16 +5,18 @@ import { seatsLabel } from '../plural.js';
 
 const REFRESH_MS = 30_000;
 
-export function useSeats() {
+/** Seat state of one run; changing runId starts over with an empty selection. */
+export function useSeats(runId) {
+  const [runs, setRuns] = useState(null);
   const [taken, setTaken] = useState(() => new Set());
   const [selected, setSelected] = useState(() => new Set());
   const [price, setPrice] = useState(SEAT_PRICE);
   const [deadlineHours, setDeadlineHours] = useState(null);
   const formToken = useRef('');
   const [maxSeats, setMaxSeats] = useState(20);
-  const [bookingOpen, setBookingOpen] = useState(true);
+  const [bookingOpen, setBookingOpen] = useState(false);
   const [notice, setNotice] = useState(null); // {text} – shown as a toast
-  const [terms, setTerms] = useState({ stornoRules: [], eventAt: null, dataRetentionDays: null });
+  const [dataRetentionDays, setDataRetentionDays] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -22,8 +24,9 @@ export function useSeats() {
 
   const refresh = useCallback(async () => {
     try {
-      const data = await fetchSeats();
-      if (!active.current) return;
+      const data = await fetchSeats(runId);
+      if (!active.current || (data.runId ?? null) !== (runId ?? null)) return;
+      setRuns(data.runs);
       const nextTaken = new Set(data.taken);
       setTaken(nextTaken);
       setPrice(data.price);
@@ -31,7 +34,7 @@ export function useSeats() {
       formToken.current = data.formToken;
       setMaxSeats(data.maxSeats);
       setBookingOpen(data.bookingOpen);
-      setTerms({ stornoRules: data.stornoRules, eventAt: data.eventAt, dataRetentionDays: data.dataRetentionDays });
+      setDataRetentionDays(data.dataRetentionDays);
       if (!data.bookingOpen) setSelected(new Set());
       // Drop seats someone else reserved in the meantime and tell the user.
       setSelected((prev) => {
@@ -46,10 +49,13 @@ export function useSeats() {
     } finally {
       if (active.current) setLoading(false);
     }
-  }, []);
+  }, [runId]);
 
   useEffect(() => {
     active.current = true;
+    setTaken(new Set());
+    setSelected(new Set());
+    setLoading(true);
     refresh();
     const timer = setInterval(refresh, REFRESH_MS);
     const onFocus = () => refresh();
@@ -65,7 +71,7 @@ export function useSeats() {
     (id) => {
       if (taken.has(id)) return;
       if (!bookingOpen) {
-        setNotice({ text: 'Rezervace jsou uzavřeny.' });
+        setNotice({ text: 'Rezervace na tento termín jsou uzavřeny.' });
         return;
       }
       if (!selected.has(id) && selected.size >= maxSeats) {
@@ -114,7 +120,7 @@ export function useSeats() {
       if (!ids.length) return null;
       setSubmitting(true);
       try {
-        const reservation = await createReservation({ ...customer, seats: ids, formToken: formToken.current });
+        const reservation = await createReservation({ ...customer, runId, seats: ids, formToken: formToken.current });
         setTaken((prev) => new Set([...prev, ...reservation.seats]));
         setSelected(new Set());
         return reservation;
@@ -125,7 +131,7 @@ export function useSeats() {
         setSubmitting(false);
       }
     },
-    [selected, refresh],
+    [selected, refresh, runId],
   );
 
   const seatState = useCallback(
@@ -140,7 +146,9 @@ export function useSeats() {
     deadlineHours,
     bookingOpen,
     notice,
-    terms,
+    runs,
+    run: runs?.find((r) => r.id === runId) ?? null,
+    dataRetentionDays,
     stats,
     seatState,
     toggleSeat,

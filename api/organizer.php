@@ -1,10 +1,11 @@
 <?php
 // Organizer API used by the ticket scanner (scanner.html).
-//   GET  organizer.php                                  → {loggedIn}
+//   GET  organizer.php                                  → {loggedIn, runs}
 //   POST organizer.php {action: "login", password}      → {loggedIn}
 //   POST organizer.php {action: "logout"}
-//   POST organizer.php {action: "verify", code}         → ticket check result, records first check-in
-//   POST organizer.php {action: "vip-list"}             → {vips: [...]}
+//   POST organizer.php {action: "verify", code, runId}  → ticket check result for the run being checked in,
+//                                                          records first check-in
+//   POST organizer.php {action: "vip-list", runId}      → {vips: [...]} of the run
 //   POST organizer.php {action: "vip-checkin", id}      → records VIP arrival
 //   POST organizer.php {action: "vip-undo", id}         → clears VIP arrival (mistake)
 declare(strict_types=1);
@@ -26,7 +27,10 @@ run_api(function (): void {
     session_start();
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        json_response(['loggedIn' => !empty($_SESSION['organizer'])]);
+        json_response([
+            'loggedIn' => !empty($_SESSION['organizer']),
+            'runs' => array_values(array_map(static fn ($run) => run_public($run), runs())),
+        ]);
     }
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         json_error('Metoda není povolena.', 405);
@@ -53,11 +57,11 @@ run_api(function (): void {
             // no break
         case 'verify':
             require_organizer();
-            verify_ticket((string) ($body['code'] ?? ''));
+            verify_ticket((string) ($body['code'] ?? ''), (int) ($body['runId'] ?? 0));
             // no break
         case 'vip-list':
             require_organizer();
-            json_response(['vips' => vip_list()]);
+            json_response(['vips' => vip_list((int) ($body['runId'] ?? 0))]);
             // no break
         case 'vip-checkin':
         case 'vip-undo':
@@ -70,7 +74,7 @@ run_api(function (): void {
             } else {
                 db()->prepare('UPDATE vip_guests SET checked_in_at = NULL WHERE id = ?')->execute([$id]);
             }
-            json_response(['vips' => vip_list()]);
+            json_response(['vips' => vip_list((int) ($body['runId'] ?? 0))]);
             // no break
         default:
             json_error('Neznámá akce.', 400);
@@ -84,9 +88,11 @@ function require_organizer(): void
     }
 }
 
-function vip_list(): array
+function vip_list(int $runId): array
 {
-    $rows = db()->query('SELECT id, name, section, persons, note, checked_in_at FROM vip_guests ORDER BY name')->fetchAll();
+    $stmt = db()->prepare('SELECT id, name, section, persons, note, checked_in_at FROM vip_guests WHERE run_id = ? ORDER BY name');
+    $stmt->execute([$runId]);
+    $rows = $stmt->fetchAll();
     return array_map(static fn ($v) => [
         'id' => (int) $v['id'],
         'name' => $v['name'],
@@ -103,8 +109,9 @@ function vip_list(): array
  *         unpaid      – reservation not paid yet
  *         cancelled   – reservation cancelled or expired
  *         invalid     – not our ticket, forged or altered
+ *         wrong_run   – valid reservation, but for another run (not checked in)
  */
-function verify_ticket(string $code): void
+function verify_ticket(string $code, int $runId): void
 {
     $ticket = parse_ticket_code($code);
     if ($ticket === null) {
@@ -129,19 +136,22 @@ function verify_ticket(string $code): void
     // the database is authoritative, the scanner shows the current seats.
     $changed = $r['seats'] !== implode(',', $ticket['seats']);
 
+    $wrongRun = (int) $r['run_id'] !== $runId;
     $firstScan = $r['checked_in_at'] === null;
-    if ($r['status'] === 'paid' && $firstScan) {
+    if ($r['status'] === 'paid' && $firstScan && !$wrongRun) {
         $now = db_time(now_utc());
         $pdo->prepare('UPDATE reservations SET checked_in_at = ? WHERE id = ?')->execute([$now, $r['id']]);
         $r['checked_in_at'] = $now;
     }
     $pdo->commit();
 
-    $result = match ($r['status']) {
-        'paid' => $firstScan ? 'valid' : 'used',
-        'pending' => 'unpaid',
+    $result = match (true) {
+        $wrongRun && in_array($r['status'], ['pending', 'paid'], true) => 'wrong_run',
+        $r['status'] === 'paid' => $firstScan ? 'valid' : 'used',
+        $r['status'] === 'pending' => 'unpaid',
         default => 'cancelled',
     };
+    $run = run_by_id((int) $r['run_id']);
     json_response([
         'result' => $result,
         'changed' => $changed,
@@ -154,6 +164,7 @@ function verify_ticket(string $code): void
         ],
         'checkedInAt' => iso_time($r['checked_in_at']),
         'status' => $r['status'],
+        'run' => $run ? ['id' => $run['id'], 'label' => run_label($run)] : null,
         'cancelledSeats' => $r['cancelled_seats'] === '' ? [] : explode(',', $r['cancelled_seats']),
         'email' => $r['email'],
     ]);

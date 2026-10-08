@@ -17,8 +17,7 @@ function seat_price(array $r): int
  */
 function cancellation_terms(array $r): array
 {
-    $now = now_utc();
-    $event = event_at();
+    $run = run_by_id((int) $r['run_id']);
 
     if (!in_array($r['status'], ['pending', 'paid'], true)) {
         return ['allowed' => false, 'reason' => 'inactive'];
@@ -26,10 +25,10 @@ function cancellation_terms(array $r): array
     if ($r['checked_in_at'] !== null) {
         return ['allowed' => false, 'reason' => 'checked_in'];
     }
-    if ($event !== null && $now >= $event) {
+    if ($run === null || run_started($run)) {
         return ['allowed' => false, 'reason' => 'event_started'];
     }
-    $percent = $r['status'] === 'paid' ? storno_percent($now) : 0;
+    $percent = $r['status'] === 'paid' ? storno_percent($run, now_utc()) : 0;
     [$fee, $refund] = cancellation_money($r, (int) $r['seat_count'], 'customer');
     return [
         'allowed' => true,
@@ -50,7 +49,9 @@ function cancellation_money(array $r, int $count, string $by): array
         return [0, 0];
     }
     $value = seat_price($r) * $count;
-    $fee = $by === 'customer' ? (int) round($value * storno_percent(now_utc()) / 100) : 0;
+    $run = run_by_id((int) $r['run_id']);
+    $percent = $by === 'customer' && $run !== null ? storno_percent($run, now_utc()) : 0;
+    $fee = (int) round($value * $percent / 100);
     return [$fee, $value - $fee];
 }
 
@@ -150,7 +151,7 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
     }
     if (!$paid && !$whole) {
         send_customer_email($r, 'Změna rezervace', array_merge(
-            ['zrušili jsme místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.',
+            ['zrušili jsme místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.', run_line($r),
              'Zbývající místa: ' . implode('; ', seat_labels($r['seats'])) . '.', '', 'Nové platební údaje:'],
             payment_lines($r)
         ));
@@ -161,7 +162,8 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
     }
     send_customer_email($r, 'Rezervace zrušena', array_merge(
         ['Vaše rezervace (VS ' . $r['variable_symbol'] . ') byla zrušena a místa uvolněna:',
-         implode('; ', seat_labels($r['seats'])) . '.'],
+         implode('; ', seat_labels($r['seats'])) . '.',
+         run_line($r)],
         $refundLines
     ));
 }
@@ -221,15 +223,14 @@ function send_due_notifications(): array
     return $sent;
 }
 
-/** Date after which personal data is deleted, or null when the event date is not set. */
+/** Personal data is deleted DATA_RETENTION_DAYS after the start of the last run (null without runs). */
 function data_deletion_at(): ?DateTimeImmutable
 {
-    $event = event_at();
-    return $event?->modify('+' . (int) config('DATA_RETENTION_DAYS') . ' days');
+    return last_run_start()?->modify('+' . (int) config('DATA_RETENTION_DAYS') . ' days');
 }
 
 /**
- * GDPR: after the event + DATA_RETENTION_DAYS remove names and e-mails
+ * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails
  * (payment records – VS, amount, seats – stay for accounting)
  * and delete the VIP list. Returns the number of anonymized reservations.
  */

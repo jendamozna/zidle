@@ -110,6 +110,7 @@ function send_ticket_email(array $r, array $intro = []): bool
         '',
         ...$introLines,
         '',
+        run_line($r),
         "Počet míst: {$count}",
         'Místa: ' . implode('; ', $seats),
         'Variabilní symbol: ' . $r['variable_symbol'],
@@ -124,6 +125,7 @@ function send_ticket_email(array $r, array $intro = []): bool
         . '<p style="margin:0 0 20px;color:#6b6256">Vstupenka · VS ' . $h($r['variable_symbol']) . '</p>'
         . ($intro ? '<p style="margin:0 0 20px;text-align:left;line-height:1.5">' . implode('<br>', array_map($h, $intro)) . '</p>' : '')
         . '<img src="cid:ticket-qr" alt="QR kód vstupenky" width="260" height="260" style="display:block;margin:0 auto 20px;width:260px;height:260px">'
+        . '<p style="margin:0 0 16px;font-size:20px;font-weight:bold;color:#8a5a2b">' . $h(preg_replace('/^Termín: /', '', run_line($r))) . '</p>'
         . '<p style="margin:0 0 4px;font-size:18px;font-weight:bold">' . $h($r['first_name'] . ' ' . $r['last_name']) . '</p>'
         . '<p style="margin:0 0 16px;color:#6b6256">' . $count . ' ' . ($count === 1 ? 'místo' : ($count < 5 ? 'místa' : 'míst')) . '</p>'
         . '<p style="margin:0;line-height:1.6">' . implode('<br>', array_map($h, $seats)) . '</p>'

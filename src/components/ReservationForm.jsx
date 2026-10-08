@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { formatCzk } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { stornoText } from '../storno.js';
+import { runLabel } from '../runs.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -13,8 +14,8 @@ function validate(values) {
   return errors;
 }
 
-export default function ReservationForm({ stats, deadlineHours, terms, submitting, onSubmit, onClose }) {
-  const storno = stornoText(terms?.stornoRules);
+export default function ReservationForm({ stats, deadlineHours, run, dataRetentionDays, submitting, onSubmit, onClose }) {
+  const storno = stornoText(run?.stornoRules);
   const [values, setValues] = useState({ firstName: '', lastName: '', email: '', hp: '' });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
@@ -77,6 +78,10 @@ export default function ReservationForm({ stats, deadlineHours, terms, submittin
           </button>
         </div>
 
+        <p className="modal-run">
+          Termín <strong>{runLabel(run)}</strong>
+        </p>
+
         <div className="modal-summary">
           <span>{seatsLabel(stats.selectedCount)} × {formatCzk(stats.price)}</span>
           <strong>{formatCzk(stats.total)}</strong>
@@ -97,11 +102,11 @@ export default function ReservationForm({ stats, deadlineHours, terms, submittin
         </div>
 
         <div className="modal-notes">
-          {deadlineHours ? <p>Splatnost {deadlineHours} hodin, poté se místa uvolní.</p> : null}
+          {deadlineHours ? <p>Splatnost {deadlineHours} hodin (nejpozději do začátku termínu), poté se místa uvolní.</p> : null}
           {storno && <p>Storno: {storno}.</p>}
           <p>
             Jméno a e-mail použijeme jen pro vyřízení této rezervace a
-            {terms?.dataRetentionDays ? ` do ${terms.dataRetentionDays} dnů` : ''} po skončení akce je smažeme.
+            {dataRetentionDays ? ` do ${dataRetentionDays} dnů` : ''} po skončení akce je smažeme.
           </p>
         </div>
         {formError && <p className="form-error" role="alert">{formError}</p>}

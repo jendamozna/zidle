@@ -1,6 +1,6 @@
 <?php
 // POST api/reservations.php        – create a reservation
-//      body: {firstName, lastName, email, seats: ["ML-1-1", ...]}
+//      body: {runId, firstName, lastName, email, seats: ["ML-1-1", ...], formToken, hp}
 // GET  api/reservations.php?token= – reservation status and payment details
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
@@ -36,11 +36,15 @@ function create_reservation(): void
         json_error('Platby nejsou nastaveny (BANK_IBAN).', 503);
     }
 
-    if (!booking_open()) {
-        json_error('Rezervace jsou uzavřeny.', 403);
-    }
-
     $body = read_json_body();
+
+    $run = run_by_id((int) ($body['runId'] ?? 0));
+    if ($run === null) {
+        json_error('Vyberte termín.', 422);
+    }
+    if (!run_booking_open($run)) {
+        json_error('Rezervace na tento termín jsou uzavřeny.', 403);
+    }
 
     // Bot checks: honeypot must stay empty, form token must be issued by us and not too fresh.
     if (trim((string) ($body['hp'] ?? '')) !== '' || !form_token_valid((string) ($body['formToken'] ?? ''))) {
@@ -92,15 +96,16 @@ function create_reservation(): void
 
     $pdo = db();
     $now = now_utc();
-    $expires = $now->modify('+' . (int) config('PAYMENT_DEADLINE_HOURS') . ' hours');
+    // Due date: PAYMENT_DEADLINE_HOURS, but never after the start of the run.
+    $expires = min($now->modify('+' . (int) config('PAYMENT_DEADLINE_HOURS') . ' hours'), run_starts($run));
     $amount = count($seats) * (int) config('SEAT_PRICE');
     $token = bin2hex(random_bytes(16));
 
     $pdo->beginTransaction();
     try {
         $placeholders = implode(',', array_fill(0, count($seats), '?'));
-        $stmt = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE seat_id IN ($placeholders) FOR UPDATE");
-        $stmt->execute($seats);
+        $stmt = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE run_id = ? AND seat_id IN ($placeholders) FOR UPDATE");
+        $stmt->execute([$run['id'], ...$seats]);
         $conflict = $stmt->fetchAll(PDO::FETCH_COLUMN);
         if ($conflict) {
             $pdo->rollBack();
@@ -109,19 +114,19 @@ function create_reservation(): void
 
         $pdo->prepare(
             'INSERT INTO reservations
-               (token, first_name, last_name, email, seats, seat_count, amount, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+               (token, run_id, first_name, last_name, email, seats, seat_count, amount, created_at, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
-            $token, $firstName, $lastName, $email, implode(',', $seats), count($seats), $amount,
+            $token, $run['id'], $firstName, $lastName, $email, implode(',', $seats), count($seats), $amount,
             db_time($now), db_time($expires),
         ]);
         $id = (int) $pdo->lastInsertId();
         $pdo->prepare('UPDATE reservations SET variable_symbol = ? WHERE id = ?')
             ->execute([generate_variable_symbol($pdo), $id]);
 
-        $insertSeat = $pdo->prepare('INSERT INTO reservation_seats (seat_id, reservation_id) VALUES (?, ?)');
+        $insertSeat = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, reservation_id) VALUES (?, ?, ?)');
         foreach ($seats as $seatId) {
-            $insertSeat->execute([$seatId, $id]);
+            $insertSeat->execute([$run['id'], $seatId, $id]);
         }
         $pdo->commit();
     } catch (PDOException $e) {

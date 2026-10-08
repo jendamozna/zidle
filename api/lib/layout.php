@@ -10,6 +10,11 @@ const SECTIONS = [
     'BR' => ['name' => 'Balkon vpravo', 'rows' => 2, 'seats' => 10],
 ];
 
+function total_capacity(): int
+{
+    return array_sum(array_map(static fn ($s) => $s['rows'] * $s['seats'], SECTIONS));
+}
+
 function is_valid_seat_id(string $id): bool
 {
     if (!preg_match('/^([A-Z]{2})-(\d{1,2})-(\d{1,2})$/', $id, $m)) {

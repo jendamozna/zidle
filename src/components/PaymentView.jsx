@@ -4,6 +4,7 @@ import { SECTION_BY_ID, compareSeatIds, formatCzk, parseSeatId } from '../data/l
 import { cancelReservation } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
 import { stornoText } from '../storno.js';
+import { runLabel } from '../runs.js';
 
 const STATUS = {
   pending: { label: 'Čeká na platbu', cls: 'occ-medium' },
@@ -213,6 +214,11 @@ export default function PaymentView({ reservation, onChange, onBack }) {
         )}
 
         <div className="payment-info">
+          {reservation.run && (
+            <p className="payment-run">
+              <span className="muted">Termín</span> <strong>{runLabel(reservation.run)}</strong>
+            </p>
+          )}
           <div className="payment-amount">
             <span className="muted">{seatsLabel(reservation.seats.length)}</span>
             <strong>{formatCzk(payment.amount)}</strong>
@@ -254,8 +260,8 @@ export default function PaymentView({ reservation, onChange, onBack }) {
           <CancellationInfo reservation={reservation} />
           {reservation.cancellation?.allowed && (
             <div className="cancel-box">
-              {status === 'paid' && stornoText(reservation.stornoRules) && (
-                <p className="muted small">Storno: {stornoText(reservation.stornoRules)}.</p>
+              {status === 'paid' && stornoText(reservation.run?.stornoRules) && (
+                <p className="muted small">Storno: {stornoText(reservation.run.stornoRules)}.</p>
               )}
               <CancelPanel reservation={reservation} onCancelled={onChange} />
             </div>

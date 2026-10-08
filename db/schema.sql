@@ -1,9 +1,21 @@
 -- Moje židle 2026 – MariaDB schema
 -- All timestamps are stored in UTC.
 
+-- Runs (dates) of the event. Seats, reservations and VIP guests belong to a run.
+CREATE TABLE IF NOT EXISTS runs (
+  id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  label             VARCHAR(100) NOT NULL DEFAULT '' COMMENT 'Optional name, e.g. Premiéra',
+  starts_at         DATETIME     NOT NULL COMMENT 'UTC',
+  booking_closes_at DATETIME     NULL COMMENT 'UTC; NULL = at the start',
+  storno_rules      TEXT         NOT NULL DEFAULT '[]' COMMENT 'JSON [{"from": "YYYY-MM-DD HH:MM" (Europe/Prague), "percent": 50}]',
+  PRIMARY KEY (id),
+  KEY idx_starts (starts_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
 CREATE TABLE IF NOT EXISTS reservations (
   id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
   token           CHAR(32)     NOT NULL,
+  run_id          INT UNSIGNED NOT NULL,
   first_name      VARCHAR(100) NOT NULL,
   last_name       VARCHAR(100) NOT NULL,
   email           VARCHAR(190) NOT NULL,
@@ -30,16 +42,18 @@ CREATE TABLE IF NOT EXISTS reservations (
   PRIMARY KEY (id),
   UNIQUE KEY uq_token (token),
   UNIQUE KEY uq_vs (variable_symbol),
-  KEY idx_status_expires (status, expires_at)
+  KEY idx_status_expires (status, expires_at),
+  KEY idx_run (run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
--- One row per currently held seat (pending or paid reservation).
--- The primary key makes double booking impossible; rows are deleted when a
+-- One row per currently held seat of a run (pending or paid reservation).
+-- The primary key makes double booking of a seat in the same run impossible; rows are deleted when a
 -- reservation expires or is cancelled, which frees the seat.
 CREATE TABLE IF NOT EXISTS reservation_seats (
+  run_id         INT UNSIGNED NOT NULL,
   seat_id        VARCHAR(12)  NOT NULL,
   reservation_id INT UNSIGNED NOT NULL,
-  PRIMARY KEY (seat_id),
+  PRIMARY KEY (run_id, seat_id),
   KEY idx_reservation (reservation_id),
   CONSTRAINT fk_seat_reservation FOREIGN KEY (reservation_id)
     REFERENCES reservations (id) ON DELETE CASCADE
@@ -49,6 +63,7 @@ CREATE TABLE IF NOT EXISTS reservation_seats (
 -- specific seats; organizers find them by name at the entrance.
 CREATE TABLE IF NOT EXISTS vip_guests (
   id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  run_id        INT UNSIGNED NOT NULL,
   name          VARCHAR(200) NOT NULL,
   section       CHAR(2)      NOT NULL COMMENT 'Section id, e.g. ML',
   persons       TINYINT UNSIGNED NOT NULL DEFAULT 1,
@@ -56,7 +71,8 @@ CREATE TABLE IF NOT EXISTS vip_guests (
   created_at    DATETIME     NOT NULL,
   checked_in_at DATETIME     NULL,
   PRIMARY KEY (id),
-  KEY idx_section (section)
+  KEY idx_section (section),
+  KEY idx_run (run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- Rate limiting for spam/bot protection (fixed time windows).
@@ -68,7 +84,7 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   KEY idx_window (window_start)
 ) ENGINE=InnoDB DEFAULT CHARSET=ascii;
 
--- Admin-editable settings (event date, storno rules), JSON values.
+-- Admin-editable settings (JSON values); currently unused, runs hold dates and storno rules.
 CREATE TABLE IF NOT EXISTS settings (
   name  VARCHAR(64) NOT NULL,
   value TEXT        NOT NULL,

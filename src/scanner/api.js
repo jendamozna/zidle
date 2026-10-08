@@ -19,7 +19,7 @@ async function call(body) {
 export const getSession = () => call();
 export const login = (password) => call({ action: 'login', password });
 export const logout = () => call({ action: 'logout' });
-export const verifyTicket = (code) => call({ action: 'verify', code });
-export const vipList = () => call({ action: 'vip-list' });
-export const vipCheckIn = (id) => call({ action: 'vip-checkin', id });
-export const vipUndo = (id) => call({ action: 'vip-undo', id });
+export const verifyTicket = (code, runId) => call({ action: 'verify', code, runId });
+export const vipList = (runId) => call({ action: 'vip-list', runId });
+export const vipCheckIn = (id, runId) => call({ action: 'vip-checkin', id, runId });
+export const vipUndo = (id, runId) => call({ action: 'vip-undo', id, runId });

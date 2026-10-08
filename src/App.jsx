@@ -8,16 +8,21 @@ import SectionDetail from './components/SectionDetail.jsx';
 import ReservationPanel from './components/ReservationPanel.jsx';
 import ReservationForm from './components/ReservationForm.jsx';
 import PaymentView from './components/PaymentView.jsx';
+import RunPicker from './components/RunPicker.jsx';
+import { runLabel } from './runs.js';
 
-function setReservationParam(token) {
+function setParam(name, value) {
   const url = new URL(window.location.href);
-  if (token) url.searchParams.set('r', token);
-  else url.searchParams.delete('r');
+  if (value) url.searchParams.set(name, value);
+  else url.searchParams.delete(name);
   window.history.replaceState(null, '', url);
 }
+const setReservationParam = (token) => setParam('r', token);
 
 export default function App() {
-  const seats = useSeats();
+  // Chosen run (date) – kept in the URL (?termin=<id>) so a reload keeps it.
+  const [runId, setRunId] = useState(() => Number(new URLSearchParams(window.location.search).get('termin')) || null);
+  const seats = useSeats(runId);
   const { stats } = seats;
   const [sectionId, setSectionId] = useState(null);
   const [reservation, setReservation] = useState(null);
@@ -39,7 +44,19 @@ export default function App() {
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
-  }, [sectionId, reservation]);
+  }, [sectionId, reservation, runId]);
+
+  // A run that no longer exists in the list: back to choosing.
+  useEffect(() => {
+    if (runId && seats.runs && !seats.runs.some((r) => r.id === runId)) chooseRun(null);
+  }, [runId, seats.runs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const chooseRun = (id) => {
+    if (id !== runId && stats.selectedCount && !window.confirm('Změnou termínu se zruší vybraná místa. Pokračovat?')) return;
+    setSectionId(null);
+    setRunId(id);
+    setParam('termin', id);
+  };
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -81,11 +98,13 @@ export default function App() {
     seats.refresh();
   };
 
+  const choosing = !reservation && !runId;
   const showPanel =
-    !reservation && (section ? stats.bySection[section.id].mine.length > 0 : stats.selectedCount > 0);
+    !reservation && !choosing && (section ? stats.bySection[section.id].mine.length > 0 : stats.selectedCount > 0);
 
   let view;
   if (reservation) view = <PaymentView reservation={reservation} onChange={setReservation} onBack={closePayment} />;
+  else if (choosing) view = <RunPicker runs={seats.runs} onSelect={chooseRun} />;
   else if (section) view = <SectionDetail section={section} seats={seats} onBack={() => setSectionId(null)} />;
   else view = <Overview stats={stats} loading={seats.loading} onOpen={setSectionId} />;
 
@@ -96,7 +115,7 @@ export default function App() {
           <h1 className="brand">
             Moje židle <span>2026</span>
           </h1>
-          {!section && !reservation && (
+          {!section && !reservation && !choosing && (
             <div className="summary">
               <div className="summary-stat">
                 <span className="summary-value">{seats.loading ? '–' : stats.free}</span>
@@ -124,7 +143,19 @@ export default function App() {
       </header>
 
       <main className={`content ${showPanel ? 'with-panel' : ''}`}>
-        <div className="content-main">{view}</div>
+        <div className="content-main">
+          {!reservation && seats.run && (
+            <div className="run-bar">
+              <span>
+                <span className="muted">Termín</span> <strong>{runLabel(seats.run)}</strong>
+              </span>
+              <button type="button" className="link" onClick={() => chooseRun(null)}>
+                Změnit termín
+              </button>
+            </div>
+          )}
+          {view}
+        </div>
         {showPanel && (
           <ReservationPanel
             stats={stats}
@@ -141,7 +172,8 @@ export default function App() {
         <ReservationForm
           stats={stats}
           deadlineHours={seats.deadlineHours}
-          terms={seats.terms}
+          run={seats.run}
+          dataRetentionDays={seats.dataRetentionDays}
           submitting={seats.submitting}
           onSubmit={handleSubmit}
           onClose={closeForm}

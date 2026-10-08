@@ -6,7 +6,10 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
 
 ## How it works
 
-1. The visitor picks seats on the floor plan and clicks **Rezervovat**.
+1. The event has several **runs (dates)**, managed in admin → *Nastavení*,
+   each with its own seat map, storno rules and optional booking cut-off.
+   The visitor first picks a run (`?termin=<id>`), then seats on its floor
+   plan, and clicks **Rezervovat**.
 2. They enter name, surname and e-mail. The seats are stored in the database
    as a *pending* reservation and immediately shown as occupied to everyone.
 3. A payment page shows a Czech **QR Platba** code (amount, account, variable
@@ -25,7 +28,8 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
    its seats are still free; otherwise admin names the resold seats and the
    payment has to be refunded or other seats agreed.
    Admin can also fix a mistyped customer e-mail and resend the ticket.
-   New reservations stop at `BOOKING_CLOSES_AT` (optional).
+   Bookings for a run stop at its start (or its booking cut-off); the due
+   date never goes past the run's start.
    E-mails: a payment **reminder 24 h before the due date** and an **expiry
    notice** when an unpaid reservation is cancelled (sent by `cron.php`).
 8. **Cancellation by the customer** on the reservation page (`?r=<token>`).
@@ -92,7 +96,7 @@ visitors share one limit.
 mariadb -e "CREATE DATABASE zidle CHARACTER SET utf8mb4"
 mariadb -e "CREATE USER 'zidle'@'localhost' IDENTIFIED BY '…'; GRANT ALL ON zidle.* TO 'zidle'@'localhost'"
 mariadb zidle < db/schema.sql
-# (existing database from an older version: run the files in db/migrations/ in order, 002–007)
+# (existing database from an older version: run the files in db/migrations/ in order, 002–008)
 
 # PHP dependencies (QR code images for ticket e-mails)
 (cd api && composer install --no-dev)

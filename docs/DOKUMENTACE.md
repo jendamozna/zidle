@@ -3,14 +3,14 @@
 Tato dokumentace popisuje všechny procesy aplikace tak, jak jsou
 naprogramované. Hodnoty v textu (lhůty, limity, ceny) jsou výchozí
 a lze je změnit v konfiguraci (kapitola [12](#12-konfigurace)) nebo
-ve správě (kapitola [9.3](#93-záložka-nastavení)).
+ve správě (kapitola [9.3](#93-záložka-nastavení--termíny)).
 
 ## Obsah
 
 1. [Přehled aplikace](#1-přehled-aplikace)
 2. [Uspořádání míst](#2-uspořádání-míst)
 3. [Stavy rezervace](#3-stavy-rezervace)
-4. [Výběr míst a odeslání rezervace](#4-výběr-míst-a-odeslání-rezervace)
+4. [Výběr termínu a míst, odeslání rezervace](#4-výběr-termínu-a-míst-odeslání-rezervace)
 5. [Platba](#5-platba)
 6. [Zrušení rezervace a storno poplatky](#6-zrušení-rezervace-a-storno-poplatky)
 7. [Vstupenka a odbavení u vchodu](#7-vstupenka-a-odbavení-u-vchodu)
@@ -34,12 +34,17 @@ ve správě (kapitola [9.3](#93-záložka-nastavení)).
 Aplikace slouží k rezervaci míst na akci v kostele, k jejich zaplacení
 bankovním převodem a k odbavení u vchodu.
 
+Akce má **více termínů** (např. 3 představení). Každý termín má vlastní
+plánek míst, rezervace, VIP hosty, storno podmínky a odbavení – místo
+`ML-1-1` lze rezervovat zvlášť na každý termín. Termíny zakládá správce
+(kapitola [9.3](#93-záložka-nastavení--termíny)).
+
 | Část | Adresa | Kdo ji používá | K čemu |
 | --- | --- | --- | --- |
-| Rezervační stránka | `/` | veřejnost | výběr míst a rezervace |
+| Rezervační stránka | `/` (vybraný termín v adrese `?termin=<id>`) | veřejnost | výběr termínu, míst a rezervace |
 | Stránka rezervace | `/?r=<kód>` | zákazník | platební údaje a QR platba, vstupenka, zrušení |
-| Správa | `/api/admin.php` | účetní / správce (heslo `ADMIN_PASSWORD`) | potvrzení plateb, rušení, vracení peněz, VIP, nastavení |
-| Odbavení | `/scanner.html` | pořadatelé u vchodu (heslo `ORGANIZER_PASSWORD`) | čtení vstupenek kamerou, VIP podle jména |
+| Správa | `/api/admin.php` | účetní / správce (heslo `ADMIN_PASSWORD`) | potvrzení plateb, rušení, vracení peněz, VIP, termíny |
+| Odbavení | `/scanner.html` | pořadatelé u vchodu (heslo `ORGANIZER_PASSWORD`) | výběr odbavovaného termínu, čtení vstupenek kamerou, VIP podle jména |
 | Plánované úlohy | `api/cron.php` (každých 10 minut) | server | rušení nezaplacených rezervací, připomínky, mazání osobních údajů |
 
 Všechny časy se zobrazují v pražském čase (Europe/Prague), v databázi jsou
@@ -121,15 +126,35 @@ Zrušení **jednotlivých míst** stav nemění – rezervace jen přijde o dan�
 místa (kapitola 6). Pokud se zruší všechna zbývající místa, rezervace
 přejde do stavu *Zrušeno*.
 
-Místo je obsazené právě tehdy, když patří rezervaci ve stavu *Čeká na
-platbu* nebo *Zaplaceno*. Databáze nedovolí, aby jedno místo patřilo
-dvěma rezervacím.
+Každá rezervace patří k jednomu termínu. Místo je na daném termínu
+obsazené právě tehdy, když patří rezervaci tohoto termínu ve stavu *Čeká
+na platbu* nebo *Zaplaceno*. Databáze nedovolí, aby jedno místo patřilo
+na stejném termínu dvěma rezervacím.
 
 ---
 
-## 4. Výběr míst a odeslání rezervace
+## 4. Výběr termínu a míst, odeslání rezervace
 
-### 4.1 Výběr míst
+### 4.1 Výběr termínu
+
+1. Úvodní stránka ukazuje **Vyberte termín** – kartu pro každý termín
+   s dnem v týdnu, datem, časem, případným názvem (např. *Premiéra*)
+   a počtem volných míst (*„303 volných míst“*). Barva štítku odpovídá
+   obsazenosti (zelená / oranžová / červená jako u sekcí).
+2. Termín nelze vybrat, pokud je **vyprodaný** (*Vyprodáno*) nebo už
+   skončily rezervace (*Rezervace uzavřeny* – po začátku termínu, nebo po
+   nastaveném *konci rezervací*).
+3. Po kliknutí se zobrazí plánek míst **vybraného termínu**. Nad plánkem
+   je lišta *„Termín ne 18. 10. 2026 18:00 · Premiéra“* s odkazem
+   **Změnit termín**.
+4. Vybraný termín je v adrese stránky (`?termin=<id>`), takže vydrží
+   obnovení stránky a lze na něj poslat odkaz.
+5. Při změně termínu se vybraná místa zruší; je-li něco vybráno, stránka
+   se nejdřív zeptá *„Změnou termínu se zruší vybraná místa. Pokračovat?“*
+6. Obsazenost na plánku, počty volných míst i rezervace platí vždy jen
+   pro vybraný termín.
+
+### 4.2 Výběr míst
 
 1. Návštěvník kliká na volná místa v detailu sekce. Opětovným kliknutím
    výběr zruší.
@@ -144,42 +169,48 @@ dvěma rezervacím.
 5. Obsazenost se každých 30 sekund (a při návratu do okna) načítá
    znovu. Pokud mezitím vybrané místo zarezervoval někdo jiný, vypadne
    z výběru a zobrazí se hláška *„Místa … mezitím rezervoval někdo jiný.“*
-6. Po uzávěrce rezervací (`BOOKING_CLOSES_AT`) se místo tlačítka
-   *Rezervovat* zobrazí *Rezervace uzavřeny* a místa nelze vybírat.
+6. Když rezervace na termín skončí, zobrazí se místo tlačítka
+   *Rezervovat* nápis *Rezervace uzavřeny* a kliknutí na místo ukáže
+   *„Rezervace na tento termín jsou uzavřeny.“*
 
-### 4.2 Formulář
+### 4.3 Formulář
 
 Po kliknutí na **Rezervovat** se otevře formulář:
 
+- **Termín** (např. *„Termín ne 18. 10. 2026 18:00 · Premiéra“*).
 - **Jméno**, **Příjmení**, **E-mail** – povinné.
 - Souhrn: počet míst × cena a celková částka.
-- Informace: *„Splatnost 72 hodin, poté se místa uvolní.“*
-- Storno podmínky, pokud jsou nastavené (např. *„Storno: zdarma do
-  1. 12. 2026, od 1. 12. 2026 50 %, od 18. 12. 2026 100 % ceny.“*).
+- Informace: *„Splatnost 72 hodin (nejpozději do začátku termínu), poté
+  se místa uvolní.“*
+- Storno podmínky **vybraného termínu**, pokud jsou nastavené (např.
+  *„Storno: zdarma do 1. 12. 2026, od 1. 12. 2026 50 %, od 18. 12. 2026
+  100 % ceny.“*).
 - Věta o ochraně údajů: *„Jméno a e-mail použijeme jen pro vyřízení této
   rezervace a do 30 dnů po skončení akce je smažeme.“*
 - Tlačítko **Rezervovat a zaplatit**.
 
-### 4.3 Co server zkontroluje (v tomto pořadí)
+### 4.4 Co server zkontroluje (v tomto pořadí)
 
 | Kontrola | Při nesplnění |
 | --- | --- |
 | Je nastaven bankovní účet | *„Platby nejsou nastaveny (BANK_IBAN).“* |
-| Rezervace nejsou uzavřené | *„Rezervace jsou uzavřeny.“* |
+| Termín existuje | *„Vyberte termín.“* |
+| Rezervace na termín nejsou uzavřené | *„Rezervace na tento termín jsou uzavřeny.“* |
 | Ochrana proti robotům (kapitola 13) | *„Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.“* |
 | Jméno, příjmení, platný e-mail, 1–20 platných míst | chyba u příslušného pole |
 | Nejvýše 5 rezervací za hodinu z jedné IP adresy | *„Příliš mnoho rezervací z tohoto zařízení…“* |
 | Na e-mail nečekají už 2 nezaplacené rezervace | *„Na tento e-mail už čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.“* |
-| Žádné z míst mezitím nikdo nezarezervoval | *„Některá místa už mezitím někdo rezervoval.“* – formulář se zavře, obsazená místa vypadnou z výběru |
+| Žádné z míst na tomto termínu mezitím nikdo nezarezervoval | *„Některá místa už mezitím někdo rezervoval.“* – formulář se zavře, obsazená místa vypadnou z výběru |
 
-### 4.4 Vytvoření rezervace
+### 4.5 Vytvoření rezervace
 
 Když vše projde, server v jedné transakci:
 
-1. vytvoří rezervaci ve stavu **Čeká na platbu**,
+1. vytvoří rezervaci ve stavu **Čeká na platbu** pro vybraný termín,
 2. přidělí jí **náhodný jedinečný 10místný variabilní symbol** (VS),
-3. zablokuje místa,
-4. nastaví **splatnost** = teď + 72 hodin,
+3. zablokuje místa na tomto termínu,
+4. nastaví **splatnost** = teď + 72 hodin, nejpozději však začátek
+   termínu (při rezervaci těsně před termínem je splatnost kratší),
 5. pošle zákazníkovi **e-mail s platebními údaji** (pokud jsou e-maily
    zapnuté),
 6. přesměruje zákazníka na **stránku rezervace** (`/?r=<kód>`).
@@ -202,7 +233,7 @@ Zobrazuje:
 - datum splatnosti: *„Zaplaťte do … Jinak bude rezervace zrušena
   a místa uvolněna.“* Po splatnosti červeně: *„Splatnost … uplynula.
   Zaplaťte prosím co nejdříve, jinak bude rezervace brzy zrušena.“*,
-- seznam míst, e-mail a možnost zrušení (kapitola 6).
+- termín, seznam míst, e-mail a možnost zrušení (kapitola 6).
 
 **Specifický symbol** je pro všechny platby stejný (`PAYMENT_SPECIFIC_SYMBOL`).
 
@@ -214,7 +245,8 @@ které vznikly víc než 24 hodin před splatností.
 
 ### 5.3 Splatnost a propadnutí
 
-- Zákazník vidí splatnost **72 hodin** od rezervace.
+- Zákazník vidí splatnost **72 hodin** od rezervace, nejpozději však
+  začátek termínu.
 - Rezervace se ale zruší až **48 hodin po splatnosti** (rezerva na
   bankovní převod odeslaný poslední den).
 - Pak přejde do stavu **Propadlo**, místa se uvolní a zákazník dostane
@@ -239,7 +271,7 @@ nebo částečnou platbu řeší účetní mimo aplikaci.
 Pokud platba dorazí, až když je rezervace **Propadlo**, klikne účetní
 **Přijmout pozdní platbu**:
 
-- jsou-li všechna místa stále volná, rezervace se obnoví jako
+- jsou-li všechna místa na jejím termínu stále volná, rezervace se obnoví jako
   **Zaplaceno** a odejde vstupenka,
 - je-li některé místo mezitím obsazené, rezervace se neobnoví a správa
   vypíše *„Místa … už mezitím obsadil někdo jiný. Platbu je nutné vrátit
@@ -251,7 +283,7 @@ Pokud platba dorazí, až když je rezervace **Propadlo**, klikne účetní
 
 ### 6.1 Storno pravidla
 
-Nastavují se ve správě (*Nastavení*): libovolný počet řádků **Od
+Nastavují se ve správě (*Nastavení*) **zvlášť pro každý termín**: libovolný počet řádků **Od
 (datum a čas) – Poplatek %**. Platí:
 
 - před prvním datem je zrušení **zdarma**,
@@ -281,7 +313,9 @@ Na stránce rezervace tlačítko **Zrušit rezervaci** (u více míst
    a místa uvolní. Číslo účtu se nezadává – peníze se vždy vracejí na
    účet, ze kterého platba přišla.
 
-Zrušit **nelze**: po začátku akce, po odbavení vstupenky u vchodu a u
+Platí storno pravidla **termínu rezervace**.
+
+Zrušit **nelze**: po začátku termínu, po odbavení vstupenky u vchodu a u
 rezervací *Propadlo* / *Zrušeno*.
 
 ### 6.3 Co se stane po zrušení
@@ -306,7 +340,7 @@ Ve správě:
 
 Rozdíly proti zrušení zákazníkem:
 
-- správce může rušit i po odbavení a po začátku akce,
+- správce může rušit i po odbavení a po začátku termínu,
 - u zaplacených míst se **vrací celá cena** (bez storno poplatku),
 - e-maily:
   - zaplaceno, celé: **Rezervace zrušena** – *„Částku … Vám do 14 dnů pošleme zpět na účet, ze kterého platba přišla.“*
@@ -331,7 +365,8 @@ Rozdíly proti zrušení zákazníkem:
 ### 7.1 Vstupenka
 
 - Posílá se e-mailem po potvrzení platby (a znovu po zrušení části míst).
-  Obsahuje QR kód, jméno, počet míst, místa po sekcích a řadách a VS.
+  Obsahuje **termín**, QR kód, jméno, počet míst, místa po sekcích
+  a řadách a VS.
 - Vstupenka je zároveň na stránce rezervace.
 - Ve správě lze vstupenku poslat znovu (**Poslat znovu**).
 - QR kód obsahuje text
@@ -345,21 +380,26 @@ Rozdíly proti zrušení zákazníkem:
 
 1. Pořadatel otevře na mobilu `scanner.html` a přihlásí se heslem
    pořadatele (přihlášení vydrží 24 hodin).
-2. V režimu **Vstupenky** se spustí zadní kamera (je-li to možné, je
+2. Nahoře zvolí **Odbavuji termín**. Předvybraný je první termín, který
+   nezačal před více než 6 hodinami (jinak poslední); volba si telefon
+   pamatuje. Odbavení i VIP seznam platí jen pro zvolený termín.
+3. V režimu **Vstupenky** se spustí zadní kamera (je-li to možné, je
    k dispozici i svítilna).
-3. Po načtení QR kódu telefon zavibruje a skenování se zastaví.
-4. Scanner podle **ID rezervace** z QR kódu (a kontrolního VS) načte ze
-   serveru **aktuální stav rezervace** – stav, jméno, platná místa, čas
-   odbavení. Údaje vytištěné v QR kódu se použijí jen bez připojení.
-5. Zobrazí se výsledek se jménem, počtem míst, místy po sekcích a řadách
+4. Po načtení QR kódu telefon zavibruje a skenování se zastaví.
+5. Scanner podle **ID rezervace** z QR kódu (a kontrolního VS) načte ze
+   serveru **aktuální stav rezervace** – stav, termín, jméno, platná
+   místa, čas odbavení. Údaje vytištěné v QR kódu se použijí jen bez
+   připojení.
+6. Zobrazí se výsledek se jménem, počtem míst, místy po sekcích a řadách
    a řádkem *„Rezervace č. … · VS … · aktuální stav ze systému“*.
-6. Tlačítkem **Skenovat další** se pokračuje.
+7. Tlačítkem **Skenovat další** se pokračuje.
 
 | Výsledek | Barva | Kdy |
 | --- | --- | --- |
 | **Platná vstupenka** | zelená | zaplaceno, první načtení – zaznamená se příchod |
 | **Už odbaveno** + čas prvního načtení | oranžová | vstupenka už byla načtena |
 | **Nezaplaceno** | červená | rezervace čeká na platbu |
+| **Jiný termín** + *„Vstupenka platí na …“* | červená | platná rezervace, ale na jiný termín, než se odbavuje – příchod se **nezaznamená** |
 | **Rezervace zrušena** | červená | zrušeno nebo propadlo (i když se to stalo až po vydání vstupenky) |
 | **Neplatný kód** | červená | cizí, padělaný nebo upravený kód, nebo rezervace s tímto ID a VS neexistuje |
 | **To je platební QR kód** | červená | zákazník ukazuje QR platbu místo vstupenky |
@@ -380,17 +420,20 @@ Kamera v prohlížeči funguje jen na webu s **HTTPS**.
 
 ### 8.1 Správa VIP
 
-Ve správě záložka **VIP**: formulář *Jméno, Sekce, Osob, Poznámka*
-a tlačítko **Přidat VIP**. Seznam ukazuje sekci, počet osob, poznámku
-a čas příchodu; u příchozích tlačítko **Zrušit příchod**, u všech
-**Odstranit**. Nahoře je počet VIP hostů a *Přišlo X / Y osob*.
+Ve správě záložka **VIP**: formulář *Termín, Jméno, Sekce, Osob,
+Poznámka* a tlačítko **Přidat VIP**. Každý VIP host patří k jednomu
+termínu (přijde-li na dva termíny, zadá se dvakrát). Seznam lze filtrovat
+podle termínu a ukazuje termín, sekci, počet osob, poznámku a čas
+příchodu; u příchozích tlačítko **Zrušit příchod**, u všech **Odstranit**.
+Nahoře je počet VIP hostů a *Přišlo X / Y osob* (pro zvolený filtr).
 
 VIP hosté **neplatí**, **nedostávají vstupenku** a **neblokují konkrétní
 místa** (nesnižují počet volných míst na webu).
 
 ### 8.2 Odbavení VIP
 
-1. Ve scanneru přepínač **VIP** (kamera se vypne).
+1. Ve scanneru přepínač **VIP** (kamera se vypne). Zobrazí se VIP hosté
+   **odbavovaného termínu**.
 2. Host řekne jméno, pořadatel ho píše do pole *Hledat jméno*. Hledání
    nezáleží na diakritice ani pořadí slov („stastna anezka“ najde
    „Sestra Anežka Šťastná“) a hledá i v poznámce.
@@ -412,9 +455,11 @@ adresy se přihlášení na 15 minut zablokuje.
 
 - Karty: **Čeká na platbu** a **Zaplaceno** (míst, Kč, počet rezervací),
   **K vrácení** (jen pokud něco dlužíme).
-- Filtr podle stavu (včetně *K vrácení peněz*) a vyhledávání (VS, jméno,
-  e-mail, místo).
-- Tabulka: VS, jméno a e-mail, místa (a zrušená místa), částka (a přijatá
+- Karta pro každý **termín**: obsazená / celkem míst a počet volných;
+  kliknutím se seznam vyfiltruje na daný termín.
+- Filtr podle termínu, stavu (včetně *K vrácení peněz*) a vyhledávání (VS,
+  jméno, e-mail, místo).
+- Tabulka: VS, termín, jméno a e-mail, místa (a zrušená místa), částka (a přijatá
   částka, liší-li se), stav s historií (zaplaceno, vstupenka, odbaveno,
   kdo a kdy zrušil, storno, vráceno / vrátit), datum vytvoření,
   splatnost (po splatnosti červeně).
@@ -435,13 +480,27 @@ Při načtení správy se nejdřív zpracují propadlé rezervace.
 
 Viz kapitola 8.1.
 
-### 9.3 Záložka Nastavení
+### 9.3 Záložka Nastavení – termíny
 
-- **Začátek akce** – od tohoto okamžiku nelze rezervace rušit; od něj se
-  počítá smazání osobních údajů (zobrazí se datum smazání).
-- **Storno poplatky** – řádky *Od – Poplatek %* (kapitola 6.1). Prázdné
-  řádky se ignorují; po uložení přibude nový prázdný řádek. Neplatný
-  řádek (chybí datum, procento mimo 0–100) se neuloží a zobrazí se chyba.
+Pro každý termín je samostatný formulář, poslední prázdný slouží
+k přidání nového (**Přidat termín**):
+
+- **Začátek** (povinný) – datum a čas představení. Začátkem končí
+  rezervace a rušení zákazníkem, splatnost nikdy nepřesáhne začátek.
+- **Název** (nepovinný) – např. *Premiéra*; zobrazuje se u data.
+- **Konec rezervací** (nepovinný) – dřívější uzávěrka rezervací; musí být
+  před začátkem.
+- **Storno poplatky** – řádky *Od – Poplatek %* jen pro tento termín
+  (kapitola 6.1). Prázdné řádky se ignorují; po uložení přibude nový
+  prázdný řádek.
+- **Uložit termín** / **Smazat** – smazat lze jen termín bez rezervací
+  a VIP hostů (jinak *„Termín má rezervace nebo VIP hosty, nelze ho
+  smazat.“*).
+
+Chybné údaje se neuloží a zobrazí se chyba (*„Zadejte datum a čas
+začátku.“*, *„Konec rezervací musí být platné datum před začátkem.“*,
+*„Storno pravidlo N: zadejte datum a procento 0–100.“*). Nad formuláři je
+uvedeno datum smazání osobních údajů.
 
 ---
 
@@ -453,16 +512,16 @@ nastaveném `PUBLIC_URL`.
 
 | Předmět | Kdy | Obsah |
 | --- | --- | --- |
-| Rezervace míst | po vytvoření rezervace | místa, platební údaje, splatnost, odkaz na QR platbu a zrušení |
-| Připomínka platby | 24 h před splatností (cron) | platební údaje, splatnost |
+| Rezervace míst | po vytvoření rezervace | místa, termín, platební údaje, splatnost, odkaz na QR platbu a zrušení |
+| Připomínka platby | 24 h před splatností (cron) | termín, platební údaje, splatnost |
 | Rezervace zrušena | propadnutí (cron) | rezervace zrušena pro nezaplacení, odkaz na novou rezervaci |
-| Vstupenka | Zaplaceno / Přijmout pozdní platbu / Poslat znovu | QR vstupenka, jméno, počet míst, místa, VS |
+| Vstupenka | Zaplaceno / Přijmout pozdní platbu / Poslat znovu | termín, QR vstupenka, jméno, počet míst, místa, VS |
 | Změna rezervace | zrušení části nezaplacené rezervace | zrušená a zbývající místa, nové platební údaje |
 | Nová vstupenka | zrušení části zaplacené rezervace | zrušená místa, poplatek, vrácení do 14 dnů na účet, ze kterého platba přišla, nová QR vstupenka |
 | Rezervace zrušena | zrušení celé rezervace zákazníkem, nebo zaplacené správcem | zrušená místa, poplatek, *„Částku … Vám do 14 dnů pošleme zpět na účet, ze kterého platba přišla.“* |
 
-Všechny e-maily začínají oslovením jménem a končí podpisem *Moje židle
-2026*.
+Všechny e-maily začínají oslovením jménem, obsahují řádek *„Termín: …“*
+a končí podpisem *Moje židle 2026*.
 
 ---
 
@@ -473,11 +532,12 @@ Všechny e-maily začínají oslovením jménem a končí podpisem *Moje židle
   a mažou se po 1 dni.
 - Formulář informuje: *„Jméno a e-mail použijeme jen pro vyřízení této
   rezervace a do 30 dnů po skončení akce je smažeme.“*
-- **30 dnů po začátku akce** (`DATA_RETENTION_DAYS`) plánovaná úloha:
+- **30 dnů po začátku posledního termínu** (`DATA_RETENTION_DAYS`)
+  plánovaná úloha:
   - smaže jména a e-maily u všech rezervací,
   - smaže celý seznam VIP hostů,
   - ponechá VS, částky, místa a stavy (účetní evidence).
-- Mazání funguje jen při vyplněném **Začátku akce** v Nastavení.
+- Mazání funguje, jakmile je v Nastavení založen alespoň jeden termín.
 
 ---
 
@@ -491,11 +551,10 @@ hodnoty jsou v `api/config.php`.
 | --- | --- | --- |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS` | 127.0.0.1, 3306, zidle, zidle, – | připojení k MariaDB |
 | `SEAT_PRICE` | 300 | cena místa v Kč (u existujících rezervací se nemění) |
-| `PAYMENT_DEADLINE_HOURS` | 72 | splatnost od vytvoření rezervace |
+| `PAYMENT_DEADLINE_HOURS` | 72 | splatnost od vytvoření rezervace (nejpozději začátek termínu) |
 | `PAYMENT_GRACE_HOURS` | 48 | rezerva po splatnosti, než se rezervace zruší |
 | `REFUND_DAYS` | 14 | lhůta vrácení peněz uváděná v e-mailech |
-| `DATA_RETENTION_DAYS` | 30 | dní po akci, než se smažou osobní údaje |
-| `BOOKING_CLOSES_AT` | – | uzávěrka nových rezervací, např. `2026-12-20 12:00` |
+| `DATA_RETENTION_DAYS` | 30 | dní po posledním termínu, než se smažou osobní údaje |
 | `MAX_SEATS_PER_RESERVATION` | 20 | max. míst v jedné rezervaci |
 | `RESERVATIONS_PER_IP_PER_HOUR` | 5 | limit rezervací z jedné IP za hodinu |
 | `PENDING_RESERVATIONS_PER_EMAIL` | 2 | max. nezaplacených rezervací na jeden e-mail |
@@ -564,8 +623,10 @@ konfiguraci a knihovnám.
 
 ### 14.3 Aktualizace existující instalace
 
-Spusťte postupně skripty v `db/migrations/` (002 až 007), které ještě
-nebyly použité. Všechny lze bezpečně spustit opakovaně.
+Spusťte postupně skripty v `db/migrations/` (002 až 008), které ještě
+nebyly použité. Migrace 008 převede dosavadní data na první termín
+z dřívějšího data akce – jeho čas ve správě zkontrolujte (bez časových
+zón v MariaDB se převádí jako UTC+1). Všechny lze bezpečně spustit opakovaně.
 
 ### 14.4 Plánovaná úloha (cron)
 
@@ -582,7 +643,8 @@ webu, e-maily ale posílá jen cron.
 
 1. Vyplnit `config.local.php` (účet, hesla, `TICKET_SECRET`, e-maily,
    `PUBLIC_URL`).
-2. Ve správě → Nastavení zadat **začátek akce** a **storno poplatky**.
+2. Ve správě → Nastavení založit **termíny** (začátek, případně název
+   a konec rezervací) a u každého **storno poplatky**.
 3. Zadat VIP hosty.
 4. Vyzkoušet celý průběh: rezervace → e-mail → Zaplaceno → vstupenka →
    načtení ve scanneru.
@@ -602,11 +664,11 @@ npm run dev                  # web, /api se přesměruje na PHP
 
 | Metoda | Adresa | Popis |
 | --- | --- | --- |
-| GET | `api/seats.php` | obsazená místa, cena, limity, storno pravidla, začátek akce, token formuláře |
-| POST | `api/reservations.php` | vytvoření rezervace `{firstName, lastName, email, seats, formToken, hp}` |
+| GET | `api/seats.php?run=<id>` | termíny (s počtem volných míst, uzávěrkou a storno pravidly), obsazená místa zvoleného termínu, cena, limity, token formuláře |
+| POST | `api/reservations.php` | vytvoření rezervace `{runId, firstName, lastName, email, seats, formToken, hp}` |
 | GET | `api/reservations.php?token=` | stav rezervace, platební údaje, vstupenka, podmínky zrušení |
 | POST | `api/cancel.php` | zrušení zákazníkem `{token, seats?}` (bez `seats` = celá) |
-| GET/POST | `api/organizer.php` | scanner: `login`, `logout`, `verify` (najde rezervaci podle ID z QR, vrátí aktuální stav a zaznamená odbavení), `vip-list`, `vip-checkin`, `vip-undo` |
+| GET/POST | `api/organizer.php` | scanner: GET vrátí přihlášení a termíny; `login`, `logout`, `verify {code, runId}` (najde rezervaci podle ID z QR, vrátí aktuální stav, u jiného termínu `wrong_run`, jinak zaznamená odbavení), `vip-list {runId}`, `vip-checkin`, `vip-undo` |
 | – | `api/admin.php` | správa (HTML stránka) |
 | CLI | `api/cron.php` | plánované úlohy |
 
@@ -614,10 +676,11 @@ npm run dev                  # web, /api se přesměruje na PHP
 
 | Tabulka | Obsah |
 | --- | --- |
-| `reservations` | rezervace: osobní údaje, místa, zrušená místa, částka, přijatá částka, VS, stav, splatnost, data plateb, vstupenky, připomínky, odbavení, storno poplatek, vrácení |
-| `reservation_seats` | právě obsazená místa (primární klíč = místo → nelze rezervovat dvakrát) |
-| `vip_guests` | VIP hosté |
-| `settings` | začátek akce, storno pravidla |
+| `reservations` | rezervace: termín, osobní údaje, místa, zrušená místa, částka, přijatá částka, VS, stav, splatnost, data plateb, vstupenky, připomínky, odbavení, storno poplatek, vrácení |
+| `runs` | termíny: začátek, název, konec rezervací, storno pravidla |
+| `reservation_seats` | právě obsazená místa (primární klíč = termín + místo → nelze rezervovat dvakrát na stejný termín) |
+| `vip_guests` | VIP hosté (s termínem) |
+| `settings` | rezerva pro další nastavení (nyní nepoužito) |
 | `rate_limits` | počítadla limitů (otisky IP) |
 
 ### 15.3 Formát QR kódů

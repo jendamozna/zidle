@@ -1259,3 +1259,143 @@ h2 {
 .cancel-seat input {
   accent-color: #b0332a;
 }
+
+/* ---------- Runs (dates) ---------- */
+
+.runs {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.runs-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.6rem;
+}
+
+.runs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.run-card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 1.25rem 1.35rem;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--wall);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), border-color 0.2s;
+}
+
+.run-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+  border-color: var(--accent);
+}
+
+.run-card:focus-visible {
+  outline: 3px solid #b07a3f;
+  outline-offset: 2px;
+}
+
+.run-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.run-weekday {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.run-date {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.6rem;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-time {
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.run-spacer {
+  flex: 1;
+  min-height: 0.7rem;
+}
+
+.run-status {
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.run-card.occ-low .run-status {
+  background: var(--occ-low-bg);
+  color: var(--occ-low-ink);
+}
+
+.run-card.occ-medium .run-status {
+  background: var(--occ-mid-bg);
+  color: var(--occ-mid-ink);
+}
+
+.run-card.occ-high .run-status,
+.run-card:disabled .run-status {
+  background: var(--occ-high-bg);
+  color: var(--occ-high-ink);
+}
+
+/* the run cards keep their surface; occupancy shows only in the status pill */
+.run-card.occ-low,
+.run-card.occ-medium,
+.run-card.occ-high {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--wall);
+}
+
+.run-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.modal-run,
+.payment-run {
+  margin: 0;
+  font-size: 0.95rem;
+}
