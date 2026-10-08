@@ -32,7 +32,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'php -S 127.0.0.1:8000 -t .',
-      url: 'http://127.0.0.1:8000/api/seats.php',
+      url: 'http://127.0.0.1:8000/index.html', // static file: the database is seeded only after the servers start
       env: ENV,
       reuseExistingServer: false,
       stderr: process.env.CI ? 'pipe' : 'ignore', // php -S logs every request to stderr
