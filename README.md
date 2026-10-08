@@ -2,6 +2,8 @@
 
 Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
 
+**Kompletní dokumentace v češtině: [docs/DOKUMENTACE.md](docs/DOKUMENTACE.md)** – všechny procesy, e-maily, správa, odbavení, konfigurace a provoz.
+
 ## How it works
 
 1. The visitor picks seats on the floor plan and clicks **Rezervovat**.
@@ -30,10 +32,13 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
    Unpaid reservations are cancelled free of charge. For paid ones the
    **storno fee** set in admin → *Nastavení* applies (e.g. 50 % from one date,
    100 % from another; free before the first date) and the customer enters a
-   bank account for the refund. Cancelling is possible until the event starts
-   and not after check-in. Refunds due are listed in admin (*K vrácení*) and
-   marked **Vráceno** once paid out. A paid reservation cancelled by admin is
-   refunded in full.
+   bank account for the refund. Customers can cancel the whole reservation or
+   individual seats (unpaid: the amount shrinks; paid: a new ticket is
+   e-mailed). Cancelling is possible until the event starts and not after
+   check-in. Refunds due are listed in admin (*K vrácení*) and
+   marked **Vráceno** once paid out. A paid reservation (or seats) cancelled by
+   admin is refunded in full and the customer is e-mailed that the amount
+   will be returned within `REFUND_DAYS` (14).
 9. **GDPR**: the form says that names and e-mails are used only for the
    reservation and deleted `DATA_RETENTION_DAYS` (30) after the event.
    `cron.php` then removes names, e-mails and refund accounts (VS, amounts
@@ -86,7 +91,7 @@ visitors share one limit.
 mariadb -e "CREATE DATABASE zidle CHARACTER SET utf8mb4"
 mariadb -e "CREATE USER 'zidle'@'localhost' IDENTIFIED BY '…'; GRANT ALL ON zidle.* TO 'zidle'@'localhost'"
 mariadb zidle < db/schema.sql
-# (existing database from an older version: run the files in db/migrations/ in order)
+# (existing database from an older version: run the files in db/migrations/ in order, 002–006)
 
 # PHP dependencies (QR code images for ticket e-mails)
 (cd api && composer install --no-dev)
