@@ -1,3 +1,6 @@
+/* Organizer scanner – designed for phones (mobile only); on larger screens it
+   stays a centred phone-width column. */
+
 .scanner,
 .scan-login,
 .scan-center {
@@ -519,4 +522,62 @@
   border-radius: 14px;
   border: 1.5px solid var(--wall);
   background: var(--surface);
+}
+
+/* ---------- Organizer / check-in window ---------- */
+
+.scan-who {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.scan-login-help {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  line-height: 1.5;
+}
+
+.window-warning {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1.5rem 1.25rem;
+  border-radius: 24px;
+  background: var(--occ-mid-bg);
+  color: var(--occ-mid-ink);
+  text-align: center;
+  --tone: #d19a1f;
+}
+
+.window-warning h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.4rem;
+}
+
+.window-warning p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.window-warning .btn-ghost {
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px solid currentColor;
+}
+
+.window-strip {
+  margin: 0 0 12px;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--occ-mid-bg);
+  color: var(--occ-mid-ink);
+  font-size: 0.85rem;
+  font-weight: 600;
 }

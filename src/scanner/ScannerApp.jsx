@@ -2,23 +2,57 @@ import { useCallback, useEffect, useState } from 'react';
 import { SECTIONS, compareSeatIds, parseSeatId } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { decodeTicket } from './ticket.js';
-import { getSession, login, logout, verifyTicket } from './api.js';
+import { acceptInvite, getSession, login, logout, verifyTicket } from './api.js';
 import { useQrCamera } from './useQrCamera.js';
 import VipView from './VipView.jsx';
 import { runLabel } from '../runs.js';
 
 const RUN_KEY = 'zidle-scanner-run';
 
-/** Run to check in by default: the first one that started at most 6 h ago or later, else the last. */
+const inWindow = (run, now) => now >= new Date(run.scanFrom).getTime() && now <= new Date(run.scanTo).getTime();
+const clock = (iso) =>
+  new Intl.DateTimeFormat('cs-CZ', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Prague' }).format(new Date(iso));
+
+/**
+ * Run to check in by default: the run whose check-in window is open now;
+ * otherwise the remembered choice; otherwise the next upcoming run; else the last.
+ */
 function defaultRunId(runs) {
+  const now = Date.now();
+  const open = runs.find((r) => inWindow(r, now));
+  if (open) return open.id;
   try {
     const saved = Number(localStorage.getItem(RUN_KEY));
     if (runs.some((r) => r.id === saved)) return saved;
   } catch {
     /* storage unavailable */
   }
-  const from = Date.now() - 6 * 3600 * 1000;
-  return (runs.find((r) => new Date(r.startsAt).getTime() >= from) ?? runs[runs.length - 1])?.id ?? null;
+  return (runs.find((r) => new Date(r.scanTo).getTime() >= now) ?? runs[runs.length - 1])?.id ?? null;
+}
+
+/** Shown instead of the scanner while the chosen run is outside its check-in window. */
+function WindowWarning({ run, openRun, onSwitch, onConfirm }) {
+  const before = Date.now() < new Date(run.scanFrom).getTime();
+  return (
+    <section className="window-warning" role="alert">
+      <span className="scan-result-icon" aria-hidden="true">
+        !
+      </span>
+      <h2>Tento termín právě neprobíhá</h2>
+      <p>
+        Odbavení termínu <strong>{runLabel(run)}</strong> je určeno na {clock(run.scanFrom)}–{clock(run.scanTo)}
+        {before ? ', ještě nezačalo.' : ', už skončilo.'}
+      </p>
+      {openRun && (
+        <button type="button" className="btn btn-primary btn-block btn-large" onClick={() => onSwitch(openRun.id)}>
+          Přepnout na probíhající {runLabel(openRun)}
+        </button>
+      )}
+      <button type="button" className={`btn btn-block ${openRun ? 'btn-ghost' : 'btn-primary btn-large'}`} onClick={onConfirm}>
+        Přesto odbavovat tento termín
+      </button>
+    </section>
+  );
 }
 
 const RESULT = {
@@ -29,6 +63,7 @@ const RESULT = {
   invalid: { tone: 'bad', title: 'Neplatný kód' },
   payment: { tone: 'bad', title: 'To je platební QR kód' },
   wrong_run: { tone: 'bad', title: 'Jiný termín' },
+  outside_window: { tone: 'warn', title: 'Mimo čas odbavení – neodbaveno' },
   offline: { tone: 'warn', title: 'Neověřeno – bez spojení' },
   checking: { tone: 'neutral', title: 'Ověřuji…' },
 };
@@ -54,7 +89,7 @@ function groupSeats(seats) {
   }));
 }
 
-function LoginScreen({ onLoggedIn }) {
+function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -79,21 +114,29 @@ function LoginScreen({ onLoggedIn }) {
         Moje židle <span>2026</span>
       </h1>
       <p className="muted">Odbavení vstupenek</p>
-      <label className="field">
-        <span>Heslo pořadatele</span>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          autoFocus
-          required
-        />
-      </label>
-      {error && <p className="form-error">{error}</p>}
-      <button type="submit" className="btn btn-primary btn-block" disabled={busy || !password}>
-        {busy ? 'Přihlašuji…' : 'Přihlásit'}
-      </button>
+      {inviteError && <p className="form-error">{inviteError}</p>}
+      <p className="scan-login-help">
+        Otevřete na tomto mobilu <strong>odkaz nebo QR kód z pozvánky</strong>, kterou Vám poslal správce. Pozvánka
+        povolí odbavení Vašich termínů.
+      </p>
+      {passwordLogin && (
+        <>
+          <label className="field">
+            <span>Nebo hlavní heslo pořadatele</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </label>
+          {error && <p className="form-error">{error}</p>}
+          <button type="submit" className="btn btn-primary btn-block" disabled={busy || !password}>
+            {busy ? 'Přihlašuji…' : 'Přihlásit'}
+          </button>
+        </>
+      )}
     </form>
   );
 }
@@ -163,10 +206,23 @@ function ResultCard({ scan, onNext }) {
   );
 }
 
-function Scanner({ runs, onLogout }) {
+function Scanner({ runs, name, onLogout }) {
   const [mode, setMode] = useState('scan'); // scan | vip
   const [scan, setScan] = useState(null);
   const [runId, setRunId] = useState(() => defaultRunId(runs));
+  const [confirmed, setConfirmed] = useState(() => new Set()); // runs confirmed for check-in outside their window
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const run = runs.find((r) => r.id === runId) ?? null;
+  const outside = run !== null && !inWindow(run, now);
+  const confirmOutside = outside && confirmed.has(runId);
+  const blocked = outside && !confirmOutside;
+  const openRun = runs.find((r) => r.id !== runId && inWindow(r, now)) ?? null;
 
   const changeRun = (id) => {
     setRunId(id);
@@ -188,7 +244,7 @@ function Scanner({ runs, onLogout }) {
       }
       setScan({ raw, ticket: decoded, result: 'checking' });
       try {
-        const res = await verifyTicket(raw, runId);
+        const res = await verifyTicket(raw, runId, confirmOutside);
         setScan({
           raw,
           ticket: res.ticket ?? decoded,
@@ -202,10 +258,10 @@ function Scanner({ runs, onLogout }) {
         else setScan({ raw, ticket: decoded, result: 'offline' });
       }
     },
-    [onLogout, runId],
+    [onLogout, runId, confirmOutside],
   );
 
-  const camera = useQrCamera(handleCode, mode === 'scan' && runId !== null);
+  const camera = useQrCamera(handleCode, mode === 'scan' && runId !== null && !blocked);
 
   const next = () => {
     setScan(null);
@@ -221,9 +277,12 @@ function Scanner({ runs, onLogout }) {
   return (
     <div className="scanner">
       <header className="scan-bar">
-        <h1 className="brand">
-          Odbavení <span>2026</span>
-        </h1>
+        <div>
+          <h1 className="brand">
+            Odbavení <span>2026</span>
+          </h1>
+          {name && <p className="scan-who">{name}</p>}
+        </div>
         <div className="scan-bar-actions">
           {mode === 'scan' && camera.torch.supported && (
             <button
@@ -262,8 +321,21 @@ function Scanner({ runs, onLogout }) {
         </button>
       </div>
 
-      {mode === 'vip' ? (
-        <VipView key={runId} runId={runId} onUnauthorized={onLogout} />
+      {confirmOutside && (
+        <p className="window-strip" role="status">
+          Mimo čas odbavení ({clock(run.scanFrom)}–{clock(run.scanTo)}) – odbavujete na vlastní potvrzení.
+        </p>
+      )}
+
+      {blocked ? (
+        <WindowWarning
+          run={run}
+          openRun={openRun}
+          onSwitch={changeRun}
+          onConfirm={() => setConfirmed((prev) => new Set(prev).add(runId))}
+        />
+      ) : mode === 'vip' ? (
+        <VipView key={runId} runId={runId} confirmOutside={confirmOutside} onUnauthorized={onLogout} />
       ) : (
         <div className={`scan-view ${scan ? 'has-result' : ''}`}>
           <video ref={camera.videoRef} className="scan-video" playsInline muted autoPlay />
@@ -281,20 +353,21 @@ function Scanner({ runs, onLogout }) {
         </div>
       )}
 
-      {mode === 'scan' && scan && <ResultCard scan={scan} onNext={next} />}
+      {mode === 'scan' && !blocked && scan && <ResultCard scan={scan} onNext={next} />}
     </div>
   );
 }
 
 export default function ScannerApp() {
   const [session, setSession] = useState('loading'); // loading | in | out | error
-  const [runs, setRuns] = useState([]);
+  const [info, setInfo] = useState({ runs: [], name: null, passwordLogin: false });
   const [error, setError] = useState(null);
+  const [inviteError, setInviteError] = useState(null);
 
   const loadSession = useCallback(() => {
     getSession()
       .then((s) => {
-        setRuns(s.runs ?? []);
+        setInfo({ runs: s.runs ?? [], name: s.name, passwordLogin: s.passwordLogin });
         setSession(s.loggedIn ? 'in' : 'out');
       })
       .catch((err) => {
@@ -303,7 +376,20 @@ export default function ScannerApp() {
       });
   }, []);
 
-  useEffect(loadSession, [loadSession]);
+  // Invite link: scanner.html?pozvanka=<token> signs this device in, then the token leaves the URL.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get('pozvanka');
+    if (!token) {
+      loadSession();
+      return;
+    }
+    url.searchParams.delete('pozvanka');
+    window.history.replaceState(null, '', url);
+    acceptInvite(token)
+      .catch((err) => setInviteError(err.message))
+      .finally(loadSession);
+  }, [loadSession]);
 
   const handleLogout = useCallback(() => {
     logout().catch(() => {});
@@ -312,7 +398,11 @@ export default function ScannerApp() {
 
   if (session === 'loading') return <div className="scan-center muted">Načítám…</div>;
   if (session === 'error') return <div className="scan-center form-error">{error}</div>;
-  if (session === 'out') return <LoginScreen onLoggedIn={loadSession} />;
-  if (!runs.length) return <div className="scan-center muted">Nejsou vypsané žádné termíny.</div>;
-  return <Scanner runs={runs} onLogout={handleLogout} />;
+  if (session === 'out') {
+    return <LoginScreen passwordLogin={info.passwordLogin} inviteError={inviteError} onLoggedIn={loadSession} />;
+  }
+  if (!info.runs.length) {
+    return <div className="scan-center muted">Nemáte přiřazený žádný termín. Požádejte správce o pozvánku.</div>;
+  }
+  return <Scanner runs={info.runs} name={info.name} onLogout={handleLogout} />;
 }

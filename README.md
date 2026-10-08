@@ -2,7 +2,9 @@
 
 Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
 
-**Kompletní dokumentace v češtině: [docs/DOKUMENTACE.md](docs/DOKUMENTACE.md)** (rule: keep it in sync with every code change – see `CLAUDE.md`; shared page: https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV, regenerate with `npm run docs`) – všechny procesy, e-maily, správa, odbavení, konfigurace a provoz.
+**All times are stored in UTC. Customer app is mobile-first, admin desktop-first, scanner mobile-only.
+
+Kompletní dokumentace v češtině: [docs/DOKUMENTACE.md](docs/DOKUMENTACE.md)** (rule: keep it in sync with every code change – see `CLAUDE.md`; shared page: https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV, regenerate with `npm run docs`) – všechny procesy, e-maily, správa, odbavení, konfigurace a provoz.
 
 ## How it works
 
@@ -48,8 +50,12 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
    `cron.php` then removes names and e-mails (VS, amounts
    and seats stay for accounting) and deletes the VIP list. Requires the
    event date in admin → *Nastavení*.
-6. At the entrance, organizers open `scanner.html` on a phone, log in with
-   `ORGANIZER_PASSWORD` and scan tickets with the rear camera. The scanner
+6. At the entrance, organizers open `scanner.html` on a phone via an **invite
+   link / QR code** created in admin → *Pořadatelé* (limited to chosen runs,
+   revocable; optional master password `ORGANIZER_PASSWORD` for all runs) and
+   scan tickets with the rear camera. Outside the check-in window (1 h before
+   to 1 h after the run start, `SCAN_WINDOW_*`) the scanner warns and checks in
+   only after an explicit confirmation. The scanner
    shows the name and seats and whether the ticket is valid, already used
    (with the time of the first scan), unpaid, cancelled or invalid.
 7. **VIP guests** (free entry) are entered by the management in the *VIP* tab
@@ -96,7 +102,7 @@ visitors share one limit.
 mariadb -e "CREATE DATABASE zidle CHARACTER SET utf8mb4"
 mariadb -e "CREATE USER 'zidle'@'localhost' IDENTIFIED BY '…'; GRANT ALL ON zidle.* TO 'zidle'@'localhost'"
 mariadb zidle < db/schema.sql
-# (existing database from an older version: run the files in db/migrations/ in order, 002–008)
+# (existing database from an older version: run the files in db/migrations/ in order, 002–009)
 
 # PHP dependencies (QR code images for ticket e-mails)
 (cd api && composer install --no-dev)
@@ -107,7 +113,7 @@ cp api/config.local.example.php api/config.local.php
 
 All options and defaults are in `api/config.php`; they can also be set as
 environment variables. Required: `BANK_IBAN`, `ADMIN_PASSWORD`,
-`ORGANIZER_PASSWORD`, `TICKET_SECRET` (generate with
+`TICKET_SECRET` (generate with
 `php -r "echo bin2hex(random_bytes(32));"` and never change it once tickets
 are sent) and `MAIL_ENABLED` + `MAIL_FROM` for sending tickets.
 
@@ -148,7 +154,7 @@ and set `CORS_ORIGIN`.
 | POST | `api/reservations.php` | body `{firstName, lastName, email, seats}` → reservation with payment details (201), `409` with `conflict` when a seat is already taken, `422` with `fields` on validation errors |
 | GET | `api/reservations.php?token=` | reservation status, payment details and `ticket` (QR text) once paid |
 | POST | `api/cancel.php` | body `{token, seats?}` – customer cancellation of the given seats (omitted = whole reservation) |
-| GET/POST | `api/organizer.php` | organizer session (`login`, `logout`), `verify` of a scanned ticket code, `vip-list`, `vip-checkin`, `vip-undo` |
+| GET/POST | `api/organizer.php` | scanner access (`invite`, `login`, `logout`), `verify` of a scanned ticket for a run, `vip-list`, `vip-checkin`, `vip-undo` |
 
 Seat IDs: `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-4-12`. Sections: `WL` Left
 Wing, `ML` Left Main, `MR` Right Main, `WR` Right Wing, `BL` Balcony left,

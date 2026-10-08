@@ -33,8 +33,13 @@ return (static function (): array {
 
         // Admin page (admin.php) – used by the accountant to confirm payments
         'ADMIN_PASSWORD' => '',
-        // Ticket scanner (scanner.html) – used by organizers at the entrance
+        // Ticket scanner (scanner.html): organizers sign in with invite links from admin.
+        // Optional master password for all runs ('' = disabled).
         'ORGANIZER_PASSWORD' => '',
+        // Check-in window around the start of a run; outside it the scanner warns
+        // and checks in only after an explicit confirmation.
+        'SCAN_WINDOW_BEFORE_MINUTES' => 60,
+        'SCAN_WINDOW_AFTER_MINUTES' => 60,
         // Secret for signing ticket QR codes (long random string, never change after tickets are sent)
         'TICKET_SECRET' => '',
 

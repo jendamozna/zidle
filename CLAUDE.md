@@ -24,6 +24,14 @@ shared link stays current:
 
 ## Other rules
 
+- **Times: UTC in the database** – every DATETIME column and every date inside
+  JSON (e.g. storno rules, `…Z` ISO strings). Europe/Prague is used only for
+  input (admin forms) and display. Use `db_time()`, `iso_utc()`,
+  `prague_time()`/`prague_input()` – never store local time.
+- **Layouts:** customer app (`src/`, except `src/scanner/`) is **mobile-first**
+  – base CSS for phones, wider screens via `min-width` queries; admin
+  (`api/admin.php`) is **desktop-first**; organizer scanner (`src/scanner/`) is
+  **mobile only**.
 - UI and e-mail texts are in Czech.
 - The seating layout exists twice – `src/data/layout.js` and
   `api/lib/layout.php` – keep them identical.

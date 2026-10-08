@@ -15,7 +15,7 @@ const formatTime = (iso) =>
 
 const personsLabel = (n) => (n === 1 ? '1 osoba' : n < 5 ? `${n} osoby` : `${n} osob`);
 
-export default function VipView({ runId, onUnauthorized }) {
+export default function VipView({ runId, confirmOutside, onUnauthorized }) {
   const [vips, setVips] = useState(null);
   const [query, setQuery] = useState('');
   const [section, setSection] = useState('');
@@ -45,7 +45,7 @@ export default function VipView({ runId, onUnauthorized }) {
 
   const act = async (id, request) => {
     setBusyId(id);
-    await handle(() => request(id, runId));
+    await handle(() => request(id, runId, confirmOutside));
     setBusyId(null);
   };
 

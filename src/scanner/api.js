@@ -16,10 +16,12 @@ async function call(body) {
   return data;
 }
 
+/** { loggedIn, name, passwordLogin, runs: [... , scanFrom, scanTo] } */
 export const getSession = () => call();
+export const acceptInvite = (token) => call({ action: 'invite', token });
 export const login = (password) => call({ action: 'login', password });
 export const logout = () => call({ action: 'logout' });
-export const verifyTicket = (code, runId) => call({ action: 'verify', code, runId });
+export const verifyTicket = (code, runId, confirmOutside) => call({ action: 'verify', code, runId, confirmOutside });
 export const vipList = (runId) => call({ action: 'vip-list', runId });
-export const vipCheckIn = (id, runId) => call({ action: 'vip-checkin', id, runId });
+export const vipCheckIn = (id, runId, confirmOutside) => call({ action: 'vip-checkin', id, runId, confirmOutside });
 export const vipUndo = (id, runId) => call({ action: 'vip-undo', id, runId });

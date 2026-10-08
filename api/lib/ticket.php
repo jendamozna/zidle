@@ -77,15 +77,21 @@ function parse_ticket_code(string $code): ?array
 
 function ticket_png(string $code): string
 {
+    return qr_png($code);
+}
+
+/** PNG (binary) of a QR code for any text, e.g. tickets and scanner invite links. */
+function qr_png(string $text, int $scale = 8): string
+{
     require_once __DIR__ . '/../vendor/autoload.php';
     $options = new QROptions([
         'outputType' => QROutputInterface::GDIMAGE_PNG,
         'outputBase64' => false,
         'eccLevel' => EccLevel::M,
-        'scale' => 8,
+        'scale' => $scale,
         'quietzoneSize' => 3,
     ]);
-    return (new QRCode($options))->render($code);
+    return (new QRCode($options))->render($text);
 }
 
 /**

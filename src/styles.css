@@ -1,3 +1,6 @@
+/* Customer app – mobile-first: base styles target phones, wider screens are
+   added with min-width media queries. */
+
 :root {
   --bg: #f5f1ea;
   --surface: #fffdf9;
@@ -168,7 +171,12 @@ h2 {
 .summary {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1rem;
+  width: 100%;
+}
+
+.summary .btn {
+  margin-left: auto;
 }
 
 .summary-stat {
@@ -190,7 +198,7 @@ h2 {
 }
 
 .summary-sum {
-  padding-left: 1.5rem;
+  padding-left: 1rem;
   border-left: 1px solid var(--wall);
 }
 
@@ -377,18 +385,18 @@ h2 {
 }
 
 .section-name {
-  font-size: 0.82rem;
+  font-size: 0.68rem;
   font-weight: 600;
   line-height: 1.15;
 }
 
-.name-short {
+.name-long {
   display: none;
 }
 
 .section-pct {
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-size: 0.95rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -415,15 +423,15 @@ h2 {
 
 .mine-badge {
   position: absolute;
-  top: -9px;
-  right: -9px;
-  min-width: 26px;
-  height: 26px;
+  top: -8px;
+  right: -6px;
+  min-width: 22px;
+  height: 22px;
   padding: 0 7px;
   border-radius: 999px;
   background: var(--seat-mine);
   color: var(--seat-mine-ink);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 700;
   display: grid;
   place-items: center;
@@ -431,35 +439,35 @@ h2 {
   writing-mode: horizontal-tb;
 }
 
-@media (max-width: 640px) {
+@media (min-width: 641px) {
   .name-long {
-    display: none;
-  }
-  .name-short {
     display: inline;
   }
+  .name-short {
+    display: none;
+  }
   .section-name {
-    font-size: 0.68rem;
+    font-size: 0.82rem;
   }
   .section-pct {
-    font-size: 0.95rem;
+    font-size: 1.35rem;
   }
   .summary {
-    width: 100%;
-    gap: 1rem;
+    width: auto;
+    gap: 1.5rem;
   }
   .summary-sum {
-    padding-left: 1rem;
+    padding-left: 1.5rem;
   }
   .summary .btn {
-    margin-left: auto;
+    margin-left: 0;
   }
   .mine-badge {
-    top: -8px;
-    right: -6px;
-    min-width: 22px;
-    height: 22px;
-    font-size: 0.72rem;
+    top: -9px;
+    right: -9px;
+    min-width: 26px;
+    height: 26px;
+    font-size: 0.8rem;
   }
 }
 
@@ -899,13 +907,13 @@ h2 {
 
 .field-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
 }
 
-@media (max-width: 420px) {
+@media (min-width: 421px) {
   .field-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1021,9 +1029,9 @@ h2 {
 
 .pay-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
   padding: 0.7rem 0.9rem;
 }
 
@@ -1040,10 +1048,11 @@ h2 {
   margin: 0;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.6rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: left;
   overflow-wrap: anywhere;
 }
 
@@ -1105,15 +1114,16 @@ h2 {
   font-size: 0.82rem;
 }
 
-@media (max-width: 480px) {
+@media (min-width: 481px) {
   .pay-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.25rem;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
   }
   .pay-row dd {
-    justify-content: space-between;
-    text-align: left;
+    justify-content: flex-end;
+    text-align: right;
   }
 }
 

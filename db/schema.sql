@@ -1,5 +1,5 @@
 -- Moje židle 2026 – MariaDB schema
--- All timestamps are stored in UTC.
+-- All timestamps (DATETIME columns and JSON dates) are stored in UTC.
 
 -- Runs (dates) of the event. Seats, reservations and VIP guests belong to a run.
 CREATE TABLE IF NOT EXISTS runs (
@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS runs (
   label             VARCHAR(100) NOT NULL DEFAULT '' COMMENT 'Optional name, e.g. Premiéra',
   starts_at         DATETIME     NOT NULL COMMENT 'UTC',
   booking_closes_at DATETIME     NULL COMMENT 'UTC; NULL = at the start',
-  storno_rules      TEXT         NOT NULL DEFAULT '[]' COMMENT 'JSON [{"from": "YYYY-MM-DD HH:MM" (Europe/Prague), "percent": 50}]',
+  storno_rules      TEXT         NOT NULL DEFAULT '[]' COMMENT 'JSON [{"from": "YYYY-MM-DDTHH:MM:SSZ" (UTC), "percent": 50}]',
   PRIMARY KEY (id),
   KEY idx_starts (starts_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   reminder_sent_at      DATETIME NULL,
   expiry_notice_sent_at DATETIME NULL,
   checked_in_at   DATETIME     NULL COMMENT 'First scan of the ticket at the entrance',
+  checked_in_by   VARCHAR(100) NULL COMMENT 'Scanner invite name that checked the ticket in',
   PRIMARY KEY (id),
   UNIQUE KEY uq_token (token),
   UNIQUE KEY uq_vs (variable_symbol),
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS vip_guests (
   note          VARCHAR(255) NOT NULL DEFAULT '',
   created_at    DATETIME     NOT NULL,
   checked_in_at DATETIME     NULL,
+  checked_in_by VARCHAR(100) NULL,
   PRIMARY KEY (id),
   KEY idx_section (section),
   KEY idx_run (run_id)
@@ -89,4 +91,23 @@ CREATE TABLE IF NOT EXISTS settings (
   name  VARCHAR(64) NOT NULL,
   value TEXT        NOT NULL,
   PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+-- Scanner invitations: admin invites organizers (devices) for specific runs.
+CREATE TABLE IF NOT EXISTS scanner_invites (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name         VARCHAR(100) NOT NULL COMMENT 'e.g. Vchod A – Petr',
+  token_hash   CHAR(64)     NOT NULL COMMENT 'sha256 of the invite token (the token is shown only once)',
+  created_at   DATETIME     NOT NULL,
+  last_used_at DATETIME     NULL,
+  revoked_at   DATETIME     NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_token (token_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+CREATE TABLE IF NOT EXISTS scanner_invite_runs (
+  invite_id INT UNSIGNED NOT NULL,
+  run_id    INT UNSIGNED NOT NULL,
+  PRIMARY KEY (invite_id, run_id),
+  CONSTRAINT fk_invite_run FOREIGN KEY (invite_id) REFERENCES scanner_invites (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;

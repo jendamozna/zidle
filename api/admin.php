@@ -42,7 +42,29 @@ if ($action === 'logout' && $csrfOk) {
 }
 
 $flash = null;
-$view = in_array($_GET['view'] ?? '', ['vip', 'settings'], true) ? $_GET['view'] : 'reservations';
+$view = in_array($_GET['view'] ?? '', ['vip', 'scanners', 'settings'], true) ? $_GET['view'] : 'reservations';
+
+if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['invite-save', 'invite-revoke'], true)) {
+    $id = (int) ($_POST['id'] ?? 0);
+    if ($action === 'invite-revoke') {
+        db()->prepare('UPDATE scanner_invites SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL')->execute([db_time(now_utc()), $id]);
+        $_SESSION['flash'] = 'Přístup zrušen – zařízení s touto pozvánkou už nemohou odbavovat.';
+    } else {
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $runIds = (array) ($_POST['runs'] ?? []);
+        if ($name === '' || mb_strlen($name) > 100 || !$runIds) {
+            $_SESSION['flash'] = 'Vyplňte jméno a vyberte alespoň jeden termín.';
+        } else {
+            $token = save_invite($id, $name, $runIds, !empty($_POST['new_link']));
+            $_SESSION['flash'] = $id === 0 ? "Pozvánka pro {$name} vytvořena." : ($token ? 'Vytvořen nový odkaz, původní přestal platit.' : 'Pozvánka uložena.');
+            if ($token) {
+                $_SESSION['invite_link'] = ['name' => $name, 'link' => invite_link($token)];
+            }
+        }
+    }
+    header('Location: admin.php?view=scanners');
+    exit;
+}
 
 if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run-delete'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
@@ -53,6 +75,7 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run
             $_SESSION['flash'] = 'Termín má rezervace nebo VIP hosty, nelze ho smazat.';
         } else {
             db()->prepare('DELETE FROM runs WHERE id = ?')->execute([$id]);
+            db()->prepare('DELETE FROM scanner_invite_runs WHERE run_id = ?')->execute([$id]);
             $_SESSION['flash'] = 'Termín smazán.';
         }
     } else {
@@ -81,7 +104,7 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run
                 $errors[] = 'Storno pravidlo ' . ($i + 1) . ': zadejte datum a procento 0–100.';
                 continue;
             }
-            $rules[] = ['from' => str_replace('T', ' ', $from), 'percent' => (int) $percent];
+            $rules[] = ['from' => iso_utc(prague_time($from)), 'percent' => (int) $percent]; // stored in UTC
         }
         if ($errors) {
             $_SESSION['flash'] = implode(' ', $errors);
@@ -239,6 +262,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Správa rezervací – Moje židle 2026</title>
 <style>
+  /* Admin is desktop-first (accountant at a computer); narrow screens get only
+     small adjustments at the end, wide tables scroll horizontally. */
   :root { --bg:#f5f1ea; --surface:#fffdf9; --ink:#2b2620; --ink-2:#6b6256; --wall:#d9cfbf; --accent:#8a5a2b; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, sans-serif; }
@@ -284,6 +309,14 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .card.selected { outline:2px solid var(--accent); }
   .settings-intro { margin-bottom:12px; max-width:760px; }
   .settings + .settings { margin-top:12px; }
+  .card.settings { margin-bottom:16px; }
+  .checks { display:flex; flex-wrap:wrap; gap:6px 16px; }
+  .check { display:inline-flex !important; flex-direction:row !important; align-items:center; gap:6px; font-weight:500 !important; color:var(--ink) !important; max-width:none !important; }
+  .invite-new { display:flex; gap:20px; align-items:center; flex-wrap:wrap; margin-bottom:16px; border:2px solid var(--accent); }
+  .invite-new h2 { margin:0 0 4px; font:600 1.15rem Georgia, serif; }
+  .invite-new > div { display:flex; flex-direction:column; gap:8px; flex:1 1 320px; min-width:0; }
+  .invite-link { width:100%; font-family:ui-monospace, monospace; font-size:.85rem; }
+  .invite-edit { display:flex; flex-direction:column; gap:8px; margin-top:8px; min-width:280px; }
   .card.attention { background:#f6cdc6; color:#7d2117; text-decoration:none; }
   .settings { max-width:640px; display:flex; flex-direction:column; gap:12px; }
   .settings h2 { margin:8px 0 0; font:600 1.15rem Georgia, serif; }
@@ -293,6 +326,11 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .settings .rule input[type=number] { width:110px; }
   .settings button { align-self:flex-start; }
   .hint { margin:0; font-size:.85rem; color:var(--ink-2); }
+  @media (max-width: 760px) {
+    main { padding:16px 12px 48px; }
+    .tabs { order:3; width:100%; overflow-x:auto; margin-right:0; }
+    .stats .card { min-width:0; flex:1 1 140px; }
+  }
   .login { max-width:340px; margin:15vh auto; display:flex; flex-direction:column; gap:12px; }
 </style>
 </head>
@@ -343,6 +381,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
       <a href="admin.php?view=vip" class="<?= $view === 'vip' ? 'active' : '' ?>">VIP</a>
+      <a href="admin.php?view=scanners" class="<?= $view === 'scanners' ? 'active' : '' ?>">Pořadatelé</a>
       <a href="admin.php?view=settings" class="<?= $view === 'settings' ? 'active' : '' ?>">Nastavení</a>
     </nav>
     <form method="post">
@@ -354,7 +393,87 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <?php if ($flash): ?><div class="flash"><?= $h($flash) ?></div><?php endif ?>
 
-  <?php if ($view === 'settings'):
+  <?php if ($view === 'scanners'):
+      $newInvite = $_SESSION['invite_link'] ?? null;
+      unset($_SESSION['invite_link']);
+      $invites = db()->query('SELECT * FROM scanner_invites ORDER BY revoked_at IS NOT NULL, name')->fetchAll();
+      $runChecks = static function (array $selected) use ($h): string {
+          $out = '';
+          foreach (runs() as $run) {
+              $out .= '<label class="check"><input type="checkbox" name="runs[]" value="' . (int) $run['id'] . '"'
+                  . (in_array($run['id'], $selected, true) ? ' checked' : '') . '> ' . $h(run_label($run)) . '</label>';
+          }
+          return $out;
+      };
+  ?>
+  <p class="hint settings-intro">Pořadatel u vchodu dostane odkaz (nebo QR kód) na odbavení. Odkaz otevře scanner na jeho
+    mobilu a povolí odbavení jen vybraných termínů. Odkaz se zobrazí jen jednou – při ztrátě vytvořte nový.
+    Zrušením přístupu se zařízení okamžitě odhlásí.</p>
+
+  <?php if ($newInvite): ?>
+    <div class="card invite-new">
+      <img src="data:image/png;base64,<?= base64_encode(qr_png($newInvite['link'], 6)) ?>" alt="QR kód pozvánky" width="180" height="180">
+      <div>
+        <h2>Pozvánka – <?= $h($newInvite['name']) ?></h2>
+        <p class="hint">Pošlete odkaz pořadateli, nebo ať si QR kód naskenuje fotoaparátem mobilu.</p>
+        <input class="invite-link" readonly value="<?= $h($newInvite['link']) ?>" onclick="this.select()">
+        <button type="button" class="secondary" onclick="navigator.clipboard.writeText(this.previousElementSibling.value).then(() => this.textContent = 'Zkopírováno')">Kopírovat odkaz</button>
+      </div>
+    </div>
+  <?php endif ?>
+
+  <form class="card settings" method="post">
+    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+    <input type="hidden" name="id" value="0">
+    <h2>Nová pozvánka</h2>
+    <label>Jméno pořadatele / vchodu<input name="name" required maxlength="100" placeholder="např. Vchod A – Petr"></label>
+    <div class="checks"><?= $runChecks([]) ?></div>
+    <button name="action" value="invite-save">Vytvořit pozvánku</button>
+  </form>
+
+  <div class="card table">
+    <table>
+      <thead><tr><th>Pořadatel</th><th>Termíny</th><th>Vytvořeno</th><th>Naposledy použito</th><th>Stav</th><th></th></tr></thead>
+      <tbody>
+      <?php foreach ($invites as $inv):
+          $invRuns = invite_run_ids((int) $inv['id']);
+          $revoked = $inv['revoked_at'] !== null;
+      ?>
+        <tr>
+          <td><strong><?= $h($inv['name']) ?></strong></td>
+          <td class="seats"><?= $h(implode(', ', array_map(static fn ($id) => ($r = run_by_id($id)) ? run_label($r) : '–', $invRuns))) ?></td>
+          <td><?= $h($fmt($inv['created_at'])) ?></td>
+          <td><?= $h($fmt($inv['last_used_at'])) ?: '–' ?></td>
+          <td><span class="badge <?= $revoked ? 's-cancelled' : 's-paid' ?>"><?= $revoked ? 'Zrušeno' : 'Aktivní' ?></span></td>
+          <td>
+            <div class="actions">
+              <details class="edit-email"><summary>upravit</summary>
+                <form method="post" class="invite-edit">
+                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                  <input type="hidden" name="id" value="<?= (int) $inv['id'] ?>">
+                  <input name="name" required maxlength="100" value="<?= $h($inv['name']) ?>">
+                  <div class="checks"><?= $runChecks($invRuns) ?></div>
+                  <label class="check"><input type="checkbox" name="new_link" value="1" <?= $revoked ? 'checked' : '' ?>> vytvořit nový odkaz (původní přestane platit<?= $revoked ? ', obnoví přístup' : '' ?>)</label>
+                  <button name="action" value="invite-save">Uložit</button>
+                </form>
+              </details>
+              <?php if (!$revoked): ?>
+                <form method="post" onsubmit="return confirm('Zrušit přístup? Zařízení se okamžitě odhlásí.')">
+                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                  <input type="hidden" name="id" value="<?= (int) $inv['id'] ?>">
+                  <button class="danger" name="action" value="invite-revoke">Zrušit přístup</button>
+                </form>
+              <?php endif ?>
+            </div>
+          </td>
+        </tr>
+      <?php endforeach ?>
+      <?php if (!$invites): ?><tr><td colspan="6">Zatím žádné pozvánky.</td></tr><?php endif ?>
+      </tbody>
+    </table>
+  </div>
+
+  <?php elseif ($view === 'settings'):
       $deleteAt = data_deletion_at();
       $local = static fn (?string $utc) => $utc ? utc_time($utc)->setTimezone(new DateTimeZone(PRAGUE))->format('Y-m-d\TH:i') : '';
       $runForms = array_values(runs());
@@ -380,7 +499,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <div class="rules">
       <?php foreach ($rows as $rule): ?>
         <div class="rule">
-          <label>Od<input type="datetime-local" name="rule_from[]" value="<?= $h(str_replace(' ', 'T', (string) $rule['from'])) ?>"></label>
+          <label>Od<input type="datetime-local" name="rule_from[]" value="<?= $h($rule['from'] === '' ? '' : prague_input(storno_from($rule['from']))) ?>"></label>
           <label>Poplatek %<input type="number" name="rule_percent[]" min="0" max="100" value="<?= $h($rule['percent']) ?>"></label>
         </div>
       <?php endforeach ?>
@@ -441,7 +560,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td><?= $h(SECTIONS[$v['section']]['name'] ?? $v['section']) ?></td>
           <td><?= (int) $v['persons'] ?></td>
           <td><?= $h($v['note']) ?></td>
-          <td><?= $v['checked_in_at'] ? '<span class="badge s-paid">' . $h($fmt($v['checked_in_at'])) . '</span>' : '' ?></td>
+          <td><?= $v['checked_in_at'] ? '<span class="badge s-paid">' . $h($fmt($v['checked_in_at'])) . '</span>' . ($v['checked_in_by'] ? '<br><small>' . $h($v['checked_in_by']) . '</small>' : '') : '' ?></td>
           <td>
             <div class="actions">
               <?php if ($v['checked_in_at']): ?>
@@ -535,7 +654,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td><span class="badge s-<?= $h($r['status']) ?>"><?= $h($statusLabels[$r['status']]) ?></span>
             <?php if ($r['paid_at']): ?><br><small>zaplaceno <?= $h($fmt($r['paid_at'])) ?></small><?php endif ?>
             <?php if ($r['ticket_sent_at']): ?><br><small>vstupenka <?= $h($fmt($r['ticket_sent_at'])) ?></small><?php endif ?>
-            <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= $h($fmt($r['checked_in_at'])) ?></small><?php endif ?>
+            <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= $h($fmt($r['checked_in_at'])) ?><?= $r['checked_in_by'] ? ' (' . $h($r['checked_in_by']) . ')' : '' ?></small><?php endif ?>
             <?php if ($r['status'] === 'cancelled'): ?><br><small><?= $r['cancelled_by'] === 'customer' ? 'zrušil zákazník' : 'zrušeno správcem' ?> <?= $h($fmt($r['cancelled_at'])) ?></small><?php endif ?>
             <?php if ($r['cancel_fee'] > 0): ?><br><small>storno <?= $kc($r['cancel_fee']) ?></small><?php endif ?>
             <?php if ($r['refunded_amount'] > 0): ?><br><small>vráceno <?= $kc($r['refunded_amount']) ?> (<?= $h($fmt($r['refunded_at'])) ?>)</small><?php endif ?>

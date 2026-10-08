@@ -3,7 +3,7 @@
 Tato dokumentace popisuje všechny procesy aplikace tak, jak jsou
 naprogramované. Hodnoty v textu (lhůty, limity, ceny) jsou výchozí
 a lze je změnit v konfiguraci (kapitola [12](#12-konfigurace)) nebo
-ve správě (kapitola [9.3](#93-záložka-nastavení--termíny)).
+ve správě (kapitola [9.4](#94-záložka-nastavení--termíny)).
 
 ## Obsah
 
@@ -37,18 +37,19 @@ bankovním převodem a k odbavení u vchodu.
 Akce má **více termínů** (např. 3 představení). Každý termín má vlastní
 plánek míst, rezervace, VIP hosty, storno podmínky a odbavení – místo
 `ML-1-1` lze rezervovat zvlášť na každý termín. Termíny zakládá správce
-(kapitola [9.3](#93-záložka-nastavení--termíny)).
+(kapitola [9.4](#94-záložka-nastavení--termíny)).
 
-| Část | Adresa | Kdo ji používá | K čemu |
-| --- | --- | --- | --- |
-| Rezervační stránka | `/` (vybraný termín v adrese `?termin=<id>`) | veřejnost | výběr termínu, míst a rezervace |
-| Stránka rezervace | `/?r=<kód>` | zákazník | platební údaje a QR platba, vstupenka, zrušení |
-| Správa | `/api/admin.php` | účetní / správce (heslo `ADMIN_PASSWORD`) | potvrzení plateb, rušení, vracení peněz, VIP, termíny |
-| Odbavení | `/scanner.html` | pořadatelé u vchodu (heslo `ORGANIZER_PASSWORD`) | výběr odbavovaného termínu, čtení vstupenek kamerou, VIP podle jména |
-| Plánované úlohy | `api/cron.php` (každých 10 minut) | server | rušení nezaplacených rezervací, připomínky, mazání osobních údajů |
+| Část | Adresa | Kdo ji používá | Navrženo pro | K čemu |
+| --- | --- | --- | --- | --- |
+| Rezervační stránka | `/` (vybraný termín v adrese `?termin=<id>`) | veřejnost | **mobil** (funguje i na počítači) | výběr termínu, míst a rezervace |
+| Stránka rezervace | `/?r=<kód>` | zákazník | **mobil** | platební údaje a QR platba, vstupenka, zrušení |
+| Správa | `/api/admin.php` | účetní / správce (heslo `ADMIN_PASSWORD`) | **počítač** (na mobilu se tabulky posouvají) | potvrzení plateb, rušení, vracení peněz, VIP, pořadatelé, termíny |
+| Odbavení | `/scanner.html` | pořadatelé u vchodu (pozvánka od správce) | **jen mobil** | výběr odbavovaného termínu, čtení vstupenek kamerou, VIP podle jména |
+| Plánované úlohy | `api/cron.php` (každých 10 minut) | server | – | rušení nezaplacených rezervací, připomínky, mazání osobních údajů |
 
-Všechny časy se zobrazují v pražském čase (Europe/Prague), v databázi jsou
-uloženy v UTC.
+**Časy:** v databázi jsou všechny časy uložené v **UTC** (sloupce
+DATETIME i data uvnitř JSON, např. storno pravidla). Pražský čas
+(Europe/Prague) se používá jen při zadávání ve správě a při zobrazení.
 
 ---
 
@@ -378,27 +379,58 @@ Rozdíly proti zrušení zákazníkem:
 
 ### 7.2 Odbavení (scanner.html)
 
-1. Pořadatel otevře na mobilu `scanner.html` a přihlásí se heslem
-   pořadatele (přihlášení vydrží 24 hodin).
-2. Nahoře zvolí **Odbavuji termín**. Předvybraný je první termín, který
-   nezačal před více než 6 hodinami (jinak poslední); volba si telefon
-   pamatuje. Odbavení i VIP seznam platí jen pro zvolený termín.
-3. V režimu **Vstupenky** se spustí zadní kamera (je-li to možné, je
+**Přihlášení pozvánkou.** Pořadatel dostane od správce pozvánku (odkaz
+nebo QR kód, kapitola [9.3](#93-záložka-pořadatelé)) a otevře ji na
+svém mobilu. Odkaz `scanner.html?pozvanka=<kód>` mobil přihlásí, kód
+z adresy hned zmizí a přihlášení vydrží 30 dní (i když je telefon
+dlouho nečinný). Pořadatel vidí a může odbavovat **jen termíny
+z pozvánky**; nahoře je jeho jméno (např. *Vchod A – Petr*). Bez
+pozvánky ukazuje scanner jen výzvu *„Otevřete na tomto mobilu odkaz
+nebo QR kód z pozvánky…“*. Neplatná pozvánka: *„Pozvánka neplatí – je
+zrušená nebo nahrazená novou. Požádejte správce o nový odkaz.“* Když
+správce přístup zruší, mobil se při dalším kroku odhlásí. Pokud je
+nastavené hlavní heslo `ORGANIZER_PASSWORD`, lze se přihlásit i jím
+(všechny termíny).
+
+**Odbavení:**
+
+1. Pořadatel otevře scanner na mobilu.
+2. Nahoře zvolí **Odbavuji termín** (nabízí jen jeho termíny).
+   Předvybraný je termín, jehož **čas odbavení** právě probíhá; jinak
+   naposledy zvolený, jinak nejbližší další. Odbavení i VIP seznam platí
+   jen pro zvolený termín.
+3. **Čas odbavení** je od **1 hodiny před začátkem do 1 hodiny po
+   začátku** termínu (`SCAN_WINDOW_BEFORE_MINUTES`,
+   `SCAN_WINDOW_AFTER_MINUTES`). Je-li zvolený termín mimo tento čas,
+   kamera se nespustí a místo ní se ukáže varování *„Tento termín právě
+   neprobíhá – Odbavení termínu … je určeno na 17:00–19:00, ještě
+   nezačalo / už skončilo.“* s tlačítky:
+   - **Přepnout na probíhající …** – je-li jiný termín z pozvánky právě
+     v čase odbavení,
+   - **Přesto odbavovat tento termín** – vědomé potvrzení; pak je nahoře
+     oranžový pruh *„Mimo čas odbavení (17:00–19:00) – odbavujete na
+     vlastní potvrzení.“* Potvrzení platí do obnovení stránky.
+   Stav se kontroluje každých 30 sekund, takže po skončení času se
+   varování objeví znovu. Totéž hlídá i server: bez potvrzení mimo čas
+   nikoho neodbaví.
+4. V režimu **Vstupenky** se spustí zadní kamera (je-li to možné, je
    k dispozici i svítilna).
-4. Po načtení QR kódu telefon zavibruje a skenování se zastaví.
-5. Scanner podle **ID rezervace** z QR kódu (a kontrolního VS) načte ze
+5. Po načtení QR kódu telefon zavibruje a skenování se zastaví.
+6. Scanner podle **ID rezervace** z QR kódu (a kontrolního VS) načte ze
    serveru **aktuální stav rezervace** – stav, termín, jméno, platná
    místa, čas odbavení. Údaje vytištěné v QR kódu se použijí jen bez
    připojení.
-6. Zobrazí se výsledek se jménem, počtem míst, místy po sekcích a řadách
-   a řádkem *„Rezervace č. … · VS … · aktuální stav ze systému“*.
-7. Tlačítkem **Skenovat další** se pokračuje.
+7. Zobrazí se výsledek se jménem, počtem míst, místy po sekcích a řadách
+   a řádkem *„Rezervace č. … · VS … · aktuální stav ze systému“*. Ke
+   každému odbavení se uloží, **kdo** odbavoval (jméno z pozvánky).
+8. Tlačítkem **Skenovat další** se pokračuje.
 
 | Výsledek | Barva | Kdy |
 | --- | --- | --- |
 | **Platná vstupenka** | zelená | zaplaceno, první načtení – zaznamená se příchod |
 | **Už odbaveno** + čas prvního načtení | oranžová | vstupenka už byla načtena |
 | **Nezaplaceno** | červená | rezervace čeká na platbu |
+| **Mimo čas odbavení – neodbaveno** | oranžová | platná vstupenka, ale termín je mimo čas odbavení a nebylo potvrzeno (běžně nenastane – scanner předtím ukáže varování) |
 | **Jiný termín** + *„Vstupenka platí na …“* | červená | platná rezervace, ale na jiný termín, než se odbavuje – příchod se **nezaznamená** |
 | **Rezervace zrušena** | červená | zrušeno nebo propadlo (i když se to stalo až po vydání vstupenky) |
 | **Neplatný kód** | červená | cizí, padělaný nebo upravený kód, nebo rezervace s tímto ID a VS neexistuje |
@@ -433,7 +465,9 @@ místa** (nesnižují počet volných míst na webu).
 ### 8.2 Odbavení VIP
 
 1. Ve scanneru přepínač **VIP** (kamera se vypne). Zobrazí se VIP hosté
-   **odbavovaného termínu**.
+   **odbavovaného termínu**. Platí stejné hlídání času odbavení jako
+   u vstupenek (bod 3 v 7.2); bez potvrzení mimo čas server odpoví
+   *„Termín je mimo čas odbavení. Potvrďte odbavení mimo čas.“*
 2. Host řekne jméno, pořadatel ho píše do pole *Hledat jméno*. Hledání
    nezáleží na diakritice ani pořadí slov („stastna anezka“ najde
    „Sestra Anežka Šťastná“) a hledá i v poznámce.
@@ -478,9 +512,29 @@ Při načtení správy se nejdřív zpracují propadlé rezervace.
 
 ### 9.2 Záložka VIP
 
-Viz kapitola 8.1.
+Viz kapitola 8.1. U příchozích je uvedeno i jméno pořadatele, který hosta
+vpustil.
 
-### 9.3 Záložka Nastavení – termíny
+### 9.3 Záložka Pořadatelé
+
+Pozvánky pro pořadatele u vchodu (kapitola 7.2):
+
+1. **Nová pozvánka** – *Jméno pořadatele / vchodu* (např. *Vchod A –
+   Petr*) a zaškrtnout **termíny**, které smí odbavovat (alespoň jeden).
+   **Vytvořit pozvánku**.
+2. Zobrazí se **odkaz** a jeho **QR kód** s tlačítkem *Kopírovat odkaz*.
+   Odkaz se ukáže **jen jednou** (v databázi je uložen jen jeho otisk) –
+   pošlete ho pořadateli, nebo ať si QR kód naskenuje fotoaparátem mobilu.
+3. Seznam pozvánek: jméno, termíny, vytvořeno, naposledy použito, stav
+   (*Aktivní* / *Zrušeno*).
+4. **upravit** – změna jména a termínů (platí okamžitě i na už
+   přihlášeném mobilu); volba *vytvořit nový odkaz* vydá nový odkaz,
+   původní přestane platit (u zrušené pozvánky tím obnoví přístup).
+5. **Zrušit přístup** – mobily s touto pozvánkou se okamžitě odhlásí.
+
+Smazáním termínu (9.4) se termín odebere i z pozvánek.
+
+### 9.4 Záložka Nastavení – termíny
 
 Pro každý termín je samostatný formulář, poslední prázdný slouží
 k přidání nového (**Přidat termín**):
@@ -567,7 +621,9 @@ hodnoty jsou v `api/config.php`.
 | `PAYMENT_MESSAGE` | Moje zidle 2026 | zpráva pro příjemce (doplní se příjmení) |
 | `PAYMENT_SPECIFIC_SYMBOL` | – | specifický symbol pro všechny platby |
 | `ADMIN_PASSWORD` | **povinné** | heslo do správy |
-| `ORGANIZER_PASSWORD` | **povinné** | heslo do scanneru |
+| `ORGANIZER_PASSWORD` | – | nepovinné hlavní heslo do scanneru pro všechny termíny (pořadatelé běžně používají pozvánky) |
+| `SCAN_WINDOW_BEFORE_MINUTES` | 60 | čas odbavení začíná tolik minut před začátkem termínu |
+| `SCAN_WINDOW_AFTER_MINUTES` | 60 | čas odbavení končí tolik minut po začátku termínu |
 | `TICKET_SECRET` | **povinné** | tajný klíč pro podpis vstupenek (min. 16 znaků; po rozeslání vstupenek neměnit) |
 | `MAIL_ENABLED` | false | zapnutí e-mailů |
 | `MAIL_FROM` | rezervace@example.com | odesílatel e-mailů |
@@ -584,7 +640,7 @@ hodnoty jsou v `api/config.php`.
 | Podepsaný token | Stránka dostane od serveru token s časem a podpisem. Rezervace bez tokenu, s padělaným, starším než 12 h nebo odeslaná dřív než 3 s po načtení je odmítnuta. |
 | Limit na IP | 5 rezervací za hodinu (počítají se jen formálně správné požadavky). |
 | Limit na e-mail | Nejvýše 2 nezaplacené rezervace na jeden e-mail. |
-| Limit přihlášení | 10 pokusů za 15 minut pro správu i scanner. |
+| Limit přihlášení | 10 pokusů za 15 minut pro správu i scanner (heslo i pozvánka). |
 | Limit rušení | 20 pokusů o zrušení za hodinu z jedné IP. |
 
 Za proxy/CDN (např. Cloudflare) musí server znát skutečnou IP návštěvníka
@@ -623,7 +679,7 @@ konfiguraci a knihovnám.
 
 ### 14.3 Aktualizace existující instalace
 
-Spusťte postupně skripty v `db/migrations/` (002 až 008), které ještě
+Spusťte postupně skripty v `db/migrations/` (002 až 009), které ještě
 nebyly použité. Migrace 008 převede dosavadní data na první termín
 z dřívějšího data akce – jeho čas ve správě zkontrolujte (bez časových
 zón v MariaDB se převádí jako UTC+1). Všechny lze bezpečně spustit opakovaně.
@@ -646,7 +702,8 @@ webu, e-maily ale posílá jen cron.
 2. Ve správě → Nastavení založit **termíny** (začátek, případně název
    a konec rezervací) a u každého **storno poplatky**.
 3. Zadat VIP hosty.
-4. Vyzkoušet celý průběh: rezervace → e-mail → Zaplaceno → vstupenka →
+4. V záložce **Pořadatelé** vytvořit pozvánky a rozeslat je pořadatelům.
+5. Vyzkoušet celý průběh: rezervace → e-mail → Zaplaceno → vstupenka →
    načtení ve scanneru.
 
 ### 14.6 Vývoj
@@ -668,7 +725,7 @@ npm run dev                  # web, /api se přesměruje na PHP
 | POST | `api/reservations.php` | vytvoření rezervace `{runId, firstName, lastName, email, seats, formToken, hp}` |
 | GET | `api/reservations.php?token=` | stav rezervace, platební údaje, vstupenka, podmínky zrušení |
 | POST | `api/cancel.php` | zrušení zákazníkem `{token, seats?}` (bez `seats` = celá) |
-| GET/POST | `api/organizer.php` | scanner: GET vrátí přihlášení a termíny; `login`, `logout`, `verify {code, runId}` (najde rezervaci podle ID z QR, vrátí aktuální stav, u jiného termínu `wrong_run`, jinak zaznamená odbavení), `vip-list {runId}`, `vip-checkin`, `vip-undo` |
+| GET/POST | `api/organizer.php` | scanner: GET vrátí přihlášení, jméno a povolené termíny (s časem odbavení `scanFrom`–`scanTo`); `invite {token}` (přihlášení pozvánkou), `login {password}` (hlavní heslo), `logout`, `verify {code, runId, confirmOutside?}` (najde rezervaci podle ID z QR, vrátí aktuální stav; `wrong_run` u jiného termínu, `outside_window` mimo čas bez potvrzení, jinak zaznamená odbavení), `vip-list {runId}`, `vip-checkin {id, runId, confirmOutside?}`, `vip-undo {id, runId}` |
 | – | `api/admin.php` | správa (HTML stránka) |
 | CLI | `api/cron.php` | plánované úlohy |
 
@@ -682,6 +739,7 @@ npm run dev                  # web, /api se přesměruje na PHP
 | `vip_guests` | VIP hosté (s termínem) |
 | `settings` | rezerva pro další nastavení (nyní nepoužito) |
 | `rate_limits` | počítadla limitů (otisky IP) |
+| `scanner_invites`, `scanner_invite_runs` | pozvánky pořadatelů (jméno, otisk odkazu, použití, zrušení) a jejich termíny |
 
 ### 15.3 Formát QR kódů
 
