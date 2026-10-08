@@ -238,6 +238,156 @@ test('ticket code round-trips and rejects tampering', function (): void {
     same(null, parse_ticket_code(str_replace('BC-1-2', 'BC-1-3', $code)), 'tampered');
 });
 
+// ------------------------------------------------------------------- layout
+
+test('the layout for the apps lists all sections in order with their shape', function (): void {
+    $layout = layout_public();
+    same(array_keys(SECTIONS), array_column($layout['sections'], 'id'), 'order');
+    same(total_capacity(), array_sum(array_map(fn ($s) => $s['rows'] * $s['seatsPerRow'], $layout['sections'])), 'capacity');
+    same(['left', 'left', 'right', 'right', 'balcony', 'balcony', 'balcony'], array_column($layout['sections'], 'group'), 'groups');
+    same(array_keys(LEVELS), array_values(array_unique(array_column($layout['sections'], 'level'))), 'levels used');
+    foreach ($layout['sections'] as $section) {
+        same(true, is_valid_seat_id("{$section['id']}-{$section['rows']}-{$section['seatsPerRow']}"), "last seat of {$section['id']}");
+    }
+});
+
+// ----------------------------------------------------------- admin accounts
+
+test('an invited accountant sets a password and signs in with the e-mail', function (): void {
+    $invite = admin_invite(' Jana@Example.cz ', 'Jana  Nováková', 'hlavní heslo');
+    same(true, is_array($invite), 'invited');
+    $token = is_array($invite) ? $invite['token'] : '';
+    same(['jana@example.cz', 'Jana Nováková', null], [$invite['user']['email'] ?? null, $invite['user']['name'] ?? null, $invite['user']['password_hash'] ?? null], 'account');
+    same(null, admin_login('jana@example.cz', 'cokoliv-dlouheho'), 'no login before accepting');
+    same('Heslo musí mít alespoň 10 znaků.', admin_accept_invite($token, 'kratke', 'kratke'), 'too short');
+    same('Hesla se neshodují.', admin_accept_invite($token, 'dlouhe-heslo-1', 'dlouhe-heslo-2'), 'mismatch');
+    $me = admin_accept_invite($token, 'dlouhe-heslo-1', 'dlouhe-heslo-1');
+    same('Jana Nováková', is_array($me) ? $me['name'] : $me, 'accepted');
+    same(null, admin_invited_user($token), 'link used up');
+    same('Jana Nováková', admin_login('JANA@example.cz', 'dlouhe-heslo-1')['name'] ?? null, 'login (e-mail case-insensitive)');
+    same(null, admin_login('jana@example.cz', 'spatne-heslo'), 'wrong password');
+    same('Účet s tímto e-mailem už existuje. Pošlete mu nový odkaz v seznamu.', admin_invite('jana@example.cz', 'Jana', 'x'), 'duplicate');
+    same('Neplatný e-mail.', admin_invite('neni-email', 'Jana', 'x'), 'invalid e-mail');
+});
+
+test('a new link lets the owner set a new password; expired links do not work', function (): void {
+    $invite = admin_invite('petr@example.cz', 'Petr', 'x');
+    $id = is_array($invite) ? (int) $invite['user']['id'] : 0;
+    admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'prvni-heslo-1', 'prvni-heslo-1');
+    $token = admin_new_invite($id);
+    same('Petr', admin_login('petr@example.cz', 'prvni-heslo-1')['name'] ?? null, 'old password works until changed');
+    admin_accept_invite($token, 'druhe-heslo-2', 'druhe-heslo-2');
+    same([null, 'Petr'], [admin_login('petr@example.cz', 'prvni-heslo-1'), admin_login('petr@example.cz', 'druhe-heslo-2')['name'] ?? null], 'new password');
+    $expired = admin_new_invite($id);
+    db()->prepare('UPDATE admin_users SET invite_expires_at = ? WHERE id = ?')->execute([db_time(now_utc()->modify('-1 minute')), $id]);
+    same('Pozvánka neplatí nebo vypršela. Požádejte o novou.', admin_accept_invite($expired, 'treti-heslo-3', 'treti-heslo-3'), 'expired');
+});
+
+test('disabled accounts cannot sign in and lose their session; nobody disables themselves', function (): void {
+    $invite = admin_invite('eva@example.cz', 'Eva', 'x');
+    $id = is_array($invite) ? (int) $invite['user']['id'] : 0;
+    admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'evino-heslo-1', 'evino-heslo-1');
+    same('Eva', admin_from_session($id)['name'] ?? null, 'session valid');
+    same('Svůj vlastní účet nelze vypnout.', admin_set_disabled($id, true, $id), 'not yourself');
+    admin_set_disabled($id, true, null);
+    same([null, null], [admin_login('eva@example.cz', 'evino-heslo-1'), admin_from_session($id)], 'disabled');
+    admin_set_disabled($id, false, null);
+    same('Eva', admin_login('eva@example.cz', 'evino-heslo-1')['name'] ?? null, 'enabled again');
+});
+
+test('the master password signs in with an empty e-mail', function (): void {
+    $master = (string) config('ADMIN_PASSWORD');
+    if ($master === '') {
+        same(null, admin_login('', 'cokoliv'), 'no master password configured');
+        return;
+    }
+    same(['id' => null, 'name' => ADMIN_MASTER_NAME, 'email' => null], admin_login('', $master), 'master');
+    same(null, admin_login('', $master . 'x'), 'wrong master password');
+    same(ADMIN_MASTER_NAME, admin_from_session(0)['name'] ?? null, 'master session');
+});
+
+// ------------------------------------------------------------------ offline
+
+/** Scanner access as scanner_access() returns it. */
+function device(string $name): array
+{
+    return ['type' => 'invite', 'id' => 1, 'name' => $name, 'runIds' => null];
+}
+
+function conflicts(): array
+{
+    return db_query('SELECT reason, label, scanned_by, other_by FROM scan_conflicts ORDER BY id')->fetchAll();
+}
+
+test('snapshot lists the run\'s tickets without e-mails and with VIP guests', function (): void {
+    $paid = reservation(['BR-1-1', 'BR-1-2'], 'paid', 1, 'Seznamová');
+    add_vip_guest(1, 'VIP Seznam', ['BR-2-1'], '');
+    $snapshot = scanner_snapshot(run_by_id(1) ?? []);
+    $ticket = array_values(array_filter($snapshot['tickets'], fn ($t) => $t['id'] === $paid))[0] ?? null;
+    same(['Test Seznamová', ['BR-1-1', 'BR-1-2'], 'paid', null], [$ticket['name'] ?? null, $ticket['seats'] ?? null, $ticket['status'] ?? null, $ticket['checkedInAt'] ?? null], 'ticket');
+    same(false, array_key_exists('email', $ticket ?? []), 'no e-mail');
+    same(true, in_array('VIP Seznam', array_column($snapshot['vips'], 'name'), true), 'VIP included');
+});
+
+test('offline check-ins are applied with the device time; the first one wins', function (): void {
+    db()->exec('DELETE FROM scan_conflicts');
+    $id = reservation(['BR-1-3'], 'paid');
+    $vs = row($id)['variable_symbol'];
+    $at = now_utc()->modify('-10 minutes');
+    $event = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'at' => iso_utc($at)];
+    $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event]);
+    same([['status' => 'ok']], $res['results'], 'applied');
+    same([db_time($at), 'Vchod A (offline)'], [row($id)['checked_in_at'], row($id)['checked_in_by']], 'stored');
+    // The same event sent again (response lost) is not a conflict.
+    same(0, apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event])['conflicts'], 'resend');
+    // Another device let the same ticket in offline too.
+    $other = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'at' => iso_utc($at->modify('+2 minutes'))];
+    $res = apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [$other]);
+    same([1, 'already_checked_in'], [$res['conflicts'], $res['results'][0]['reason'] ?? null], 'conflict');
+    same(db_time($at), row($id)['checked_in_at'], 'first check-in kept');
+    $c = conflicts();
+    same(['already_checked_in', 'Vchod B (offline)', 'Vchod A (offline)'], [$c[0]['reason'], $c[0]['scanned_by'], $c[0]['other_by']], 'conflict row');
+    apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [$other]);
+    same(1, count(conflicts()), 'conflict recorded once');
+});
+
+test('offline scans of unpaid, unknown or other-run tickets become conflicts', function (): void {
+    db()->exec('DELETE FROM scan_conflicts');
+    $pending = reservation(['BR-1-4']);
+    $otherRun = reservation(['BR-1-5'], 'paid', 2);
+    $events = [
+        ['type' => 'ticket', 'id' => $pending, 'variableSymbol' => row($pending)['variable_symbol'], 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => $otherRun, 'variableSymbol' => row($otherRun)['variable_symbol'], 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => 999999, 'variableSymbol' => '1', 'at' => iso_utc(now_utc())],
+    ];
+    $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], $events);
+    same(['not_paid', 'unknown', 'unknown'], array_column($res['results'], 'reason'), 'reasons');
+    same(null, row($otherRun)['checked_in_at'], 'other run untouched');
+});
+
+test('device time is limited to the last 48 hours and never in the future', function (): void {
+    $future = reservation(['BR-2-2'], 'paid');
+    $old = reservation(['BR-2-3'], 'paid');
+    apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [
+        ['type' => 'ticket', 'id' => $future, 'variableSymbol' => row($future)['variable_symbol'], 'at' => iso_utc(now_utc()->modify('+3 hours'))],
+        ['type' => 'ticket', 'id' => $old, 'variableSymbol' => row($old)['variable_symbol'], 'at' => '2001-01-01T00:00:00Z'],
+    ]);
+    same(true, row($future)['checked_in_at'] <= db_time(now_utc()), 'not in the future');
+    same(true, row($old)['checked_in_at'] >= db_time(now_utc()->modify('-49 hours')), 'not older than 48 h');
+});
+
+test('offline VIP arrivals: first wins, undo takes an arrival back', function (): void {
+    db()->exec('DELETE FROM scan_conflicts');
+    add_vip_guest(1, 'VIP Offline', ['BR-2-4'], '');
+    $vip = (int) db_query("SELECT id FROM vip_guests WHERE name = 'VIP Offline'")->fetchColumn();
+    $at = iso_utc(now_utc()->modify('-5 minutes'));
+    same('ok', apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [['type' => 'vip-checkin', 'id' => $vip, 'at' => $at]])['results'][0]['status'], 'arrival');
+    $res = apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [['type' => 'vip-checkin', 'id' => $vip, 'at' => iso_utc(now_utc())]]);
+    same('already_checked_in', $res['results'][0]['reason'] ?? null, 'second device');
+    apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [['type' => 'vip-undo', 'id' => $vip]]);
+    same(null, db_query("SELECT checked_in_at FROM vip_guests WHERE id = {$vip}")->fetchColumn(), 'undone');
+});
+
 // ---------------------------------------------------------------------- run
 
 reset_database();

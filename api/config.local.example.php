@@ -11,7 +11,7 @@ return [
     'PAYMENT_RECIPIENT' => 'Farnost',
     'PAYMENT_SPECIFIC_SYMBOL' => '2026',
 
-    'ADMIN_PASSWORD' => 'change-me',
+    'ADMIN_PASSWORD' => 'change-me', // master login (empty e-mail) – needed to invite the first accountant
     'ORGANIZER_PASSWORD' => '',  // optional master password for all runs; organizers normally use invite links from admin
     'TICKET_SECRET' => 'paste output of: php -r "echo bin2hex(random_bytes(32));"',
 

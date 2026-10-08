@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { SECTIONS, compareSeatIds, parseSeatId } from '../data/layout.js';
+import { SECTIONS, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { decodeTicket } from './ticket.js';
 import { acceptInvite, getSession, login, logout, verifyTicket } from './api.js';
+import { STALE_MS, cachedSession, clearOffline, getQueue, markTicketCheckedIn, saveSession, verifyOffline } from './offline.js';
+import { useOffline } from './useOffline.js';
 import { useQrCamera } from './useQrCamera.js';
 import VipView from './VipView.jsx';
 import { runLabel } from '../runs.js';
@@ -64,6 +66,7 @@ const RESULT = {
   payment: { tone: 'bad', title: 'To je platební QR kód' },
   wrong_run: { tone: 'bad', title: 'Jiný termín' },
   outside_window: { tone: 'warn', title: 'Mimo čas odbavení – neodbaveno' },
+  unknown: { tone: 'bad', title: 'Není v seznamu termínu' },
   offline: { tone: 'warn', title: 'Neověřeno – bez spojení' },
   checking: { tone: 'neutral', title: 'Ověřuji…' },
 };
@@ -184,10 +187,20 @@ function ResultCard({ scan, onNext }) {
               </li>
             ))}
           </ul>
+          {result === 'unknown' && (
+            <p className="small">Vstupenka není v seznamu tohoto termínu – může být na jiný termín, nebo neplatná.</p>
+          )}
           <p className="muted small">
             Rezervace č. {ticket.id ?? '–'} · VS {ticket.variableSymbol}
-            {result === 'offline' ? ' · údaje z QR kódu, neověřeno' : ' · aktuální stav ze systému'}
+            {result === 'offline'
+              ? ' · údaje z QR kódu, neověřeno'
+              : scan.offlineAt
+                ? ` · bez spojení, podle seznamu z ${clock(scan.offlineAt)}`
+                : ' · aktuální stav ze systému'}
           </p>
+          {scan.offlineAt && result === 'valid' && (
+            <p className="muted small">Odbavení se odešle, jakmile bude spojení.</p>
+          )}
         </div>
       ) : (
         <p className="scan-raw">
@@ -206,7 +219,29 @@ function ResultCard({ scan, onNext }) {
   );
 }
 
-function Scanner({ runs, name, onLogout }) {
+/** Connection state of the scanner; hidden while online with nothing to send. */
+function OfflineStrip({ offline }) {
+  const { online, snapshot, queue, note } = offline;
+  const pending = queue.length;
+  if (online && !pending && !note) return null;
+  const stale = snapshot && Date.now() - new Date(snapshot.at).getTime() > STALE_MS;
+  let text;
+  if (online) {
+    text = pending ? `Odesílám odbavení bez spojení: ${pending}…` : note;
+  } else if (!snapshot) {
+    text = 'Bez spojení a bez staženého seznamu – vstupenky nelze ověřit.';
+  } else {
+    text = `Bez spojení – ověřuji podle seznamu z ${clock(snapshot.at)}${stale ? ' (starší než 30 min)' : ''}`;
+    if (pending) text += ` · k odeslání: ${pending}`;
+  }
+  return (
+    <p className={`offline-strip ${online ? 'is-online' : ''} ${!online && (!snapshot || stale) ? 'is-bad' : ''}`} role="status">
+      {text}
+    </p>
+  );
+}
+
+function Scanner({ runs, name, onLogout, onUnauthorized }) {
   const [mode, setMode] = useState('scan'); // scan | vip
   const [scan, setScan] = useState(null);
   const [runId, setRunId] = useState(() => defaultRunId(runs));
@@ -217,6 +252,9 @@ function Scanner({ runs, name, onLogout }) {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
+
+  const offline = useOffline(runId, onUnauthorized);
+  const { snapshot, enqueue, reachable, fail } = offline;
 
   const run = runs.find((r) => r.id === runId) ?? null;
   const outside = run !== null && !inWindow(run, now);
@@ -245,6 +283,8 @@ function Scanner({ runs, name, onLogout }) {
       setScan({ raw, ticket: decoded, result: 'checking' });
       try {
         const res = await verifyTicket(raw, runId, confirmOutside);
+        reachable();
+        if (res.result === 'valid') markTicketCheckedIn(runId, res.ticket.id, res.checkedInAt);
         setScan({
           raw,
           ticket: res.ticket ?? decoded,
@@ -254,11 +294,23 @@ function Scanner({ runs, name, onLogout }) {
           run: res.run,
         });
       } catch (err) {
-        if (err.status === 401) onLogout();
-        else setScan({ raw, ticket: decoded, result: 'offline' });
+        if (err.status === 401) {
+          onUnauthorized();
+          return;
+        }
+        if (!err.offline || !snapshot) {
+          if (err.offline) fail(err);
+          setScan({ raw, ticket: decoded, result: 'offline' });
+          return;
+        }
+        // No connection: check against the downloaded list, queue the check-in.
+        fail(err);
+        const res = verifyOffline(decoded, snapshot, getQueue());
+        if (res.result === 'valid') enqueue({ type: 'ticket', id: res.ticket.id, variableSymbol: res.ticket.variableSymbol });
+        setScan({ raw, ...res, offlineAt: snapshot.at });
       }
     },
-    [onLogout, runId, confirmOutside],
+    [onUnauthorized, runId, confirmOutside, snapshot, enqueue, reachable, fail],
   );
 
   const camera = useQrCamera(handleCode, mode === 'scan' && runId !== null && !blocked);
@@ -321,6 +373,8 @@ function Scanner({ runs, name, onLogout }) {
         </button>
       </div>
 
+      <OfflineStrip offline={offline} />
+
       {confirmOutside && (
         <p className="window-strip" role="status">
           Mimo čas odbavení ({clock(run.scanFrom)}–{clock(run.scanTo)}) – odbavujete na vlastní potvrzení.
@@ -335,7 +389,7 @@ function Scanner({ runs, name, onLogout }) {
           onConfirm={() => setConfirmed((prev) => new Set(prev).add(runId))}
         />
       ) : mode === 'vip' ? (
-        <VipView key={runId} runId={runId} confirmOutside={confirmOutside} onUnauthorized={onLogout} />
+        <VipView key={runId} runId={runId} confirmOutside={confirmOutside} offline={offline} onUnauthorized={onUnauthorized} />
       ) : (
         <div className={`scan-view ${scan ? 'has-result' : ''}`}>
           <video ref={camera.videoRef} className="scan-video" playsInline muted autoPlay />
@@ -367,11 +421,22 @@ export default function ScannerApp() {
   const loadSession = useCallback(() => {
     getSession()
       .then((s) => {
+        setLayout(s.layout);
         setInfo({ runs: s.runs ?? [], name: s.name, passwordLogin: s.passwordLogin });
+        if (s.loggedIn) saveSession({ name: s.name, runs: s.runs ?? [], layout: s.layout });
+        else clearOffline();
         setSession(s.loggedIn ? 'in' : 'out');
       })
       .catch((err) => {
-        setError(err.message);
+        // Without a connection the scanner opens with the last known session.
+        const cached = err.offline ? cachedSession() : null;
+        if (cached) {
+          setLayout(cached.layout);
+          setInfo({ runs: cached.runs, name: cached.name, passwordLogin: false });
+          setSession('in');
+          return;
+        }
+        setError(err.offline ? 'Bez spojení. Poprvé se scanner musí přihlásit s internetem.' : err.message);
         setSession('error');
       });
   }, []);
@@ -392,7 +457,18 @@ export default function ScannerApp() {
   }, [loadSession]);
 
   const handleLogout = useCallback(() => {
+    const pending = getQueue().length;
+    if (pending && !window.confirm(`${pending} odbavení bez spojení ještě nebylo odesláno. Odhlášením se ztratí. Přesto odhlásit?`)) {
+      return;
+    }
+    clearOffline();
     logout().catch(() => {});
+    setSession('out');
+  }, []);
+
+  // Access revoked or expired: nothing stored can be used or sent any more.
+  const handleUnauthorized = useCallback(() => {
+    clearOffline();
     setSession('out');
   }, []);
 
@@ -404,5 +480,5 @@ export default function ScannerApp() {
   if (!info.runs.length) {
     return <div className="scan-center muted">Nemáte přiřazený žádný termín. Požádejte správce o pozvánku.</div>;
   }
-  return <Scanner runs={info.runs} name={info.name} onLogout={handleLogout} />;
+  return <Scanner runs={info.runs} name={info.name} onLogout={handleLogout} onUnauthorized={handleUnauthorized} />;
 }

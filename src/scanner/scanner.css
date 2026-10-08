@@ -586,3 +586,23 @@
   font-size: 0.85rem;
   font-weight: 600;
 }
+
+.offline-strip {
+  margin: 0 0 12px;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--occ-mid-bg);
+  color: var(--occ-mid-ink);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.offline-strip.is-online {
+  background: var(--occ-low-bg);
+  color: var(--occ-low-ink);
+}
+
+.offline-strip.is-bad {
+  background: var(--occ-high-bg);
+  color: var(--occ-high-ink);
+}

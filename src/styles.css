@@ -63,6 +63,11 @@ h2 {
   margin: 0;
 }
 
+.plan-loading {
+  padding: 2rem 0;
+  text-align: center;
+}
+
 .muted {
   color: var(--ink-2);
 }

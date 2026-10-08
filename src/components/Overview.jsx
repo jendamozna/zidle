@@ -1,46 +1,32 @@
-import { SECTION_BY_ID } from '../data/layout.js';
+import { LEVELS, SECTIONS } from '../data/layout.js';
 import SectionCard from './SectionCard.jsx';
 
+/** Floor plan; sections are placed by their `group` from the server layout. */
 export default function Overview({ stats, loading, onOpen }) {
-  const card = (id) => (
-    <SectionCard
-      key={id}
-      section={SECTION_BY_ID[id]}
-      stat={stats.bySection[id]}
-      loading={loading}
-      onOpen={onOpen}
-    />
-  );
+  const cards = (group) =>
+    SECTIONS.filter((s) => s.group === group).map((s) => (
+      <SectionCard key={s.id} section={s} stat={stats.bySection[s.id]} loading={loading} onOpen={onOpen} />
+    ));
 
   return (
     <div className="plan">
-      <section className="level level-main" aria-label="Hlavní loď">
+      <section className="level level-main" aria-label={LEVELS.main}>
         <div className="stage">Pódium</div>
         <div className="floor">
-          <div className="floor-group">
-            {card('WL')}
-            {card('ML')}
-          </div>
-          <div className="floor-group">
-            {card('MR')}
-            {card('WR')}
-          </div>
+          <div className="floor-group">{cards('left')}</div>
+          <div className="floor-group">{cards('right')}</div>
         </div>
         <div className="entrance">
           <span>Vchod</span>
         </div>
       </section>
 
-      <section className="level level-balcony" aria-label="Balkon">
+      <section className="level level-balcony" aria-label={LEVELS.balcony}>
         <div className="level-head">
-          <h2>Balkon</h2>
+          <h2>{LEVELS.balcony}</h2>
           <span className="to-stage">↑ Pódium</span>
         </div>
-        <div className="balcony">
-          {card('BL')}
-          {card('BC')}
-          {card('BR')}
-        </div>
+        <div className="balcony">{cards('balcony')}</div>
       </section>
     </div>
   );

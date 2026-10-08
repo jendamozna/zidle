@@ -37,7 +37,9 @@ return (static function (): array {
         'PAYMENT_MESSAGE' => 'Moje zidle 2026',
         'PAYMENT_SPECIFIC_SYMBOL' => '', // specific symbol (SS) used for all payments, max 10 digits
 
-        // Admin page (admin.php) – used by the accountant to confirm payments
+        // Admin page (admin.php): accountants sign in with their e-mail and password
+        // (invited in the "Účetní" tab). Master password = sign-in with an empty
+        // e-mail; required until the first account exists, may be removed afterwards.
         'ADMIN_PASSWORD' => '',
         // Ticket scanner (scanner.html): organizers sign in with invite links from admin.
         // Optional master password for all runs ('' = disabled).

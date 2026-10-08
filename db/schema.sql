@@ -117,3 +117,40 @@ CREATE TABLE IF NOT EXISTS scanner_invite_runs (
   PRIMARY KEY (invite_id, run_id),
   CONSTRAINT fk_invite_run FOREIGN KEY (invite_id) REFERENCES scanner_invites (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+-- Check-ins recorded by scanners without a connection that could not be applied
+-- when they were synchronised (e.g. the same ticket let in on two devices).
+CREATE TABLE IF NOT EXISTS scan_conflicts (
+  id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  run_id         INT UNSIGNED NOT NULL,
+  reservation_id INT UNSIGNED NULL,
+  vip_guest_id   INT UNSIGNED NULL,
+  label          VARCHAR(250) NOT NULL COMMENT 'Who it was about (VS + name, or VIP name), kept for display',
+  reason         ENUM('already_checked_in', 'not_paid', 'unknown') NOT NULL,
+  scanned_at     DATETIME     NOT NULL COMMENT 'UTC, time of the offline scan on the device',
+  scanned_by     VARCHAR(100) NOT NULL,
+  other_at       DATETIME     NULL COMMENT 'UTC, the earlier check-in that won',
+  other_by       VARCHAR(100) NULL,
+  created_at     DATETIME     NOT NULL COMMENT 'UTC, when the scan was synchronised',
+  PRIMARY KEY (id),
+  KEY idx_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+-- Admin accounts (accountants): invited by e-mail, the invitee sets a password;
+-- the e-mail is the login. ADMIN_PASSWORD stays as the master login.
+CREATE TABLE IF NOT EXISTS admin_users (
+  id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  email             VARCHAR(190) NOT NULL COMMENT 'Login, lower case',
+  name              VARCHAR(100) NOT NULL,
+  password_hash     VARCHAR(255) NULL COMMENT 'password_hash(); NULL until the invitation is accepted',
+  invite_hash       CHAR(64)     NULL COMMENT 'sha256 of the open invitation token',
+  invite_expires_at DATETIME     NULL COMMENT 'UTC',
+  invited_by        VARCHAR(100) NOT NULL DEFAULT '',
+  created_at        DATETIME     NOT NULL COMMENT 'UTC',
+  accepted_at       DATETIME     NULL COMMENT 'UTC, first password set',
+  last_login_at     DATETIME     NULL COMMENT 'UTC',
+  disabled_at       DATETIME     NULL COMMENT 'UTC; disabled accounts cannot sign in',
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_email (email),
+  UNIQUE KEY uq_invite (invite_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;

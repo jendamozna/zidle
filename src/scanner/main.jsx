@@ -9,3 +9,10 @@ createRoot(document.getElementById('root')).render(
     <ScannerApp />
   </StrictMode>,
 );
+
+// Offline: the service worker keeps the scanner on the device (public/sw.js).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {
+    /* no offline start, everything else works */
+  });
+}

@@ -1,7 +1,7 @@
 <?php
 // Organizer API used by the ticket scanner (scanner.html). Access: invite link
 // from admin (only the invited runs) or the optional master password (all runs).
-//   GET  organizer.php                                      → {loggedIn, name, runs, passwordLogin}
+//   GET  organizer.php                                      → {loggedIn, name, runs, passwordLogin, layout}
 //   POST organizer.php {action: "invite", token}            → signs the device in with an invite
 //   POST organizer.php {action: "login", password}          → master password (if enabled)
 //   POST organizer.php {action: "logout"}
@@ -10,6 +10,8 @@
 //   POST organizer.php {action: "vip-list", runId}          → {vips: [...]}
 //   POST organizer.php {action: "vip-checkin", id, runId, confirmOutside?}
 //   POST organizer.php {action: "vip-undo", id, runId}
+//   POST organizer.php {action: "snapshot", runId}          → list for checking tickets offline (scanner_snapshot())
+//   POST organizer.php {action: "sync", runId, events}      → check-ins made offline (apply_offline_scans())
 // Outside the run's check-in window (SCAN_WINDOW_*), check-ins happen only with
 // confirmOutside = true; otherwise the result is "outside_window".
 declare(strict_types=1);
@@ -23,6 +25,7 @@ run_api(function (): void {
             'name' => $access['name'] ?? null,
             'passwordLogin' => (string) config('ORGANIZER_PASSWORD') !== '',
             'runs' => $access ? array_map('scanner_run_public', scanner_runs($access)) : [],
+            'layout' => layout_public(),
         ]);
     }
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -68,6 +71,16 @@ run_api(function (): void {
             $access = require_organizer();
             $run = require_run($access, (int) ($body['runId'] ?? 0));
             json_response(['vips' => vip_list($run['id'])]);
+            // no break
+        case 'snapshot':
+            $access = require_organizer();
+            $run = require_run($access, (int) ($body['runId'] ?? 0));
+            json_response(scanner_snapshot($run));
+            // no break
+        case 'sync':
+            $access = require_organizer();
+            $run = require_run($access, (int) ($body['runId'] ?? 0));
+            json_response(apply_offline_scans($access, $run, is_array($body['events'] ?? null) ? $body['events'] : []));
             // no break
         case 'vip-checkin':
         case 'vip-undo':
@@ -116,22 +129,6 @@ function scanner_run_public(array $run): array
 {
     [$from, $to] = run_scan_window($run);
     return run_public($run) + ['scanFrom' => iso_utc($from), 'scanTo' => iso_utc($to)];
-}
-
-function vip_list(int $runId): array
-{
-    $stmt = db()->prepare('SELECT id, name, section, seats, persons, note, checked_in_at, checked_in_by FROM vip_guests WHERE run_id = ? ORDER BY name');
-    $stmt->execute([$runId]);
-    return array_map(static fn ($v) => [
-        'id' => (int) $v['id'],
-        'name' => $v['name'],
-        'section' => $v['section'],
-        'persons' => (int) $v['persons'],
-        'seats' => seat_labels($v['seats']),
-        'note' => $v['note'],
-        'checkedInAt' => iso_time($v['checked_in_at']),
-        'checkedInBy' => $v['checked_in_by'],
-    ], $stmt->fetchAll());
 }
 
 /**

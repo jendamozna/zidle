@@ -3,7 +3,7 @@
 Technical reference of the application. It describes the code **1:1** –
 every change of behaviour, texts, limits, API, database or formats must
 update this file in the same commit (see `CLAUDE.md`). The light Czech
-overview for stakeholders lives in `docs/prehled.html` and is published as
+overview for stakeholders lives in `docs/prehled/` and is published as
 https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV.
 
 ## Contents
@@ -51,8 +51,8 @@ is used only for admin input and for display.
 
 ```
 api/
-  admin.php            admin UI (login, reservations, VIP, scanner invites, runs)
-  seats.php            GET runs + taken seats of a run
+  admin.php            admin UI (login, invitation page, reservations, VIP, scanner invites, accountants, runs)
+  seats.php            GET runs + taken seats of a run + seating layout
   altcha.php           GET invisible ALTCHA challenge
   reservations.php     POST create reservation, GET reservation by token
   cancel.php           POST customer cancellation
@@ -60,28 +60,33 @@ api/
   cron.php             scheduled jobs (CLI only); cron-expire.php = alias
   config.php           defaults (+ config.local.php / env overrides)
   lib/bootstrap.php    config(), db(), db_query(), JSON helpers (json_response/json_error end the request), expire_reservations(), QR payment, reservation_payload()
-  lib/layout.php       SECTIONS (must match src/data/layout.js), total_capacity(), is_valid_seat_id(), compare_seat_ids()
+  lib/layout.php       LEVELS, SECTIONS (the only layout definition), layout_public(), total_capacity(),
+                       is_valid_seat_id(), compare_seat_ids()
   lib/settings.php     runs: loading, times, storno rules, check-in window, run_public()
   lib/cancellation.php cancellation_terms(), cancel_seats(), notices, reminders, GDPR purge
   lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
-  lib/vip.php          add_vip_guest() (VIP guest with seats)
+  lib/vip.php          add_vip_guest() (VIP guest with seats), vip_list() (scanner)
+  lib/offline.php      scanning without a connection: scanner_snapshot(), apply_offline_scans(), conflicts
+  lib/admin_users.php  admin accounts: admin_login(), admin_invite(), admin_accept_invite(), admin_set_disabled()
   lib/ticket.php       ticket QR code (sign/parse), qr_png(), ticket e-mail, seat_labels()
   lib/antispam.php     form token, rate limits, login limits
   lib/altcha.php       invisible ALTCHA: challenge, verification, replay protection
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
   lib/scanner_access.php  scanner invites, device cookie, app_base_url()
 db/schema.sql          full schema for a new database
-db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–010)
+db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–012)
 src/                   customer app
   App.jsx              views: run picker / map / section / reservation page; form; toasts
   hooks/useSeats.js    seat state of one run, polling, reserve()
-  data/layout.js       sections, seat ids, occupancy levels, CZK formatting
+  data/layout.js       layout loaded from the server (setLayout()), seat ids, occupancy levels, CZK formatting
   data/seatService.js  API client (seats, reservations, cancel)
   components/          RunPicker, Overview, SectionCard, SectionDetail, ReservationPanel,
                        ReservationForm, PaymentView
   altcha.js            invisible ALTCHA solver (altcha-lib, WebCrypto PBKDF2)
   runs.js, storno.js, plural.js   formatting helpers
-src/scanner/           organizer scanner (ScannerApp, VipView, useQrCamera, ticket.js, api.js)
+src/scanner/           organizer scanner (ScannerApp, VipView, useQrCamera, ticket.js, api.js,
+                       offline.js + useOffline.js = offline mode)
+public/sw.js           service worker: keeps the scanner on the device for offline start
 docs/DEVELOPER.md      this file
 docs/prehled/          stakeholder overview (Czech, index.html + screenshots), published as an Artifact
 tests/php/run.php      PHP integration tests (needs a *_test database); fixtures.php = shared helpers
@@ -150,7 +155,7 @@ environment variables of the same name override them (local file wins).
 | `RESERVATIONS_PER_IP_PER_HOUR_ALTCHA` | 30 | used when ALTCHA is enabled (each reservation costs proof-of-work; lets several people book from one shared network) |
 | `ALTCHA_CHALLENGES_PER_IP_PER_HOUR` | 300 | challenges issued by `altcha.php` per IP |
 | `PENDING_RESERVATIONS_PER_EMAIL` | 2 | unpaid reservations per e-mail **in one run** |
-| `LOGIN_ATTEMPTS_PER_15_MIN` | 10 | admin login, scanner password and invite attempts, per IP |
+| `LOGIN_ATTEMPTS_PER_15_MIN` | 10 | admin login, admin invitation (password set), scanner password and invite attempts, per IP and area |
 | `FORM_MIN_SECONDS` | 3 | minimal age of the form token |
 | `ALTCHA_ENABLED` | `true` | invisible ALTCHA on the reservation form |
 | `ALTCHA_COST` | 1000 | PBKDF2 iterations per attempt |
@@ -161,7 +166,7 @@ environment variables of the same name override them (local file wins).
 | `PAYMENT_RECIPIENT` | `Farnost` | SPD `RN` |
 | `PAYMENT_MESSAGE` | `Moje zidle 2026` | SPD `MSG` prefix (+ last name) |
 | `PAYMENT_SPECIFIC_SYMBOL` | `''` | SPD `X-SS`, digits only, max 10 |
-| `ADMIN_PASSWORD` | **required** | admin.php returns 503 without it |
+| `ADMIN_PASSWORD` | `''` | master admin login (empty e-mail); needed for the first sign-in – admin.php returns 503 *„Nastavte ADMIN_PASSWORD v config.local.php.“* while it is empty and no active account has a password; can be removed once accountants are invited |
 | `ORGANIZER_PASSWORD` | `''` | optional scanner master password (all runs); `''` = disabled |
 | `SCAN_WINDOW_BEFORE_MINUTES` / `SCAN_WINDOW_AFTER_MINUTES` | 60 / 60 | check-in window around the run start |
 | `TICKET_SECRET` | **required** | ≥ 16 chars; HMAC key for tickets, form tokens, master cookie; never change after tickets are sent |
@@ -183,19 +188,28 @@ environment variables of the same name override them (local file wins).
 - **Run** (`runs`) – one performance. `starts_at`, optional `label`, optional
   `booking_closes_at`, `storno_rules` (JSON). Seats, reservations, VIP
   guests, check-in and scanner invites are per run.
-- **Section / seat** – fixed layout, `SECTIONS` in `api/lib/layout.php` and
-  `src/data/layout.js`:
+- **Section / seat** – fixed layout, defined only in `api/lib/layout.php`
+  (`LEVELS` main *Hlavní loď* / balcony *Balkon*; `SECTIONS` id → name,
+  short name, level, `group` = place in the floor plan `left` / `right` /
+  `balcony`, rows, seats per row, optional `rotated` + `rowSide`). The apps
+  get it as `layout` from `seats.php` (customer) and `GET organizer.php`
+  (scanner): `layout_public()` = `{levels, sections: [{id, name, short,
+  level, group, rows, seatsPerRow, rotated, rowSide}]}` in `SECTIONS` order.
+  `src/data/layout.js` holds no data: `setLayout(layout)` fills its live
+  exports `LEVELS`, `SECTIONS`, `SECTION_BY_ID`, `TOTAL_CAPACITY` before the
+  first map/scanner view is drawn (`useSeats` on every `seats.php` response,
+  `ScannerApp` from the session or the cached one):
 
-  | Id | Name | Rows × seats | Capacity |
-  | --- | --- | --- | --- |
-  | WL | Levé křídlo | 4 × 6 | 24 |
-  | ML | Levá hlavní | 10 × 8 | 80 |
-  | MR | Pravá hlavní | 10 × 8 | 80 |
-  | WR | Pravé křídlo | 6 × 6 | 36 |
-  | BL | Balkon vlevo (rotated, row 1 right) | 4 × 12 | 48 |
-  | BC | Balkon střed | 4 × 12 | 48 |
-  | BR | Balkon vpravo (rotated, row 1 left) | 2 × 10 | 20 |
-  | | total | | 336 |
+  | Id | Name (short) | Group | Rows × seats | Capacity |
+  | --- | --- | --- | --- | --- |
+  | WL | Levé křídlo (L. křídlo) | left | 4 × 6 | 24 |
+  | ML | Levá hlavní (L. hlavní) | left | 10 × 8 | 80 |
+  | MR | Pravá hlavní (P. hlavní) | right | 10 × 8 | 80 |
+  | WR | Pravé křídlo (P. křídlo) | right | 6 × 6 | 36 |
+  | BL | Balkon vlevo (Balkon L; rotated, row 1 right) | balcony | 4 × 12 | 48 |
+  | BC | Balkon střed (Balkon S) | balcony | 4 × 12 | 48 |
+  | BR | Balkon vpravo (Balkon P; rotated, row 1 left) | balcony | 2 × 10 | 20 |
+  | | total | | | 336 |
 
   Seat id `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-4-12`.
 - **Reservation** – one run, customer data, current seats, price, VS, status,
@@ -221,8 +235,10 @@ All `DATETIME` columns and JSON dates are UTC.
 | `vip_guests` | `run_id`, `name`, `section` (section of the first seat), `seats` (CSV; `''` for guests added before migration 010), `persons` (= number of seats), `note`, `created_at`, `checked_in_at`, `checked_in_by` |
 | `scanner_invites` | `name`, `token_hash` (sha256, unique), `created_at`, `last_used_at`, `revoked_at` |
 | `scanner_invite_runs` | PK (`invite_id`, `run_id`) |
+| `scan_conflicts` | offline check-ins that could not be applied (§11): `run_id`, `reservation_id` / `vip_guest_id` (NULL when unknown), `label` (VS + name / VIP name), `reason` (`already_checked_in` / `not_paid` / `unknown`), `scanned_at` (device time), `scanned_by`, `other_at` / `other_by` (the check-in that won), `created_at` |
 | `rate_limits` | `bucket` (sha256 of key), `hits`, `window_start` |
 | `settings` | reserved (unused) |
+| `admin_users` | admin accounts (§14): `email` (unique, lower case, login), `name`, `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open link token, unique), `invite_expires_at`, `invited_by` (name), `created_at`, `accepted_at`, `last_login_at`, `disabled_at` |
 
 `runs()` rewrites legacy storno rule dates (Prague local `YYYY-MM-DD HH:MM`)
 to UTC on load. Schema changes: update `db/schema.sql` and add a new
@@ -236,8 +252,11 @@ re-runnable migration.
 `Rezervace uzavřeny` (`bookingOpen` false). The chosen run is written to
 `?termin=` (replaceState). A run missing from the list resets the choice.
 
-**Map** (`Overview.jsx`, `SectionCard.jsx`): stage on top, `WL ML | MR WR`,
-entrance at the bottom, balcony U (BL, BC, BR rotated). Card size =
+Until the first `seats.php` answer (layout) the app shows *Načítám…*.
+
+**Map** (`Overview.jsx`, `SectionCard.jsx`): stage on top, sections of group
+`left` | `right` side by side (in layout order), entrance at the bottom,
+balcony U (group `balcony`; headings from `LEVELS`). Card size =
 seats × rows × `--u`; shows name (short on < 641 px) and occupancy %. Colour
 by `occupancyLevel`: `< 50` low/green, `50–84` medium/amber, `≥ 85`
 high/red. Red badge = number of own selected seats. Run bar above the map
@@ -411,8 +430,11 @@ platba přišla.“*
 - **Scanner UI** results: `Platná vstupenka`, `Už odbaveno` (+ first time),
   `Nezaplaceno`, `Rezervace zrušena`, `Neplatný kód`, `To je platební QR kód`
   (code starts with `SPD*`), `Jiný termín` (+ ticket run),
-  `Mimo čas odbavení – neodbaveno`, `Neověřeno – bez spojení` (offline).
-  Camera: rear camera, centre square decoded by `jsqr` every 120 ms, torch
+  `Mimo čas odbavení – neodbaveno`, `Není v seznamu termínu` (offline, see
+  below), `Neověřeno – bez spojení` (no connection and no list). Ticket
+  footnote: *„aktuální stav ze systému“*, *„bez spojení, podle seznamu z
+  HH:MM“* (+ *„Odbavení se odešle, jakmile bude spojení.“* for a valid one) or
+  *„údaje z QR kódu, neověřeno“*. Camera: rear camera, centre square decoded by `jsqr` every 120 ms, torch
   when supported, stopped while the page is hidden.
 - **Check-in window**: `run_scan_window()` = start − BEFORE … start + AFTER.
   Default run in the scanner: run whose window is open, else remembered
@@ -420,6 +442,67 @@ platba přišla.“*
   the window the camera is off and `WindowWarning` offers switching to an
   open run or **Přesto odbavovat tento termín** (confirmation kept until
   reload; state re-checked every 30 s); the server enforces the same.
+
+### Scanning without a connection
+
+- **No connection** = `fetch` fails, HTTP 5xx or a non-JSON answer
+  (`src/scanner/api.js` sets `error.offline`); 401 signs the device out.
+- **Offline start**: `public/sw.js` (registered by `scanner/main.jsx` in
+  production builds, scope = app directory) caches `scanner.html` and the
+  `assets/` it references on install; `scanner.html` network-first (cached
+  copy offline, the cache is refreshed and assets of older builds removed on
+  every online load), `assets/*` cache-first; API, customer pages and fonts
+  are not touched. `getSession` failing offline → the last session
+  (`{name, runs, layout}`) from localStorage (`saveSession()` on every online
+  load; a stored session without `layout` is ignored); without one *„Bez
+  spojení. Poprvé se scanner musí přihlásit s internetem.“*
+- **Snapshot** (`organizer.php` `snapshot {runId}` → `scanner_snapshot()`):
+  `{runId, at, tickets: [{id, variableSymbol, name, seats, status,
+  checkedInAt, checkedInBy}], vips: vip_list()}` – all reservations of the
+  run (any status), no e-mails or money. `useOffline(runId)` loads it for the
+  selected run on start, every 60 s and on the browser `online` event, and
+  keeps it in localStorage key `zidle-scanner-offline` (`src/scanner/offline.js`:
+  `session`, `snapshots` per run, `queue`). An online `valid` result also
+  marks the ticket checked in in the stored snapshot.
+- **Offline ticket check** (`verifyOffline()`): find by id (legacy: VS), VS
+  must match → not found `unknown` (*„Vstupenka není v seznamu tohoto termínu
+  – může být na jiný termín, nebo neplatná.“*); pending `unpaid`;
+  cancelled/expired `cancelled`; paid and checked in (snapshot or this
+  device's queue) `used` with the time; else `valid` and an event
+  `{uid, runId, type: "ticket", id, variableSymbol, at}` is queued. Seats come
+  from the snapshot (`changed` as online). The check-in window works as
+  online (run times from the cached session).
+- **Offline VIP** (`VipView`): list from the snapshot when `vip-list` fails;
+  **Vpustit** queues `vip-checkin {id, at}`; **Vrátit** removes a queued
+  arrival, otherwise queues `vip-undo {id}`; queued events are applied over
+  the shown list (`applyVipQueue()`) until sent.
+- **Sending** (`sync {runId, events}` → `apply_offline_scans()`, max 1000
+  events): run by run when the server is reachable again (any successful
+  request, snapshot refresh, `online` event); sent events leave the queue;
+  403 for a run drops its events. Server, in order, each in a transaction:
+  `ticket` – reservation by id + VS + run `FOR UPDATE`: not found → conflict
+  `unknown`; not paid → `not_paid`; not checked in → `checked_in_at` = device
+  time, `checked_in_by` = `<device name> (offline)`; the same time and device
+  again → ok (resend); otherwise → `already_checked_in` (the first check-in
+  stays). `vip-checkin` likewise (`unknown`, `already_checked_in`);
+  `vip-undo` clears the arrival. Device time is limited to the last 48 hours
+  (`OFFLINE_MAX_AGE_HOURS`) and never later than now. Conflicts go to
+  `scan_conflicts` (the same conflict only once). Response
+  `{results: [{status: "ok"|"conflict", reason?}], conflicts}`.
+- **Strip** (`OfflineStrip`, hidden when online with nothing to send):
+  offline *„Bez spojení – ověřuji podle seznamu z HH:MM“* (+ *„(starší než 30
+  min)“*, + *„· k odeslání: N“*), red without a list (*„Bez spojení a bez
+  staženého seznamu – vstupenky nelze ověřit.“*) or when stale; online with a
+  queue *„Odesílám odbavení bez spojení: N…“*; after sending for 8 s
+  *„Odesláno N odbavení bez spojení.“* (+ *„Konflikty: K – uvidí je
+  správce.“*).
+- **Logout** asks *„N odbavení bez spojení ještě nebylo odesláno. Odhlášením
+  se ztratí. Přesto odhlásit?“* when the queue is not empty, then removes all
+  stored data; a 401 removes it too. Snapshots of runs no longer in the
+  session or ended more than a day ago are removed on the next online start.
+- Limit: devices offline at the same time do not see each other's
+  check-ins; the same ticket shown at two such entrances passes both and
+  appears as a conflict after sending.
 
 ## 12. Scanner access (invites)
 
@@ -457,7 +540,7 @@ a přidejte znovu“*. **Odstranit** deletes the guest and frees the seats (FK
 cascade): *„VIP host odstraněn, jeho místa jsou volná.“* **Zrušit příchod**
 resets arrival.
 
-Scanner VIP mode: list of the selected run (refresh 20 s) with section,
+Scanner VIP mode (offline: §11): list of the selected run (refresh 20 s) with section,
 persons and seats (`seats` = `seat_labels()`; for one section without the
 repeated section name), diacritics/word-order-insensitive search over name +
 note, section filter, **Vpustit** (records `checked_in_at`/`by`; first wins),
@@ -467,8 +550,51 @@ seznamu VIP“*.
 
 ## 14. Admin
 
-`api/admin.php`, session login with `ADMIN_PASSWORD` (CSRF token on every
-POST, login rate-limited). Tabs:
+`api/admin.php` (CSRF token on every POST). **Sign-in** form: *E-mail* +
+*Heslo* (+ hint *„Hlavní heslo: e-mail nechte prázdný.“* when
+`ADMIN_PASSWORD` is set). `admin_login()`: empty e-mail → master password
+(`hash_equals`), name *hlavní heslo*; otherwise the account by e-mail (case
+insensitive) with a password, not disabled, `password_verify()` (a dummy
+hash is verified for unknown e-mails; rehash when needed), `last_login_at`
+set. Wrong → 1 s delay, *„Nesprávný e-mail nebo heslo.“*; rate limit area
+`admin` → *„Příliš mnoho pokusů. Zkuste to za 15 minut.“* The session keeps
+`admin_id` (account id, 0 = master); `admin_from_session()` re-checks the
+account on every request, so a disabled account is signed out at once. The
+header shows *Přihlášen: <name>*.
+
+**Accountants** (`admin_users`, all admins have the same rights):
+- **Invite** (tab *Účetní*, `user-invite {name, email}` → `admin_invite()`):
+  name 1–100 chars (*„Vyplňte jméno.“*), valid e-mail ≤ 190 (*„Neplatný
+  e-mail.“*), not existing yet (*„Účet s tímto e-mailem už existuje. Pošlete
+  mu nový odkaz v seznamu.“*); creates the account and a 48-hex token (only
+  its sha256 stored) valid `ADMIN_INVITE_DAYS` = 7 days. E-mail *Pozvánka do
+  správy rezervací* (§15) with `admin_invite_link()` =
+  `app_base_url()/api/admin.php?pozvanka=<token>`; the link is also shown
+  once in the tab (*Kopírovat odkaz*). Flash *„Pozvánka pro X vytvořena.
+  E-mail odeslán.“* / *„… E-mail se neodeslal – předejte odkaz sami.“*
+- **Invitation page** (`admin.php?pozvanka=<token>`, also when signed in):
+  valid link (`admin_invited_user()`: hash, not expired, account not
+  disabled) → *„Dobrý den, <name>. Vytvořte si heslo do správy rezervací.
+  Přihlašovací jméno je Váš e-mail <email>.“*, *Nové heslo* + *Heslo znovu*,
+  **Uložit heslo a přihlásit** (`accept-invite`, rate limit area
+  `admin-invite`); `admin_accept_invite()`: ≥ `ADMIN_PASSWORD_MIN` = 10
+  chars (*„Heslo musí mít alespoň 10 znaků.“*), equal (*„Hesla se
+  neshodují.“*) → password stored, link cleared, `accepted_at` (first time),
+  signed in, redirect with *„Vítejte, <name>. Heslo je nastavené, příště se
+  přihlásíte e-mailem <email>.“* Invalid/used/expired link: *„Pozvánka
+  neplatí nebo vypršela. Požádejte o novou.“* + link to sign-in.
+- **Tab Účetní** list (active first, by name): name (*(vy)* for yourself),
+  e-mail, status *Aktivní* / *Čeká na heslo (do …)* / *Pozvánka vypršela* /
+  *Vypnuto* (+ *odkaz na nové heslo platí do …*), invited by + created,
+  last sign-in. Actions: `user-link` – **Poslat znovu** (pending) / **Nové
+  heslo** (active; forgotten password – the old password works until the new
+  one is set): new token + e-mail, the previous link stops working;
+  `user-disable` **Vypnout** (not for yourself: *„Svůj vlastní účet nelze
+  vypnout.“*; also clears an open link) → *„Účet X vypnut – už se
+  nepřihlásí.“*; `user-enable` **Zapnout**. The intro mentions that the
+  master password still works and can be removed from the configuration.
+
+Tabs:
 
 - **Rezervace** – cards per status (pending/paid), refunds due, per run
   occupancy (VIP seats count as held); filters run/status (incl. `refund`)/
@@ -480,11 +606,16 @@ POST, login rate-limited). Tabs:
   zbývá vrátit peníze – jejich jméno a e-mail se smažou až po označení
   „Vráceno“.“*
 - **VIP** – `vip-add` (with `seats[]`), `vip-delete`, `vip-reset` (§13).
+- **Účetní** – see above.
 - **Pořadatelé** – `invite-save` (create / edit name+runs / new link),
-  `invite-revoke`.
+  `invite-revoke`; below the invites *Odbavení bez spojení – konflikty*
+  (last 500 `scan_conflicts`: time, run, label, reason *už odbaveno jinde* /
+  *vstupenka neplatila (nezaplaceno / zrušeno)* / *neznámá vstupenka*
+  (`CONFLICT_REASONS`), device, earlier check-in). The tab shows the number
+  of conflicts in a red badge.
 - **Nastavení** – runs: `run-save` (start required, label, booking cut-off
   before start, storno rows), `run-delete` (only without reservations/VIP;
-  removes invite links to the run). Shows the GDPR deletion date.
+  removes invite links and offline scan conflicts of the run). Shows the GDPR deletion date.
   **Lock:** once a run has any reservation (`run_has_reservations()`, any
   status), its start and storno rules can no longer be changed – the form
   shows them disabled with *„Představení už má rezervace – začátek a storno
@@ -513,6 +644,7 @@ QR as inline image `cid:ticket-qr`). All contain `Termín: <run>`.
 | Subject | Trigger |
 | --- | --- |
 | Rezervace míst | reservation created (payment details, link if `PUBLIC_URL`) |
+| Pozvánka do správy rezervací | accountant invited or new link (`send_admin_invite_email()`: *„<inviter or Správce rezervací> Vás zve ke správě rezervací Moje židle 2026 (potvrzování plateb, vracení peněz, VIP hosté).“*, link valid 7 days, *„Přihlašovací jméno je Váš e-mail: …“*) |
 | Připomínka platby | cron: pending, due within 24 h, created ≥ 24 h before due, once |
 | Rezervace zrušena | cron: expired within the last 3 days, once (refund line for money that already arrived; *„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“*) |
 | Vstupenka | recorded payment completes the price / expired restored / pending partial cancellation now covered / resend |
@@ -529,7 +661,8 @@ QR as inline image `cid:ticket-qr`). All contain `Termín: <run>`.
 Purge after `last_run_start() + DATA_RETENTION_DAYS`: empties first/last
 name and e-mail of all reservations except those with money still to return
 (`refund_amount > refunded_amount`; they are emptied by the first cron run
-after **Vráceno**), deletes all VIP guests (their seat rows cascade); VS,
+after **Vráceno**), deletes all VIP guests (their seat rows cascade) and
+all `scan_conflicts`; VS,
 amounts, seats and statuses stay.
 
 ## 17. Spam and abuse protection
@@ -557,13 +690,13 @@ amounts, seats and statuses stay.
 
 | Method | Endpoint | Body / query | Response |
 | --- | --- | --- | --- |
-| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays` |
+| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays`, `layout` {levels, sections} |
 | GET | `altcha.php` | – | `{enabled, challenge}` (ALTCHA v2 challenge: `parameters`, `signature`) |
 | POST | `reservations.php` | `runId, firstName, lastName, email, seats[], formToken, hp, altcha` | 201 reservation payload |
 | GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, ticket, cancellation, refunds) |
 | POST | `cancel.php` | `token, seats?` | reservation payload |
-| GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`) |
-| POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `vip-list {runId}`, `vip-checkin {id, runId, confirmOutside?}`, `vip-undo {id, runId}` | see §11–13 |
+| GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`), `layout` |
+| POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `vip-list {runId}`, `vip-checkin {id, runId, confirmOutside?}`, `vip-undo {id, runId}`, `snapshot {runId}`, `sync {runId, events}` | see §11–13 |
 
 Errors: `{"error": "<Czech message>", …}` with HTTP status; uncaught
 exceptions are logged (`[zidle]`) and return 500 `Chyba serveru. Zkuste to
@@ -580,14 +713,14 @@ prosím znovu.`
 ## 20. Conventions
 
 See `CLAUDE.md`: docs in sync with code, UTC in DB, mobile-first customer
-CSS / desktop-first admin / mobile-only scanner, duplicated layout and
+CSS / desktop-first admin / mobile-only scanner, layout only on the server,
 ticket format kept identical, schema + migration for DB changes, Czech UI.
 
 ## 21. Tests and CI
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`
 (older runs of the same ref are cancelled). PHP 8.3, Node 22, MariaDB 10.11
-service (`root`/`root`, database `zidle_test`).
+service (`root`/`root`, database `zidle_test`); the php job sets `ADMIN_PASSWORD=ci-admin-master` for the master login test.
 
 | Job | Steps |
 | --- | --- |
@@ -619,14 +752,23 @@ customer storno fee; admin full refund; cancelling a partly paid pending
 reservation; partial cancellation completing a covered reservation; double
 booking rejected by the primary key; VIP seats (conflict, sorting, freeing
 on delete); GDPR purge keeping contacts while a refund is due; ticket code
-round trip and tamper detection. Locally:
+round trip and tamper detection; admin accounts (invite, short/mismatched
+password, accept, used link, case-insensitive login, wrong password,
+duplicate and invalid e-mail, new link = new password while the old one
+works until then, expired link, disabled account cannot sign in and loses
+its session, nobody disables themselves, master password with an empty
+e-mail); layout for the apps (order, capacity,
+groups, levels, last seat of each section valid); offline: snapshot content (no e-mails,
+VIP included), offline check-ins with device time and first-wins, resend
+without a new conflict, second device → `already_checked_in` recorded once,
+unpaid / unknown / other-run tickets → conflicts, device time limits, VIP
+arrival conflict and undo. Locally:
 `DB_NAME=zidle_test MAIL_ENABLED=0 php tests/php/run.php` (values in
 `config.local.php` take precedence over the environment).
 
-**Consistency** (`tests/consistency.mjs`): `SECTIONS` of `layout.js` and
-`layout.php` (ids, order, names, rows, seats per row) are identical, and a
-ticket code made by `ticket_code()` is decoded by `src/scanner/ticket.js`
-(id, VS, count, name, seats).
+**Consistency** (`tests/consistency.mjs`): a ticket code made by
+`ticket_code()` is decoded by `src/scanner/ticket.js` (id, VS, count, name,
+seats).
 
 **Playwright** (`playwright.config.js`, `tests/e2e/`): one worker, project
 *mobile* (Pixel 7, `cs-CZ`, Europe/Prague); admin tests use a 1360 × 900
@@ -637,20 +779,31 @@ desktop viewport. Web servers: `php -S 127.0.0.1:8000 -t .` with `ENV`
 && vite preview` on 127.0.0.1:4173 (proxies `/api`). `global-setup.js` runs
 `tests/e2e/seed.php` (fresh database: run 1 *Premiéra* in 30 days with a
 pending reservation, run 2 *Dnes* in 20 minutes with a paid ticket and a VIP
-guest on ML-1-1/2) and stores its JSON output in `tests/e2e/.seed.json`.
+guest on ML-1-1/2, plus a second paid ticket and VIP *Paní Offline* for the
+offline test) and stores its JSON output in `tests/e2e/.seed.json`.
 Tests:
 
-- `customer.spec.js` – choose *Premiéra*, two seats, form (waits for
+- `customer.spec.js` – choose *Premiéra*, the plan has as many section cards
+  as the server layout and its balcony heading, two seats, form (waits for
   `FORM_MIN_SECONDS`, real invisible ALTCHA), payment page with QR, 600 Kč
   and VS, seats taken in `seats.php`, cancel all → *Rezervaci jste zrušili.*
   and seats free; run picker without horizontal scroll.
 - `admin.spec.js` – record 200 Kč (*zbývá doplatit 400 Kč*, input prefilled
   400), then the rest → *Zaplaceno*; VIP with two seats picked on the plan →
-  flash, gold seats, taken in `seats.php`.
+  flash, gold seats, taken in `seats.php`; invite an accountant (link shown
+  in the tab, status *Čeká na heslo*), in another browser context the link →
+  mismatched passwords error → password set and signed in (*Vítejte*,
+  *Přihlášen*), sign out and in with e-mail + password, the used link is
+  invalid, the admin disables the account → signed out on the next load.
 - `scanner.spec.js` – password login; the camera is replaced by a canvas
   stream showing the seeded ticket QR (`getUserMedia` stub) → *Platná
   vstupenka*, next scan *Už odbaveno*; VIP tab shows the seats, **Vpustit**
-  records the arrival.
+  records the arrival; offline (`context.setOffline`, after the snapshot was
+  loaded): ticket *Platná vstupenka* *„bez spojení, podle seznamu z“*, strip
+  *k odeslání: 1*, next scan *Už odbaveno*, VIP arrival, *k odeslání: 2*;
+  back online → *„Odesláno 2 odbavení bez spojení.“* and both check-ins are on
+  the server (`(offline)`); the scanner opens offline after one online visit
+  (service worker) with the cached session and the offline strip.
 
 Locally `npm run test:e2e` needs PHP, MariaDB with a `zidle_test` database
 and the `DB_*` variables; move `api/config.local.php` aside or make sure it

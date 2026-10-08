@@ -37,6 +37,7 @@ jobs:
       DB_NAME: zidle_test
       MAIL_ENABLED: '0'
       TICKET_SECRET: ci-ticket-secret-0123456789
+      ADMIN_PASSWORD: ci-admin-master
     steps:
       - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
