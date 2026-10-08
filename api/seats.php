@@ -36,7 +36,7 @@ run_api(function (): void {
         'maxSeats' => (int) config('MAX_SEATS_PER_RESERVATION'),
         'bookingOpen' => $run !== null && run_booking_open($run),
         'formToken' => form_token(),
-        'altcha' => altcha_enabled(),
+        'contact' => contact_public(),
         'dataRetentionDays' => (int) config('DATA_RETENTION_DAYS'),
     ]);
 });

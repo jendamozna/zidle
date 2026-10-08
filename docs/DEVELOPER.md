@@ -130,7 +130,9 @@ environment variables of the same name override them (local file wins).
 | `REFUND_DAYS` | 14 | refund promise in e-mails |
 | `DATA_RETENTION_DAYS` | 30 | personal data purged this long after the last run start |
 | `MAX_SEATS_PER_RESERVATION` | 20 | also enforced in the UI |
-| `RESERVATIONS_PER_IP_PER_HOUR` | 5 | |
+| `RESERVATIONS_PER_IP_PER_HOUR` | 5 | used when ALTCHA is disabled |
+| `RESERVATIONS_PER_IP_PER_HOUR_ALTCHA` | 30 | used when ALTCHA is enabled (each reservation costs proof-of-work; lets several people book from one shared network) |
+| `ALTCHA_CHALLENGES_PER_IP_PER_HOUR` | 300 | challenges issued by `altcha.php` per IP |
 | `PENDING_RESERVATIONS_PER_EMAIL` | 2 | unpaid reservations per e-mail **in one run** |
 | `LOGIN_ATTEMPTS_PER_15_MIN` | 10 | admin login, scanner password and invite attempts, per IP |
 | `FORM_MIN_SECONDS` | 3 | minimal age of the form token |
@@ -151,9 +153,12 @@ environment variables of the same name override them (local file wins).
 | `MAIL_FROM` | `rezervace@example.com` | sender for PHP `mail()` (SMTP uses `SMTP_SENDER`) |
 | `SMTP_HOST` | `''` | SMTP server; `''` = send with PHP `mail()` |
 | `SMTP_PORT` | 587 | 465 = implicit TLS (SMTPS); other ports use STARTTLS when the server offers it |
-| `SMTP_AUTH` | `true` | log in with `SMTP_SENDER` / `SMTP_PASSWORD` |
-| `SMTP_SENDER` | `''` | sender address (`From`, name *Moje židle 2026*) and SMTP login |
+| `SMTP_AUTH` | `true` | log in with `SMTP_USER` (or `SMTP_SENDER`) / `SMTP_PASSWORD` |
+| `SMTP_SENDER` | `''` | sender address (`From`, name *Moje židle 2026*) |
+| `SMTP_USER` | `''` | SMTP login when it differs from the sender (e.g. `apikey`); `''` = `SMTP_SENDER` |
 | `SMTP_PASSWORD` | `''` | SMTP password |
+| `CONTACT_EMAIL` | `''` | organizers' contact: website footer, last line of every e-mail, `Reply-To` of e-mails |
+| `CONTACT_PHONE` | `''` | organizers' phone: website footer and e-mails |
 | `PUBLIC_URL` | `''` | base URL for links in e-mails and invite links (else derived from the request) |
 | `CORS_ORIGIN` | `''` | allowed origin when the apps run elsewhere |
 
@@ -230,6 +235,9 @@ rezervovat nejvýše N míst.`); when booking is closed seats cannot be
 selected (`Rezervace na tento termín jsou uzavřeny.`).
 
 **Top bar**: free seats, total price, **Rezervovat** (or `Rezervace uzavřeny`).
+**Footer** (all customer views): *Kontakt na pořadatele* with `CONTACT_EMAIL`
+(`mailto:`) and `CONTACT_PHONE` (`tel:`) from `seats.php` → `contact`; hidden
+when neither is configured.
 **Reservation panel** (`ReservationPanel.jsx`): selected seats per section,
 remove chip, total, Reserve; shown on the map when something is selected and
 in a section detail with own seats.
@@ -271,7 +279,7 @@ then deletes `reservation_seats` of `expired`/`cancelled` reservations.
 | honeypot empty, form token valid | 400 `Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.` |
 | ALTCHA payload valid and unused (if `ALTCHA_ENABLED`) | 400 `Ověření proti robotům se nezdařilo. Zkuste to prosím znovu.` + `code: "altcha"` |
 | names, e-mail, 1–20 valid unique seats | 422 `Zkontrolujte zadané údaje.` / seat message, `fields` |
-| IP rate limit | 429 `Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.` |
+| IP rate limit (`RESERVATIONS_PER_IP_PER_HOUR_ALTCHA` with ALTCHA, else `RESERVATIONS_PER_IP_PER_HOUR`) | 429 `Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.` |
 | < 2 pending for the e-mail in this run | 429 `Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.` |
 | seats free in the run (`FOR UPDATE`; duplicate key fallback) | 409 `Některá místa už mezitím někdo rezervoval.` + `conflict` |
 
@@ -424,9 +432,11 @@ POST, login rate-limited). Tabs:
 
 Only when `MAIL_ENABLED`. All mail goes through `deliver_mail(to, subject,
 text, html?, inline[])` (PHPMailer, UTF-8): with `SMTP_HOST` via SMTP
-(`SMTP_PORT`, `SMTP_AUTH`, login `SMTP_SENDER` / `SMTP_PASSWORD`; port 465 =
+(`SMTP_PORT`, `SMTP_AUTH`, login `SMTP_USER` or `SMTP_SENDER` / `SMTP_PASSWORD`; port 465 =
 SMTPS, otherwise opportunistic STARTTLS; connect timeout and per-reply limit
-15 s), otherwise PHP `mail()` from `MAIL_FROM`. Sender name *Moje židle 2026*.
+15 s), otherwise PHP `mail()` from `MAIL_FROM`. Sender name *Moje židle 2026*;
+`Reply-To` = `CONTACT_EMAIL` when set. Every e-mail ends with *„Kontakt: <e-mail> ·
+<phone>“* (`contact_line()`) when a contact is configured.
 Failures return false and are logged as `[zidle] Mail to … failed: <reason>`;
 mail is sent synchronously within the request. Texts are plain
 (`send_customer_email()`) except the ticket (HTML + text alternative with the
@@ -457,7 +467,8 @@ seats and statuses stay.
 - Invisible ALTCHA (`api/lib/altcha.php`, `src/altcha.js`, protocol v2,
   `PBKDF2/SHA-256`): `altcha.php` issues a signed challenge (HMAC secrets
   derived from `TICKET_SECRET`, expires in 15 min, deterministic counter with
-  key signature for fast verification; 60 challenges/h per IP). The browser
+  key signature for fast verification; `ALTCHA_CHALLENGES_PER_IP_PER_HOUR`
+  challenges per IP). The browser
   solves it in the background (`altcha-lib`, WebCrypto) and sends the base64
   payload `{challenge, solution}` as `altcha`. The server verifies signature,
   expiry and derived key, and accepts each challenge signature only once
@@ -466,7 +477,8 @@ seats and statuses stay.
 - Form token from `seats.php`: `<unix time>.<hmac>` (secret derived from
   `TICKET_SECRET`), valid from `FORM_MIN_SECONDS` to 12 h.
 - `rate_limit(key, max, window)` fixed windows in `rate_limits` (keys
-  hashed): reservations per IP (counted after validation), cancellations
+  hashed): reservations per IP (counted after validation; higher limit with
+  ALTCHA), cancellations
   20/h per IP, logins/invites per IP.
 - Pending reservations per e-mail and run.
 
@@ -474,7 +486,7 @@ seats and statuses stay.
 
 | Method | Endpoint | Body / query | Response |
 | --- | --- | --- | --- |
-| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `altcha` (enabled), `dataRetentionDays` |
+| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays` |
 | GET | `altcha.php` | – | `{enabled, challenge}` (ALTCHA v2 challenge: `parameters`, `signature`) |
 | POST | `reservations.php` | `runId, firstName, lastName, email, seats[], formToken, hp, altcha` | 201 reservation payload |
 | GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount, spd}, ticket, cancellation, refunds) |

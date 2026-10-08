@@ -180,6 +180,14 @@ export default function App() {
         />
       )}
 
+      {(seats.contact?.email || seats.contact?.phone) && (
+        <footer className="site-footer">
+          <span className="muted">Kontakt na pořadatele</span>
+          {seats.contact.email && <a href={`mailto:${seats.contact.email}`}>{seats.contact.email}</a>}
+          {seats.contact.phone && <a href={`tel:${seats.contact.phone.replace(/\s+/g, '')}`}>{seats.contact.phone}</a>}
+        </footer>
+      )}
+
       <div className={`toast ${toast ? 'is-visible' : ''} ${toast?.kind === 'error' ? 'is-error' : ''}`} role="status">
         {toast?.text}
       </div>

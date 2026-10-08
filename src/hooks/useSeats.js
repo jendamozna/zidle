@@ -17,6 +17,7 @@ export function useSeats(runId) {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [notice, setNotice] = useState(null); // {text} – shown as a toast
   const [dataRetentionDays, setDataRetentionDays] = useState(null);
+  const [contact, setContact] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -35,6 +36,7 @@ export function useSeats(runId) {
       setMaxSeats(data.maxSeats);
       setBookingOpen(data.bookingOpen);
       setDataRetentionDays(data.dataRetentionDays);
+      setContact(data.contact ?? null);
       if (!data.bookingOpen) setSelected(new Set());
       // Drop seats someone else reserved in the meantime and tell the user.
       setSelected((prev) => {
@@ -149,6 +151,7 @@ export function useSeats(runId) {
     runs,
     run: runs?.find((r) => r.id === runId) ?? null,
     dataRetentionDays,
+    contact,
     stats,
     seatState,
     toggleSeat,

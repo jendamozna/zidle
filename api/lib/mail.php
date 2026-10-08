@@ -27,7 +27,7 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
             $mail->Host = $host;
             $mail->Port = $port;
             $mail->SMTPAuth = filter_var(config('SMTP_AUTH'), FILTER_VALIDATE_BOOLEAN);
-            $mail->Username = (string) config('SMTP_SENDER');
+            $mail->Username = (string) (config('SMTP_USER') ?: config('SMTP_SENDER'));
             $mail->Password = (string) config('SMTP_PASSWORD');
             // 465 = implicit TLS; other ports use STARTTLS whenever the server offers it.
             $mail->SMTPSecure = $port === 465 ? PHPMailer::ENCRYPTION_SMTPS : '';
@@ -41,6 +41,9 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
             $from = (string) config('MAIL_FROM');
         }
         $mail->setFrom($from, MAIL_FROM_NAME);
+        if (filter_var((string) config('CONTACT_EMAIL'), FILTER_VALIDATE_EMAIL)) {
+            $mail->addReplyTo((string) config('CONTACT_EMAIL'), MAIL_FROM_NAME);
+        }
         $mail->addAddress($to);
         $mail->Subject = $subject;
         if ($html !== null) {
@@ -63,6 +66,22 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
 function mail_enabled(): bool
 {
     return filter_var(config('MAIL_ENABLED'), FILTER_VALIDATE_BOOLEAN);
+}
+
+/** "Kontakt: farnost@example.com · +420 …" or '' when no contact is configured. */
+function contact_line(): string
+{
+    $parts = array_filter([trim((string) config('CONTACT_EMAIL')), trim((string) config('CONTACT_PHONE'))]);
+    return $parts ? 'Kontakt: ' . implode(' · ', $parts) : '';
+}
+
+/** Public contact for the website footer. */
+function contact_public(): array
+{
+    return [
+        'email' => trim((string) config('CONTACT_EMAIL')) ?: null,
+        'phone' => trim((string) config('CONTACT_PHONE')) ?: null,
+    ];
 }
 
 function format_czk(int $amount): string
@@ -112,7 +131,8 @@ function send_customer_email(array $r, string $subject, array $lines): bool
     $body = implode("\n", array_merge(
         ["Dobrý den, {$r['first_name']} {$r['last_name']},", ''],
         $lines,
-        ['', 'Moje židle 2026']
+        ['', 'Moje židle 2026'],
+        contact_line() !== '' ? [contact_line()] : []
     ));
     $ok = deliver_mail($r['email'], $subject . ' – Moje židle 2026', $body);
     if (!$ok) {

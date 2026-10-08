@@ -20,6 +20,9 @@ return [
     'SMTP_PORT' => 587,
     'SMTP_AUTH' => true,
     'SMTP_SENDER' => 'rezervace@example.com',
+    'SMTP_USER' => '',                 // only when the login differs from SMTP_SENDER
+    'CONTACT_EMAIL' => 'farnost@example.com',
+    'CONTACT_PHONE' => '+420 123 456 789',
     'SMTP_PASSWORD' => 'change-me',
     'PUBLIC_URL' => 'https://example.com/zidle/',
 ];

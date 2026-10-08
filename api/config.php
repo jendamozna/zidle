@@ -18,7 +18,9 @@ return (static function (): array {
         'MAX_SEATS_PER_RESERVATION' => 20,
 
         // Spam / bot protection
-        'RESERVATIONS_PER_IP_PER_HOUR' => 5,
+        'RESERVATIONS_PER_IP_PER_HOUR' => 5,          // without ALTCHA
+        'RESERVATIONS_PER_IP_PER_HOUR_ALTCHA' => 30,  // with ALTCHA (each reservation costs proof-of-work); shared networks
+        'ALTCHA_CHALLENGES_PER_IP_PER_HOUR' => 300,
         'PENDING_RESERVATIONS_PER_EMAIL' => 2, // unpaid reservations one e-mail may hold at once in one run
         'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and organizer login, per IP
         'FORM_MIN_SECONDS' => 3,               // reservation sent sooner after loading the page = bot
@@ -52,9 +54,15 @@ return (static function (): array {
         'MAIL_FROM' => 'rezervace@example.com', // sender for PHP mail() (SMTP uses SMTP_SENDER)
         'SMTP_HOST' => '',               // e.g. smtp.example.com; '' = use PHP mail()
         'SMTP_PORT' => 587,              // 465 = implicit TLS (SMTPS); others use STARTTLS when offered
-        'SMTP_AUTH' => true,             // log in with SMTP_SENDER / SMTP_PASSWORD
-        'SMTP_SENDER' => '',             // sender address and SMTP login, e.g. rezervace@example.com
+        'SMTP_AUTH' => true,             // log in with SMTP_USER (or SMTP_SENDER) / SMTP_PASSWORD
+        'SMTP_SENDER' => '',             // sender address (From), e.g. rezervace@example.com
+        'SMTP_USER' => '',               // SMTP login when it differs from SMTP_SENDER (e.g. 'apikey'); '' = SMTP_SENDER
         'SMTP_PASSWORD' => '',
+
+        // Contact of the organizers: shown in the website footer and in every e-mail;
+        // CONTACT_EMAIL is also the Reply-To address of e-mails.
+        'CONTACT_EMAIL' => '',
+        'CONTACT_PHONE' => '',
         'PUBLIC_URL' => '',              // e.g. https://example.com/zidle/ – used for links in e-mails
 
         // Allowed CORS origin when the frontend runs on another domain ('' = same origin only)

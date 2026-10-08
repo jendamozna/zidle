@@ -28,7 +28,7 @@ async function request(path, options = {}) {
 
 /**
  * { runs: [{id, label, startsAt, bookingOpen, free, stornoRules}], runId, taken: string[] (of runId),
- *   price, deadlineHours, maxSeats, bookingOpen (of runId), formToken, dataRetentionDays }
+ *   price, deadlineHours, maxSeats, bookingOpen (of runId), formToken, contact {email, phone}, dataRetentionDays }
  */
 export const fetchSeats = (runId) => request(runId ? `seats.php?run=${encodeURIComponent(runId)}` : 'seats.php');
 

@@ -87,7 +87,10 @@ function create_reservation(): void
         json_error($errors['seats'] ?? 'Zkontrolujte zadané údaje.', 422, ['fields' => $errors]);
     }
     // Counted only for well-formed requests, so a visitor's own typos don't use up the limit.
-    if (!rate_limit('reserve|' . client_ip(), (int) config('RESERVATIONS_PER_IP_PER_HOUR'), 3600)) {
+    // With ALTCHA every reservation costs proof-of-work, so a higher limit lets several
+    // people book from one shared network (parish Wi-Fi, office).
+    $ipLimit = (int) config(altcha_enabled() ? 'RESERVATIONS_PER_IP_PER_HOUR_ALTCHA' : 'RESERVATIONS_PER_IP_PER_HOUR');
+    if (!rate_limit('reserve|' . client_ip(), $ipLimit, 3600)) {
         json_error('Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.', 429);
     }
 

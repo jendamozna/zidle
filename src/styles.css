@@ -1409,3 +1409,31 @@ h2 {
   margin: 0;
   font-size: 0.95rem;
 }
+
+/* ---------- Footer (contact) ---------- */
+
+.site-footer {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 16px 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.site-footer a {
+  color: var(--accent);
+  font-weight: 600;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 641px) {
+  .site-footer {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem 1.25rem;
+  }
+}

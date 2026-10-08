@@ -122,6 +122,7 @@ function send_ticket_email(array $r, array $intro = []): bool
         'Variabilní symbol: ' . $r['variable_symbol'],
         '',
         'Při vstupu prosím ukažte QR kód z tohoto e-mailu.',
+        ...(contact_line() !== '' ? ['', contact_line()] : []),
     ]);
 
     $html = '<!doctype html><html><body style="margin:0;background:#f5f1ea;font-family:Arial,sans-serif;color:#2b2620">'
@@ -136,7 +137,8 @@ function send_ticket_email(array $r, array $intro = []): bool
         . '<p style="margin:0 0 16px;color:#6b6256">' . $count . ' ' . ($count === 1 ? 'místo' : ($count < 5 ? 'místa' : 'míst')) . '</p>'
         . '<p style="margin:0;line-height:1.6">' . implode('<br>', array_map($h, $seats)) . '</p>'
         . '</div>'
-        . '<p style="text-align:center;color:#6b6256;font-size:13px">Při vstupu prosím ukažte tento QR kód.</p>'
+        . '<p style="text-align:center;color:#6b6256;font-size:13px">Při vstupu prosím ukažte tento QR kód.'
+        . (contact_line() !== '' ? '<br>' . $h(contact_line()) : '') . '</p>'
         . '</div></body></html>';
 
     $subject = ($intro ? 'Nová vstupenka' : 'Vstupenka') . ' – Moje židle 2026';
