@@ -1,5 +1,5 @@
 // Offline mode of the scanner. Kept in localStorage of the device (one key):
-//   session    – last {name, runs} from the server, so the scanner opens without a connection
+//   session    – last {name, runs, layout} from the server, so the scanner opens without a connection
 //   snapshots  – per run: the list of tickets and VIP guests (organizer.php "snapshot")
 //   queue      – check-ins made without a connection, sent later (organizer.php "sync")
 // Everything is removed on logout; snapshots also a day after their run.
@@ -34,12 +34,16 @@ function update(fn) {
   return data;
 }
 
-export const cachedSession = () => load().session;
+/** Last session, or null (also for one saved before the layout was part of it). */
+export const cachedSession = () => {
+  const session = load().session;
+  return session?.layout ? session : null;
+};
 
 /** Remembers the session and drops snapshots of runs that are gone or ended more than a day ago. */
 export function saveSession(session) {
   update((data) => {
-    data.session = { name: session.name, runs: session.runs };
+    data.session = { name: session.name, runs: session.runs, layout: session.layout };
     const keep = new Set(
       session.runs.filter((r) => new Date(r.scanTo).getTime() + KEEP_AFTER_RUN_MS > Date.now()).map((r) => String(r.id)),
     );

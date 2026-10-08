@@ -3,6 +3,10 @@ import { test, expect } from '@playwright/test';
 test('customer books two seats, sees the QR payment and cancels', async ({ page, request }) => {
   await page.goto('/');
   await page.locator('.run-card', { hasText: 'Premiéra' }).click();
+  // The plan is drawn from the layout the server sends.
+  const layout = (await (await request.get('/api/seats.php')).json()).layout;
+  await expect(page.locator('.section-card')).toHaveCount(layout.sections.length);
+  await expect(page.locator('.level-balcony h2')).toHaveText(layout.levels.balcony);
   await page.locator('.section-card').first().click();
   const seats = page.locator('button.seat-available');
   await seats.first().click();

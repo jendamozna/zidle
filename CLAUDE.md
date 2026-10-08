@@ -29,8 +29,9 @@ There are exactly two documents – do not add others:
   (`api/admin.php`) is **desktop-first**; organizer scanner (`src/scanner/`) is
   **mobile only**.
 - UI and e-mail texts are in Czech.
-- The seating layout exists twice – `src/data/layout.js` and
-  `api/lib/layout.php` – keep them identical.
+- The seating layout is defined only in `api/lib/layout.php`; the customer
+  app and the scanner load it from the server (`layout_public()` in
+  `seats.php` / `organizer.php`). Never hard-code sections in `src/`.
 - Ticket QR format exists twice – `api/lib/ticket.php` and
   `src/scanner/ticket.js` – keep them identical.
 - Database changes: update `db/schema.sql` **and** add a new numbered,

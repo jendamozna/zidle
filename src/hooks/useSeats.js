@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SECTIONS, SEAT_PRICE, TOTAL_CAPACITY, capacity, compareSeatIds, parseSeatId } from '../data/layout.js';
+import { SECTIONS, TOTAL_CAPACITY, capacity, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
 import { createReservation, fetchSeats } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
 
@@ -10,7 +10,8 @@ export function useSeats(runId) {
   const [runs, setRuns] = useState(null);
   const [taken, setTaken] = useState(() => new Set());
   const [selected, setSelected] = useState(() => new Set());
-  const [price, setPrice] = useState(SEAT_PRICE);
+  const [price, setPrice] = useState(0);
+  const [layoutReady, setLayoutReady] = useState(false); // layout from the server applied (setLayout)
   const [deadlineHours, setDeadlineHours] = useState(null);
   const formToken = useRef('');
   const [maxSeats, setMaxSeats] = useState(20);
@@ -27,6 +28,8 @@ export function useSeats(runId) {
     try {
       const data = await fetchSeats(runId);
       if (!active.current || (data.runId ?? null) !== (runId ?? null)) return;
+      setLayout(data.layout);
+      setLayoutReady(true);
       setRuns(data.runs);
       const nextTaken = new Set(data.taken);
       setTaken(nextTaken);
@@ -113,7 +116,7 @@ export function useSeats(runId) {
       price,
       total: selected.size * price,
     };
-  }, [taken, selected, price]);
+  }, [taken, selected, price, layoutReady]); // eslint-disable-line react-hooks/exhaustive-deps -- layoutReady: SECTIONS were replaced
 
   /** Submits the selection with customer details; resolves with the reservation. */
   const reserve = useCallback(
@@ -152,6 +155,7 @@ export function useSeats(runId) {
     run: runs?.find((r) => r.id === runId) ?? null,
     dataRetentionDays,
     contact,
+    layoutReady,
     stats,
     seatState,
     toggleSeat,

@@ -238,6 +238,19 @@ test('ticket code round-trips and rejects tampering', function (): void {
     same(null, parse_ticket_code(str_replace('BC-1-2', 'BC-1-3', $code)), 'tampered');
 });
 
+// ------------------------------------------------------------------- layout
+
+test('the layout for the apps lists all sections in order with their shape', function (): void {
+    $layout = layout_public();
+    same(array_keys(SECTIONS), array_column($layout['sections'], 'id'), 'order');
+    same(total_capacity(), array_sum(array_map(fn ($s) => $s['rows'] * $s['seatsPerRow'], $layout['sections'])), 'capacity');
+    same(['left', 'left', 'right', 'right', 'balcony', 'balcony', 'balcony'], array_column($layout['sections'], 'group'), 'groups');
+    same(array_keys(LEVELS), array_values(array_unique(array_column($layout['sections'], 'level'))), 'levels used');
+    foreach ($layout['sections'] as $section) {
+        same(true, is_valid_seat_id("{$section['id']}-{$section['rows']}-{$section['seatsPerRow']}"), "last seat of {$section['id']}");
+    }
+});
+
 // ------------------------------------------------------------------ offline
 
 /** Scanner access as scanner_access() returns it. */

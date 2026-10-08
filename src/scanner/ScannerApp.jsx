@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { SECTIONS, compareSeatIds, parseSeatId } from '../data/layout.js';
+import { SECTIONS, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { decodeTicket } from './ticket.js';
 import { acceptInvite, getSession, login, logout, verifyTicket } from './api.js';
@@ -421,8 +421,9 @@ export default function ScannerApp() {
   const loadSession = useCallback(() => {
     getSession()
       .then((s) => {
+        setLayout(s.layout);
         setInfo({ runs: s.runs ?? [], name: s.name, passwordLogin: s.passwordLogin });
-        if (s.loggedIn) saveSession({ name: s.name, runs: s.runs ?? [] });
+        if (s.loggedIn) saveSession({ name: s.name, runs: s.runs ?? [], layout: s.layout });
         else clearOffline();
         setSession(s.loggedIn ? 'in' : 'out');
       })
@@ -430,6 +431,7 @@ export default function ScannerApp() {
         // Without a connection the scanner opens with the last known session.
         const cached = err.offline ? cachedSession() : null;
         if (cached) {
+          setLayout(cached.layout);
           setInfo({ runs: cached.runs, name: cached.name, passwordLogin: false });
           setSession('in');
           return;

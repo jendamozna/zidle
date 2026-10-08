@@ -1,6 +1,6 @@
 <?php
-// GET api/seats.php?run=<id> – runs with free seat counts, and the seats of
-// the given run held by pending or paid reservations.
+// GET api/seats.php?run=<id> – runs with free seat counts, the seats of the
+// given run held by pending or paid reservations and VIP guests, the seating layout.
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 
@@ -38,5 +38,6 @@ run_api(function (): void {
         'formToken' => form_token(),
         'contact' => contact_public(),
         'dataRetentionDays' => (int) config('DATA_RETENTION_DAYS'),
+        'layout' => layout_public(),
     ]);
 });

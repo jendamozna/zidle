@@ -52,7 +52,7 @@ is used only for admin input and for display.
 ```
 api/
   admin.php            admin UI (login, reservations, VIP, scanner invites, runs)
-  seats.php            GET runs + taken seats of a run
+  seats.php            GET runs + taken seats of a run + seating layout
   altcha.php           GET invisible ALTCHA challenge
   reservations.php     POST create reservation, GET reservation by token
   cancel.php           POST customer cancellation
@@ -60,7 +60,8 @@ api/
   cron.php             scheduled jobs (CLI only); cron-expire.php = alias
   config.php           defaults (+ config.local.php / env overrides)
   lib/bootstrap.php    config(), db(), db_query(), JSON helpers (json_response/json_error end the request), expire_reservations(), QR payment, reservation_payload()
-  lib/layout.php       SECTIONS (must match src/data/layout.js), total_capacity(), is_valid_seat_id(), compare_seat_ids()
+  lib/layout.php       LEVELS, SECTIONS (the only layout definition), layout_public(), total_capacity(),
+                       is_valid_seat_id(), compare_seat_ids()
   lib/settings.php     runs: loading, times, storno rules, check-in window, run_public()
   lib/cancellation.php cancellation_terms(), cancel_seats(), notices, reminders, GDPR purge
   lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
@@ -76,7 +77,7 @@ db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–011)
 src/                   customer app
   App.jsx              views: run picker / map / section / reservation page; form; toasts
   hooks/useSeats.js    seat state of one run, polling, reserve()
-  data/layout.js       sections, seat ids, occupancy levels, CZK formatting
+  data/layout.js       layout loaded from the server (setLayout()), seat ids, occupancy levels, CZK formatting
   data/seatService.js  API client (seats, reservations, cancel)
   components/          RunPicker, Overview, SectionCard, SectionDetail, ReservationPanel,
                        ReservationForm, PaymentView
@@ -186,19 +187,28 @@ environment variables of the same name override them (local file wins).
 - **Run** (`runs`) – one performance. `starts_at`, optional `label`, optional
   `booking_closes_at`, `storno_rules` (JSON). Seats, reservations, VIP
   guests, check-in and scanner invites are per run.
-- **Section / seat** – fixed layout, `SECTIONS` in `api/lib/layout.php` and
-  `src/data/layout.js`:
+- **Section / seat** – fixed layout, defined only in `api/lib/layout.php`
+  (`LEVELS` main *Hlavní loď* / balcony *Balkon*; `SECTIONS` id → name,
+  short name, level, `group` = place in the floor plan `left` / `right` /
+  `balcony`, rows, seats per row, optional `rotated` + `rowSide`). The apps
+  get it as `layout` from `seats.php` (customer) and `GET organizer.php`
+  (scanner): `layout_public()` = `{levels, sections: [{id, name, short,
+  level, group, rows, seatsPerRow, rotated, rowSide}]}` in `SECTIONS` order.
+  `src/data/layout.js` holds no data: `setLayout(layout)` fills its live
+  exports `LEVELS`, `SECTIONS`, `SECTION_BY_ID`, `TOTAL_CAPACITY` before the
+  first map/scanner view is drawn (`useSeats` on every `seats.php` response,
+  `ScannerApp` from the session or the cached one):
 
-  | Id | Name | Rows × seats | Capacity |
-  | --- | --- | --- | --- |
-  | WL | Levé křídlo | 4 × 6 | 24 |
-  | ML | Levá hlavní | 10 × 8 | 80 |
-  | MR | Pravá hlavní | 10 × 8 | 80 |
-  | WR | Pravé křídlo | 6 × 6 | 36 |
-  | BL | Balkon vlevo (rotated, row 1 right) | 4 × 12 | 48 |
-  | BC | Balkon střed | 4 × 12 | 48 |
-  | BR | Balkon vpravo (rotated, row 1 left) | 2 × 10 | 20 |
-  | | total | | 336 |
+  | Id | Name (short) | Group | Rows × seats | Capacity |
+  | --- | --- | --- | --- | --- |
+  | WL | Levé křídlo (L. křídlo) | left | 4 × 6 | 24 |
+  | ML | Levá hlavní (L. hlavní) | left | 10 × 8 | 80 |
+  | MR | Pravá hlavní (P. hlavní) | right | 10 × 8 | 80 |
+  | WR | Pravé křídlo (P. křídlo) | right | 6 × 6 | 36 |
+  | BL | Balkon vlevo (Balkon L; rotated, row 1 right) | balcony | 4 × 12 | 48 |
+  | BC | Balkon střed (Balkon S) | balcony | 4 × 12 | 48 |
+  | BR | Balkon vpravo (Balkon P; rotated, row 1 left) | balcony | 2 × 10 | 20 |
+  | | total | | | 336 |
 
   Seat id `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-4-12`.
 - **Reservation** – one run, customer data, current seats, price, VS, status,
@@ -240,8 +250,11 @@ re-runnable migration.
 `Rezervace uzavřeny` (`bookingOpen` false). The chosen run is written to
 `?termin=` (replaceState). A run missing from the list resets the choice.
 
-**Map** (`Overview.jsx`, `SectionCard.jsx`): stage on top, `WL ML | MR WR`,
-entrance at the bottom, balcony U (BL, BC, BR rotated). Card size =
+Until the first `seats.php` answer (layout) the app shows *Načítám…*.
+
+**Map** (`Overview.jsx`, `SectionCard.jsx`): stage on top, sections of group
+`left` | `right` side by side (in layout order), entrance at the bottom,
+balcony U (group `balcony`; headings from `LEVELS`). Card size =
 seats × rows × `--u`; shows name (short on < 641 px) and occupancy %. Colour
 by `occupancyLevel`: `< 50` low/green, `50–84` medium/amber, `≥ 85`
 high/red. Red badge = number of own selected seats. Run bar above the map
@@ -437,8 +450,9 @@ platba přišla.“*
   `assets/` it references on install; `scanner.html` network-first (cached
   copy offline, the cache is refreshed and assets of older builds removed on
   every online load), `assets/*` cache-first; API, customer pages and fonts
-  are not touched. `getSession` failing offline → the last session from
-  localStorage (`saveSession()` on every online load); without one *„Bez
+  are not touched. `getSession` failing offline → the last session
+  (`{name, runs, layout}`) from localStorage (`saveSession()` on every online
+  load; a stored session without `layout` is ignored); without one *„Bez
   spojení. Poprvé se scanner musí přihlásit s internetem.“*
 - **Snapshot** (`organizer.php` `snapshot {runId}` → `scanner_snapshot()`):
   `{runId, at, tickets: [{id, variableSymbol, name, seats, status,
@@ -629,12 +643,12 @@ amounts, seats and statuses stay.
 
 | Method | Endpoint | Body / query | Response |
 | --- | --- | --- | --- |
-| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays` |
+| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays`, `layout` {levels, sections} |
 | GET | `altcha.php` | – | `{enabled, challenge}` (ALTCHA v2 challenge: `parameters`, `signature`) |
 | POST | `reservations.php` | `runId, firstName, lastName, email, seats[], formToken, hp, altcha` | 201 reservation payload |
 | GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, ticket, cancellation, refunds) |
 | POST | `cancel.php` | `token, seats?` | reservation payload |
-| GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`) |
+| GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`), `layout` |
 | POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `vip-list {runId}`, `vip-checkin {id, runId, confirmOutside?}`, `vip-undo {id, runId}`, `snapshot {runId}`, `sync {runId, events}` | see §11–13 |
 
 Errors: `{"error": "<Czech message>", …}` with HTTP status; uncaught
@@ -652,7 +666,7 @@ prosím znovu.`
 ## 20. Conventions
 
 See `CLAUDE.md`: docs in sync with code, UTC in DB, mobile-first customer
-CSS / desktop-first admin / mobile-only scanner, duplicated layout and
+CSS / desktop-first admin / mobile-only scanner, layout only on the server,
 ticket format kept identical, schema + migration for DB changes, Czech UI.
 
 ## 21. Tests and CI
@@ -691,7 +705,8 @@ customer storno fee; admin full refund; cancelling a partly paid pending
 reservation; partial cancellation completing a covered reservation; double
 booking rejected by the primary key; VIP seats (conflict, sorting, freeing
 on delete); GDPR purge keeping contacts while a refund is due; ticket code
-round trip and tamper detection; offline: snapshot content (no e-mails,
+round trip and tamper detection; layout for the apps (order, capacity,
+groups, levels, last seat of each section valid); offline: snapshot content (no e-mails,
 VIP included), offline check-ins with device time and first-wins, resend
 without a new conflict, second device → `already_checked_in` recorded once,
 unpaid / unknown / other-run tickets → conflicts, device time limits, VIP
@@ -699,10 +714,9 @@ arrival conflict and undo. Locally:
 `DB_NAME=zidle_test MAIL_ENABLED=0 php tests/php/run.php` (values in
 `config.local.php` take precedence over the environment).
 
-**Consistency** (`tests/consistency.mjs`): `SECTIONS` of `layout.js` and
-`layout.php` (ids, order, names, rows, seats per row) are identical, and a
-ticket code made by `ticket_code()` is decoded by `src/scanner/ticket.js`
-(id, VS, count, name, seats).
+**Consistency** (`tests/consistency.mjs`): a ticket code made by
+`ticket_code()` is decoded by `src/scanner/ticket.js` (id, VS, count, name,
+seats).
 
 **Playwright** (`playwright.config.js`, `tests/e2e/`): one worker, project
 *mobile* (Pixel 7, `cs-CZ`, Europe/Prague); admin tests use a 1360 × 900
@@ -717,7 +731,8 @@ guest on ML-1-1/2, plus a second paid ticket and VIP *Paní Offline* for the
 offline test) and stores its JSON output in `tests/e2e/.seed.json`.
 Tests:
 
-- `customer.spec.js` – choose *Premiéra*, two seats, form (waits for
+- `customer.spec.js` – choose *Premiéra*, the plan has as many section cards
+  as the server layout and its balcony heading, two seats, form (waits for
   `FORM_MIN_SECONDS`, real invisible ALTCHA), payment page with QR, 600 Kč
   and VS, seats taken in `seats.php`, cancel all → *Rezervaci jste zrušili.*
   and seats free; run picker without horizontal scroll.

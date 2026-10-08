@@ -1,31 +1,30 @@
-// Static description of the church seating. Everything else (seat ids,
-// capacities, occupancy) is derived from this, so it can later be replaced
-// by data loaded from a database without touching the UI.
+// Seating layout of the church. It is defined only on the server
+// (api/lib/layout.php) and loaded with seats.php / organizer.php; setLayout()
+// fills the bindings below before the first map is drawn. Everything else
+// (seat ids, capacities, occupancy) is derived from it.
+//
+// Section: {id, name, short, level, group, rows, seatsPerRow, rotated, rowSide}
+//   group       – floor plan place: left / right (main floor), balcony
+//   rows        – number of rows (row 1 is closest to the stage / railing)
+//   seatsPerRow – chairs in each row
+//   rotated     – section is turned 90° in the floor plan (rows run vertically)
+//   rowSide     – for rotated sections: side on which row 1 lies
 
-export const SEAT_PRICE = 300; // Kč
+/** Level names, e.g. {main: 'Hlavní loď', balcony: 'Balkon'}. */
+export let LEVELS = {};
+export let SECTIONS = [];
+export let SECTION_BY_ID = {};
+export let TOTAL_CAPACITY = 0;
 
-export const LEVELS = {
-  main: 'Hlavní loď',
-  balcony: 'Balkon',
-};
+export const capacity = (section) => section.rows * section.seatsPerRow;
 
-/**
- * rows        – number of rows (row 1 is closest to the stage / railing)
- * seatsPerRow – chairs in each row
- * rotated     – section is turned 90° in the floor plan (rows run vertically)
- * rowSide     – for rotated sections: side on which row 1 lies
- */
-export const SECTIONS = [
-  { id: 'WL', name: 'Levé křídlo', short: 'L. křídlo', level: 'main', rows: 4, seatsPerRow: 6 },
-  { id: 'ML', name: 'Levá hlavní', short: 'L. hlavní', level: 'main', rows: 10, seatsPerRow: 8 },
-  { id: 'MR', name: 'Pravá hlavní', short: 'P. hlavní', level: 'main', rows: 10, seatsPerRow: 8 },
-  { id: 'WR', name: 'Pravé křídlo', short: 'P. křídlo', level: 'main', rows: 6, seatsPerRow: 6 },
-  { id: 'BL', name: 'Balkon vlevo', short: 'Balkon L', level: 'balcony', rows: 4, seatsPerRow: 12, rotated: true, rowSide: 'right' },
-  { id: 'BC', name: 'Balkon střed', short: 'Balkon S', level: 'balcony', rows: 4, seatsPerRow: 12 },
-  { id: 'BR', name: 'Balkon vpravo', short: 'Balkon P', level: 'balcony', rows: 2, seatsPerRow: 10, rotated: true, rowSide: 'left' },
-];
-
-export const SECTION_BY_ID = Object.fromEntries(SECTIONS.map((s) => [s.id, s]));
+/** Takes the layout from the server ({levels, sections}). */
+export function setLayout(layout) {
+  LEVELS = layout.levels;
+  SECTIONS = layout.sections;
+  SECTION_BY_ID = Object.fromEntries(SECTIONS.map((s) => [s.id, s]));
+  TOTAL_CAPACITY = SECTIONS.reduce((sum, s) => sum + capacity(s), 0);
+}
 
 export const seatId = (sectionId, row, seat) => `${sectionId}-${row}-${seat}`;
 
@@ -33,10 +32,6 @@ export function parseSeatId(id) {
   const [sectionId, row, seat] = id.split('-');
   return { sectionId, row: Number(row), seat: Number(seat) };
 }
-
-export const capacity = (section) => section.rows * section.seatsPerRow;
-
-export const TOTAL_CAPACITY = SECTIONS.reduce((sum, s) => sum + capacity(s), 0);
 
 export function sectionSeatIds(section) {
   const ids = [];

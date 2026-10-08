@@ -103,7 +103,8 @@ export default function App() {
     !reservation && !choosing && (section ? stats.bySection[section.id].mine.length > 0 : stats.selectedCount > 0);
 
   let view;
-  if (reservation) view = <PaymentView reservation={reservation} onChange={setReservation} onBack={closePayment} />;
+  if (!seats.layoutReady) view = <p className="muted plan-loading">{seats.loadError ? '' : 'Načítám…'}</p>;
+  else if (reservation) view = <PaymentView reservation={reservation} onChange={setReservation} onBack={closePayment} />;
   else if (choosing) view = <RunPicker runs={seats.runs} onSelect={chooseRun} />;
   else if (section) view = <SectionDetail section={section} seats={seats} onBack={() => setSectionId(null)} />;
   else view = <Overview stats={stats} loading={seats.loading} onOpen={setSectionId} />;

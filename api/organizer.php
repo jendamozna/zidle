@@ -1,7 +1,7 @@
 <?php
 // Organizer API used by the ticket scanner (scanner.html). Access: invite link
 // from admin (only the invited runs) or the optional master password (all runs).
-//   GET  organizer.php                                      → {loggedIn, name, runs, passwordLogin}
+//   GET  organizer.php                                      → {loggedIn, name, runs, passwordLogin, layout}
 //   POST organizer.php {action: "invite", token}            → signs the device in with an invite
 //   POST organizer.php {action: "login", password}          → master password (if enabled)
 //   POST organizer.php {action: "logout"}
@@ -25,6 +25,7 @@ run_api(function (): void {
             'name' => $access['name'] ?? null,
             'passwordLogin' => (string) config('ORGANIZER_PASSWORD') !== '',
             'runs' => $access ? array_map('scanner_run_public', scanner_runs($access)) : [],
+            'layout' => layout_public(),
         ]);
     }
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
