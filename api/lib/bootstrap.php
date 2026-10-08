@@ -115,12 +115,16 @@ function expire_reservations(): int
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        // expires_at is the due date shown to the customer; the reservation is
+        // only cancelled PAYMENT_GRACE_HOURS later, so a transfer sent on the
+        // last day still arrives before the seats are released.
         $stmt = $pdo->prepare(
             "UPDATE reservations SET status = 'expired', cancelled_at = :now
-             WHERE status = 'pending' AND expires_at <= :now2"
+             WHERE status = 'pending' AND expires_at <= :cutoff"
         );
-        $now = db_time(now_utc());
-        $stmt->execute(['now' => $now, 'now2' => $now]);
+        $now = now_utc();
+        $cutoff = $now->modify('-' . (int) config('PAYMENT_GRACE_HOURS') . ' hours');
+        $stmt->execute(['now' => db_time($now), 'cutoff' => db_time($cutoff)]);
         $count = $stmt->rowCount();
         $pdo->exec(
             "DELETE rs FROM reservation_seats rs
@@ -133,6 +137,17 @@ function expire_reservations(): int
         $pdo->rollBack();
         throw $e;
     }
+}
+
+/** False once BOOKING_CLOSES_AT (Europe/Prague) has passed. */
+function booking_open(): bool
+{
+    $closes = trim((string) config('BOOKING_CLOSES_AT'));
+    if ($closes === '') {
+        return true;
+    }
+    return new DateTimeImmutable('now', new DateTimeZone('UTC'))
+        < new DateTimeImmutable($closes, new DateTimeZone('Europe/Prague'));
 }
 
 function strip_diacritics(string $text): string

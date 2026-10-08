@@ -15,8 +15,15 @@ Church chair reservation app – React (Vite) frontend, PHP 8 backend, MariaDB.
    the customer a ticket with a QR code containing the orderer's name, seat
    count and seat numbers (signed, so it cannot be forged or altered). The
    ticket QR is also shown on the customer's reservation page.
-5. Reservations not paid by the deadline (`PAYMENT_DEADLINE_HOURS`, default
-   72 h) are marked *expired* and their seats are freed.
+5. The customer sees a due date `PAYMENT_DEADLINE_HOURS` (72 h) after
+   reserving. Unpaid reservations are cancelled and their seats freed only
+   `PAYMENT_GRACE_HOURS` (48 h) after the due date, so a transfer sent on the
+   last day still arrives in time. If money arrives even later, the accountant
+   can **accept the late payment** in admin – the reservation is restored if
+   its seats are still free; otherwise admin names the resold seats and the
+   payment has to be refunded or other seats agreed.
+   Admin can also fix a mistyped customer e-mail and resend the ticket.
+   New reservations stop at `BOOKING_CLOSES_AT` (optional).
 6. At the entrance, organizers open `scanner.html` on a phone, log in with
    `ORGANIZER_PASSWORD` and scan tickets with the rear camera. The scanner
    shows the name and seats and whether the ticket is valid, already used

@@ -1129,3 +1129,23 @@ h2 {
   height: 1px;
   overflow: hidden;
 }
+
+.closed-badge {
+  padding: 0.6rem 1.1rem;
+  border-radius: 999px;
+  background: var(--occ-high-bg);
+  color: var(--occ-high-ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.deadline.is-overdue {
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--occ-high-bg);
+  color: var(--occ-high-ink);
+}
+
+.deadline.is-overdue strong {
+  color: inherit;
+}

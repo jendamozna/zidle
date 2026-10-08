@@ -12,6 +12,7 @@ const RESULT = {
   unpaid: { tone: 'bad', title: 'Nezaplaceno' },
   cancelled: { tone: 'bad', title: 'Rezervace zrušena' },
   invalid: { tone: 'bad', title: 'Neplatný kód' },
+  payment: { tone: 'bad', title: 'To je platební QR kód' },
   offline: { tone: 'warn', title: 'Neověřeno – bez spojení' },
   checking: { tone: 'neutral', title: 'Ověřuji…' },
 };
@@ -125,7 +126,13 @@ function ResultCard({ scan, onNext }) {
           <p className="muted small">VS {ticket.variableSymbol}</p>
         </div>
       ) : (
-        <p className="scan-raw">{scan.raw.length > 120 ? `${scan.raw.slice(0, 120)}…` : scan.raw}</p>
+        <p className="scan-raw">
+          {result === 'payment'
+            ? 'Vstupenka přijde e-mailem po zaplacení. Lze ji najít i na stránce rezervace.'
+            : scan.raw.length > 120
+              ? `${scan.raw.slice(0, 120)}…`
+              : scan.raw}
+        </p>
       )}
 
       <button type="button" className="btn btn-primary btn-block btn-large" onClick={onNext} disabled={result === 'checking'}>
@@ -143,7 +150,8 @@ function Scanner({ onLogout }) {
     async (raw) => {
       const decoded = decodeTicket(raw);
       if (!decoded) {
-        setScan({ raw, ticket: null, result: 'invalid' });
+        // Customers sometimes show the bank payment QR instead of the ticket.
+        setScan({ raw, ticket: null, result: raw.startsWith('SPD*') ? 'payment' : 'invalid' });
         return;
       }
       setScan({ raw, ticket: decoded, result: 'checking' });

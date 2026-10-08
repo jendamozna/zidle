@@ -13,7 +13,7 @@ function validate(values) {
 }
 
 export default function ReservationForm({ stats, deadlineHours, submitting, onSubmit, onClose }) {
-  const [values, setValues] = useState({ firstName: '', lastName: '', email: '', website: '' });
+  const [values, setValues] = useState({ firstName: '', lastName: '', email: '', hp: '' });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const firstInput = useRef(null);
@@ -40,7 +40,7 @@ export default function ReservationForm({ stats, deadlineHours, submitting, onSu
       firstName: values.firstName.trim(),
       lastName: values.lastName.trim(),
       email: values.email.trim(),
-      website: values.website,
+      hp: values.hp,
     };
     try {
       await onSubmit(customer);
@@ -89,8 +89,8 @@ export default function ReservationForm({ stats, deadlineHours, submitting, onSu
         {/* Honeypot for spam bots – hidden from people and assistive technology. */}
         <div className="hp-field" aria-hidden="true">
           <label>
-            Web
-            <input name="website" value={values.website} onChange={set('website')} tabIndex={-1} autoComplete="off" />
+            Nevyplňujte
+            <input name="hp" value={values.hp} onChange={set('hp')} tabIndex={-1} autoComplete="off" />
           </label>
         </div>
 

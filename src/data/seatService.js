@@ -26,15 +26,15 @@ async function request(path, options = {}) {
   return data;
 }
 
-/** { taken: string[], price: number, deadlineHours: number, formToken: string } */
+/** { taken: string[], price, deadlineHours, maxSeats, bookingOpen, formToken } */
 export const fetchSeats = () => request('seats.php');
 
 /** Creates a pending reservation; returns it with payment details. */
-// formToken comes from fetchSeats; website is the honeypot field (empty for humans).
-export const createReservation = ({ firstName, lastName, email, seats, formToken, website = '' }) =>
+// formToken comes from fetchSeats; hp is the honeypot field (empty for humans).
+export const createReservation = ({ firstName, lastName, email, seats, formToken, hp = '' }) =>
   request('reservations.php', {
     method: 'POST',
-    body: JSON.stringify({ firstName, lastName, email, seats, formToken, website }),
+    body: JSON.stringify({ firstName, lastName, email, seats, formToken, hp }),
   });
 
 export const fetchReservation = (token) => request(`reservations.php?token=${encodeURIComponent(token)}`);

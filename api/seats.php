@@ -16,6 +16,8 @@ run_api(function (): void {
         'taken' => $taken,
         'price' => (int) config('SEAT_PRICE'),
         'deadlineHours' => (int) config('PAYMENT_DEADLINE_HOURS'),
+        'maxSeats' => (int) config('MAX_SEATS_PER_RESERVATION'),
+        'bookingOpen' => booking_open(),
         'formToken' => form_token(),
     ]);
 });

@@ -1,7 +1,7 @@
 <?php
 // Spam and bot protection without third-party services:
 //  - signed form token issued by seats.php, must be FORM_MIN_SECONDS old (bots posting directly or instantly)
-//  - honeypot field "website" that humans never see
+//  - honeypot field "hp" that humans never see (not named like a real field, so browsers don't autofill it)
 //  - rate limits per IP / e-mail stored in the rate_limits table
 declare(strict_types=1);
 

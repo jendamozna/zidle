@@ -36,15 +36,16 @@ function create_reservation(): void
         json_error('Platby nejsou nastaveny (BANK_IBAN).', 503);
     }
 
+    if (!booking_open()) {
+        json_error('Rezervace jsou uzavřeny.', 403);
+    }
+
     $body = read_json_body();
 
     // Bot checks: honeypot must stay empty, form token must be issued by us and not too fresh.
-    if (trim((string) ($body['website'] ?? '')) !== '' || !form_token_valid((string) ($body['formToken'] ?? ''))) {
+    if (trim((string) ($body['hp'] ?? '')) !== '' || !form_token_valid((string) ($body['formToken'] ?? ''))) {
         error_log('[zidle] Rejected reservation as bot from ' . client_ip());
         json_error('Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.', 400);
-    }
-    if (!rate_limit('reserve|' . client_ip(), (int) config('RESERVATIONS_PER_IP_PER_HOUR'), 3600)) {
-        json_error('Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.', 429);
     }
 
     $firstName = trim((string) ($body['firstName'] ?? ''));
@@ -68,13 +69,17 @@ function create_reservation(): void
         $seats = array_values(array_unique(array_map('strval', $seats)));
         $max = (int) config('MAX_SEATS_PER_RESERVATION');
         if (count($seats) > $max) {
-            $errors['seats'] = "Najednou lze rezervovat nejvýše {$max} míst.";
+            $errors['seats'] = 'Najednou lze rezervovat nejvýše ' . $max . ' ' . ($max === 1 ? 'místo' : ($max < 5 ? 'místa' : 'míst')) . '.';
         } elseif (array_filter($seats, fn ($id) => !is_valid_seat_id($id))) {
             $errors['seats'] = 'Neplatné místo.';
         }
     }
     if ($errors) {
-        json_error('Zkontrolujte zadané údaje.', 422, ['fields' => $errors]);
+        json_error($errors['seats'] ?? 'Zkontrolujte zadané údaje.', 422, ['fields' => $errors]);
+    }
+    // Counted only for well-formed requests, so a visitor's own typos don't use up the limit.
+    if (!rate_limit('reserve|' . client_ip(), (int) config('RESERVATIONS_PER_IP_PER_HOUR'), 3600)) {
+        json_error('Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.', 429);
     }
 
     expire_reservations();

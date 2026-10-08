@@ -111,10 +111,17 @@ export default function PaymentView({ reservation, onBack }) {
                 {payment.specificSymbol && <CopyValue label="Specifický symbol" value={payment.specificSymbol} />}
                 <CopyValue label="Částka" value={String(payment.amount)} />
               </dl>
-              <p className="deadline">
-                Zaplaťte do <strong>{formatDeadline(reservation.expiresAt)}</strong>. Jinak bude rezervace zrušena
-                a místa uvolněna.
-              </p>
+              {new Date(reservation.expiresAt) < new Date() ? (
+                <p className="deadline is-overdue">
+                  Splatnost <strong>{formatDeadline(reservation.expiresAt)}</strong> uplynula. Zaplaťte prosím
+                  co nejdříve, jinak bude rezervace brzy zrušena.
+                </p>
+              ) : (
+                <p className="deadline">
+                  Zaplaťte do <strong>{formatDeadline(reservation.expiresAt)}</strong>. Jinak bude rezervace zrušena
+                  a místa uvolněna.
+                </p>
+              )}
             </>
           )}
 

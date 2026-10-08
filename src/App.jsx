@@ -51,6 +51,10 @@ export default function App() {
     if (seats.loadError) setToast({ kind: 'error', text: seats.loadError });
   }, [seats.loadError]);
 
+  useEffect(() => {
+    if (seats.notice) setToast({ kind: 'error', text: seats.notice.text });
+  }, [seats.notice]);
+
   const openForm = () => stats.selectedCount && setFormOpen(true);
   const closeForm = useCallback(() => setFormOpen(false), []);
 
@@ -62,7 +66,7 @@ export default function App() {
       setReservation(created);
       setReservationParam(created.token);
     } catch (err) {
-      if (err.status === 409) {
+      if (err.status === 409 || err.status === 403) {
         setFormOpen(false);
         setToast({ kind: 'error', text: err.message });
         return;
@@ -102,14 +106,18 @@ export default function App() {
                 <span className="summary-value">{formatCzk(stats.total)}</span>
                 <span className="summary-label">{seatsLabel(stats.selectedCount)}</span>
               </div>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!stats.selectedCount || seats.submitting}
-                onClick={openForm}
-              >
-                Rezervovat
-              </button>
+              {seats.bookingOpen ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!stats.selectedCount || seats.submitting}
+                  onClick={openForm}
+                >
+                  Rezervovat
+                </button>
+              ) : (
+                <span className="closed-badge">Rezervace uzavřeny</span>
+              )}
             </div>
           )}
         </div>

@@ -70,13 +70,23 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-
     exit;
 }
 
-if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'cancel', 'ticket'], true)) {
+if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'paid-late', 'cancel', 'ticket', 'email'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     $now = db_time(now_utc());
     if ($action === 'paid') {
         $stmt = db()->prepare("UPDATE reservations SET status = 'paid', paid_at = ? WHERE id = ? AND status = 'pending'");
         $stmt->execute([$now, $id]);
         $flash = $stmt->rowCount() ? 'Platba potvrzena.' . send_ticket_for($id) : 'Rezervaci nelze označit jako zaplacenou.';
+    } elseif ($action === 'paid-late') {
+        $flash = accept_late_payment($id);
+    } elseif ($action === 'email') {
+        $email = trim((string) ($_POST['email'] ?? ''));
+        if (mb_strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $flash = 'Neplatný e-mail.';
+        } else {
+            db()->prepare('UPDATE reservations SET email = ? WHERE id = ?')->execute([$email, $id]);
+            $flash = "E-mail změněn na {$email}.";
+        }
     } elseif ($action === 'ticket') {
         $flash = trim(send_ticket_for($id)) ?: 'Vstupenku nelze odeslat.';
     } else {
@@ -90,6 +100,40 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['paid', 'cancel'
     exit;
 }
 $flash = $_SESSION['flash'] ?? null;
+
+/**
+ * Payment arrived after the reservation expired: restore it as paid if all
+ * its seats are still free, otherwise report which seats were taken meanwhile.
+ */
+function accept_late_payment(int $id): string
+{
+    $pdo = db();
+    $pdo->beginTransaction();
+    $stmt = $pdo->prepare("SELECT * FROM reservations WHERE id = ? AND status = 'expired' FOR UPDATE");
+    $stmt->execute([$id]);
+    $r = $stmt->fetch();
+    if (!$r) {
+        $pdo->rollBack();
+        return 'Rezervaci nelze obnovit.';
+    }
+    $seats = explode(',', $r['seats']);
+    $placeholders = implode(',', array_fill(0, count($seats), '?'));
+    $taken = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE seat_id IN ($placeholders) FOR UPDATE");
+    $taken->execute($seats);
+    $conflict = $taken->fetchAll(PDO::FETCH_COLUMN);
+    if ($conflict) {
+        $pdo->rollBack();
+        return 'Místa ' . implode(', ', $conflict) . ' už mezitím obsadil někdo jiný. Platbu je nutné vrátit nebo domluvit jiná místa.';
+    }
+    $insert = $pdo->prepare('INSERT INTO reservation_seats (seat_id, reservation_id) VALUES (?, ?)');
+    foreach ($seats as $seat) {
+        $insert->execute([$seat, $id]);
+    }
+    $pdo->prepare("UPDATE reservations SET status = 'paid', paid_at = ?, cancelled_at = NULL WHERE id = ?")
+        ->execute([db_time(now_utc()), $id]);
+    $pdo->commit();
+    return 'Pozdní platba přijata, rezervace obnovena.' . send_ticket_for($id);
+}
 
 /** Sends the ticket e-mail for a paid reservation; returns a message for the flash. */
 function send_ticket_for(int $id): string
@@ -159,6 +203,11 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .vip-form label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; font-weight:600; color:var(--ink-2); }
   .vip-form label.grow { flex:1 1 200px; }
   .vip-form input[name=persons] { width:80px; }
+  .edit-email summary { cursor:pointer; font-size:.78rem; color:var(--ink-2); margin-top:2px; }
+  .edit-email form { display:flex; gap:6px; margin-top:6px; }
+  .edit-email input { width:200px; padding:4px 8px; }
+  .edit-email button { padding:4px 10px; }
+  .overdue { color:#8f2a20; font-weight:600; }
   .login { max-width:340px; margin:15vh auto; display:flex; flex-direction:column; gap:12px; }
 </style>
 </head>
@@ -293,7 +342,15 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <?php foreach ($rows as $r): ?>
         <tr>
           <td><strong><?= $h($r['variable_symbol']) ?></strong></td>
-          <td><?= $h($r['first_name'] . ' ' . $r['last_name']) ?><br><a href="mailto:<?= $h($r['email']) ?>"><?= $h($r['email']) ?></a></td>
+          <td><?= $h($r['first_name'] . ' ' . $r['last_name']) ?><br><a href="mailto:<?= $h($r['email']) ?>"><?= $h($r['email']) ?></a>
+            <details class="edit-email"><summary>změnit e-mail</summary>
+              <form method="post">
+                <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                <input type="email" name="email" value="<?= $h($r['email']) ?>" required>
+                <button name="action" value="email">Uložit</button>
+              </form>
+            </details></td>
           <td class="seats"><?= $h(str_replace(',', ', ', $r['seats'])) ?></td>
           <td><?= $kc($r['amount']) ?></td>
           <td><span class="badge s-<?= $h($r['status']) ?>"><?= $h($statusLabels[$r['status']]) ?></span>
@@ -301,7 +358,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
             <?php if ($r['ticket_sent_at']): ?><br><small>vstupenka <?= $h($fmt($r['ticket_sent_at'])) ?></small><?php endif ?>
             <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= $h($fmt($r['checked_in_at'])) ?></small><?php endif ?></td>
           <td><?= $h($fmt($r['created_at'])) ?></td>
-          <td><?= $h($fmt($r['expires_at'])) ?></td>
+          <td class="<?= $r['status'] === 'pending' && $r['expires_at'] < db_time(now_utc()) ? 'overdue' : '' ?>"><?= $h($fmt($r['expires_at'])) ?></td>
           <td>
             <div class="actions">
               <?php if ($r['status'] === 'pending'): ?>
@@ -309,6 +366,13 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
                   <button name="action" value="paid">Zaplaceno</button>
+                </form>
+              <?php endif ?>
+              <?php if ($r['status'] === 'expired'): ?>
+                <form method="post" onsubmit="return confirm('Platba dorazila po splatnosti. Obnovit rezervaci jako zaplacenou?')">
+                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                  <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                  <button class="secondary" name="action" value="paid-late">Přijmout pozdní platbu</button>
                 </form>
               <?php endif ?>
               <?php if ($r['status'] === 'paid'): ?>
