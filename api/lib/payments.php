@@ -86,7 +86,7 @@ function record_payment(int $id, int $received): string
             $reason = $status === 'paid' ? 'extra' : 'cancelled';
             $outcome = 'refund';
         }
-        if ($outcome === 'refund') {
+        if ($reason !== null) {
             $pdo->prepare('UPDATE reservations SET refund_amount = COALESCE(refund_amount, 0) + ? WHERE id = ?')
                 ->execute([$received, $id]);
         }
@@ -102,7 +102,12 @@ function record_payment(int $id, int $received): string
     $refundDue = (int) $r['refund_amount'] - (int) $r['refunded_amount'];
     $kc = format_czk($received);
 
-    if ($r['status'] === 'paid' && $outcome !== 'refund') {
+    if ($reason !== null) {
+        $mailed = send_payment_refund_email($r, $received, $reason);
+        return "Přijato {$kc} – " . REFUND_REASONS[$reason] . '. K vrácení na účet plátce: ' . format_czk($refundDue) . '.'
+            . ($mailed ? ' Zákazník dostal e-mail.' : '');
+    }
+    if ($r['status'] === 'paid') {
         $surplus = (int) $r['paid_amount'] - (int) $r['amount'];
         $intro = ['děkujeme, platba byla přijata. Vaše rezervace je potvrzena.'];
         if ($surplus > 0) {
@@ -113,13 +118,8 @@ function record_payment(int $id, int $received): string
             . ($surplus > 0 ? ' Přeplatek ' . format_czk($surplus) . ' k vrácení.' : '')
             . send_ticket_for($id, $intro, 'Vstupenka');
     }
-    if ($r['status'] === 'pending') {
-        $mailed = send_partial_payment_email($r, $received);
-        return "Přijato {$kc}, zbývá doplatit " . format_czk(amount_due($r)) . '.'
-            . ($mailed ? ' Zákazník dostal e-mail.' : '');
-    }
-    $mailed = send_payment_refund_email($r, $received, $reason);
-    return "Přijato {$kc} – " . REFUND_REASONS[$reason] . '. K vrácení na účet plátce: ' . format_czk($refundDue) . '.'
+    $mailed = send_partial_payment_email($r, $received);
+    return "Přijato {$kc}, zbývá doplatit " . format_czk(amount_due($r)) . '.'
         . ($mailed ? ' Zákazník dostal e-mail.' : '');
 }
 

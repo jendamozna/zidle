@@ -117,15 +117,17 @@ function save_invite(int $id, string $name, array $runIds, bool $newToken): ?str
 {
     $pdo = db();
     $runIds = array_values(array_unique(array_filter(array_map('intval', $runIds), static fn ($r) => run_by_id($r) !== null)));
-    $token = $newToken || $id === 0 ? bin2hex(random_bytes(24)) : null;
+    $token = null;
     $pdo->beginTransaction();
     if ($id === 0) {
+        $token = bin2hex(random_bytes(24));
         $pdo->prepare('INSERT INTO scanner_invites (name, token_hash, created_at) VALUES (?, ?, ?)')
             ->execute([$name, token_hash($token), db_time(now_utc())]);
         $id = (int) $pdo->lastInsertId();
     } else {
         $pdo->prepare('UPDATE scanner_invites SET name = ? WHERE id = ?')->execute([$name, $id]);
-        if ($token !== null) {
+        if ($newToken) {
+            $token = bin2hex(random_bytes(24));
             // A new link replaces the old one: devices signed in with the old link are signed out.
             $pdo->prepare('UPDATE scanner_invites SET token_hash = ?, revoked_at = NULL WHERE id = ?')->execute([token_hash($token), $id]);
         }

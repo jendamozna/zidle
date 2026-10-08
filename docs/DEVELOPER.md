@@ -28,6 +28,7 @@ https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV.
 18. [HTTP API](#18-http-api)
 19. [Formats](#19-formats)
 20. [Conventions](#20-conventions)
+21. [Tests and CI](#21-tests-and-ci)
 
 ---
 
@@ -58,11 +59,12 @@ api/
   organizer.php        scanner API (access, verify, VIP)
   cron.php             scheduled jobs (CLI only); cron-expire.php = alias
   config.php           defaults (+ config.local.php / env overrides)
-  lib/bootstrap.php    config(), db(), JSON helpers, expire_reservations(), QR payment, reservation_payload()
+  lib/bootstrap.php    config(), db(), db_query(), JSON helpers (json_response/json_error end the request), expire_reservations(), QR payment, reservation_payload()
   lib/layout.php       SECTIONS (must match src/data/layout.js), total_capacity(), is_valid_seat_id(), compare_seat_ids()
   lib/settings.php     runs: loading, times, storno rules, check-in window, run_public()
   lib/cancellation.php cancellation_terms(), cancel_seats(), notices, reminders, GDPR purge
   lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
+  lib/vip.php          add_vip_guest() (VIP guest with seats)
   lib/ticket.php       ticket QR code (sign/parse), qr_png(), ticket e-mail, seat_labels()
   lib/antispam.php     form token, rate limits, login limits
   lib/altcha.php       invisible ALTCHA: challenge, verification, replay protection
@@ -81,7 +83,14 @@ src/                   customer app
   runs.js, storno.js, plural.js   formatting helpers
 src/scanner/           organizer scanner (ScannerApp, VipView, useQrCamera, ticket.js, api.js)
 docs/DEVELOPER.md      this file
-docs/prehled.html      stakeholder overview (Czech), published as an Artifact
+docs/prehled/          stakeholder overview (Czech, index.html + screenshots), published as an Artifact
+tests/php/run.php      PHP integration tests (needs a *_test database); fixtures.php = shared helpers
+tests/e2e/             Playwright tests (customer, admin, scanner), seed.php, global-setup.js
+tests/consistency.mjs  layout and ticket format identical in PHP and JS
+phpstan.neon           PHPStan config (level 8)
+eslint.config.js       ESLint config (src/ + tests)
+playwright.config.js   Playwright config (starts php -S and vite preview)
+.github/workflows/ci.yml  CI
 ```
 
 ## 3. Setup, build, deployment
@@ -107,6 +116,10 @@ so the apps reach the API at `./api/`. HTTPS is required (camera access).
 `REMOTE_ADDR` (e.g. Apache `mod_remoteip`), otherwise rate limits are shared.
 
 Cron: `*/10 * * * * php /path/to/api/cron.php`.
+
+Checks before a commit (the same as CI, §21): `npm run lint`, `npm run build`,
+`npm run test:consistency`, `api/vendor/bin/phpstan analyse -c phpstan.neon`,
+`DB_NAME=zidle_test php tests/php/run.php`, `npm run test:e2e`.
 
 Upgrading an existing database: run the not yet applied
 `db/migrations/0NN_*.sql` in order. Migration 008 moves existing data into a
@@ -569,3 +582,77 @@ prosím znovu.`
 See `CLAUDE.md`: docs in sync with code, UTC in DB, mobile-first customer
 CSS / desktop-first admin / mobile-only scanner, duplicated layout and
 ticket format kept identical, schema + migration for DB changes, Czech UI.
+
+## 21. Tests and CI
+
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main`
+(older runs of the same ref are cancelled). PHP 8.3, Node 22, MariaDB 10.11
+service (`root`/`root`, database `zidle_test`).
+
+| Job | Steps |
+| --- | --- |
+| **php** | `composer install` (with dev: PHPStan), `composer audit`, `php -l` on `api/` and `tests/` (without vendor), PHPStan, `db/schema.sql` + all migrations applied twice to an empty database (they must stay re-runnable), `php tests/php/run.php` |
+| **frontend** | `npm ci`, `npm audit --omit=dev --audit-level=high`, `npm run lint`, `npm run build`, `npm run test:consistency` |
+| **e2e** (after both) | `composer install --no-dev`, `npm ci`, Playwright Chromium, `npm run test:e2e`; on failure the HTML report and traces are uploaded as artifact `playwright-report` (7 days) |
+
+**PHPStan** (`phpstan.neon`): level 8 over `api/` (without `vendor/`,
+`config.local.php`) and `tests/php/`; `missingType.iterableValue` is ignored
+(database rows and payloads are plain arrays). `db_query()` wraps
+`db()->query()` for fixed SQL so the result is typed `PDOStatement`.
+
+**ESLint** (`eslint.config.js`): `@eslint/js` recommended +
+`eslint-plugin-react-hooks` recommended for `src/` (browser globals,
+capitalised unused variables allowed for JSX); tests and configs with Node +
+browser globals.
+
+**PHP integration tests** (`tests/php/run.php`, no framework: `test()`,
+`same()`, `contains()`; exit code 1 on failure). `tests/php/fixtures.php`
+refuses to run unless `DB_NAME` ends with `_test`, recreates all tables from
+`db/schema.sql` (`reset_database()`: run 1 in 30 days with a 50 % storno rule
+from yesterday, run 2 started an hour ago) and creates reservations directly
+(`reservation()`). Covered: partial payment → paid with surplus refund; SPD
+and payload ask for the missing amount; late payment restoring an expired
+reservation / refunded when seats are taken, after the run, or short;
+expiry refunding a partial payment and a later full payment restoring it;
+payment for cancelled and already paid reservations; invalid amount;
+customer storno fee; admin full refund; cancelling a partly paid pending
+reservation; partial cancellation completing a covered reservation; double
+booking rejected by the primary key; VIP seats (conflict, sorting, freeing
+on delete); GDPR purge keeping contacts while a refund is due; ticket code
+round trip and tamper detection. Locally:
+`DB_NAME=zidle_test MAIL_ENABLED=0 php tests/php/run.php` (values in
+`config.local.php` take precedence over the environment).
+
+**Consistency** (`tests/consistency.mjs`): `SECTIONS` of `layout.js` and
+`layout.php` (ids, order, names, rows, seats per row) are identical, and a
+ticket code made by `ticket_code()` is decoded by `src/scanner/ticket.js`
+(id, VS, count, name, seats).
+
+**Playwright** (`playwright.config.js`, `tests/e2e/`): one worker, project
+*mobile* (Pixel 7, `cs-CZ`, Europe/Prague); admin tests use a 1360 × 900
+desktop viewport. Web servers: `php -S 127.0.0.1:8000 -t .` with `ENV`
+(`DB_NAME=zidle_test`, `ADMIN_PASSWORD=e2e-admin`,
+`ORGANIZER_PASSWORD=e2e-organizer`, test IBAN and ticket secret,
+`MAIL_ENABLED=0`; the process environment overrides them) and `npm run build
+&& vite preview` on 127.0.0.1:4173 (proxies `/api`). `global-setup.js` runs
+`tests/e2e/seed.php` (fresh database: run 1 *Premiéra* in 30 days with a
+pending reservation, run 2 *Dnes* in 20 minutes with a paid ticket and a VIP
+guest on ML-1-1/2) and stores its JSON output in `tests/e2e/.seed.json`.
+Tests:
+
+- `customer.spec.js` – choose *Premiéra*, two seats, form (waits for
+  `FORM_MIN_SECONDS`, real invisible ALTCHA), payment page with QR, 600 Kč
+  and VS, seats taken in `seats.php`, cancel all → *Rezervaci jste zrušili.*
+  and seats free; run picker without horizontal scroll.
+- `admin.spec.js` – record 200 Kč (*zbývá doplatit 400 Kč*, input prefilled
+  400), then the rest → *Zaplaceno*; VIP with two seats picked on the plan →
+  flash, gold seats, taken in `seats.php`.
+- `scanner.spec.js` – password login; the camera is replaced by a canvas
+  stream showing the seeded ticket QR (`getUserMedia` stub) → *Platná
+  vstupenka*, next scan *Už odbaveno*; VIP tab shows the seats, **Vpustit**
+  records the arrival.
+
+Locally `npm run test:e2e` needs PHP, MariaDB with a `zidle_test` database
+and the `DB_*` variables; move `api/config.local.php` aside or make sure it
+does not set keys the tests rely on. `PLAYWRIGHT_CHROMIUM` can point to an
+existing Chromium binary instead of `npx playwright install chromium`.

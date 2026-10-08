@@ -33,7 +33,7 @@ function runs(bool $fresh = false): array
     static $cache = null;
     if ($cache === null || $fresh) {
         $cache = [];
-        foreach (db()->query('SELECT * FROM runs ORDER BY starts_at, id')->fetchAll() as $run) {
+        foreach (db_query('SELECT * FROM runs ORDER BY starts_at, id')->fetchAll() as $run) {
             $run['id'] = (int) $run['id'];
             $raw = $run['storno_rules'];
             $run['storno_rules'] = normalize_storno_rules((array) json_decode($raw, true));

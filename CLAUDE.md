@@ -35,3 +35,8 @@ There are exactly two documents – do not add others:
   `src/scanner/ticket.js` – keep them identical.
 - Database changes: update `db/schema.sql` **and** add a new numbered,
   re-runnable migration in `db/migrations/`.
+- CI (`.github/workflows/ci.yml`) must stay green: before pushing run the
+  checks listed in `docs/DEVELOPER.md` §21 (lint, build, consistency,
+  PHPStan, PHP integration tests, Playwright). Changed money, seat or VIP
+  logic gets a test in `tests/php/run.php`; changed user flows get a
+  Playwright test in `tests/e2e/`.

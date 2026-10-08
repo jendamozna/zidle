@@ -150,6 +150,9 @@ function create_reservation(): void
     }
 
     $r = find_reservation_by_token($token);
+    if ($r === null) {
+        throw new RuntimeException('Reservation just created was not found.');
+    }
     send_payment_email($r);
     json_response(reservation_payload($r), 201);
 }

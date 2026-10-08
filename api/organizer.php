@@ -105,10 +105,11 @@ function require_organizer(): array
 
 function require_run(array $access, int $runId): array
 {
-    if (!scanner_can_use_run($access, $runId)) {
+    $run = run_by_id($runId);
+    if ($run === null || !scanner_can_use_run($access, $runId)) {
         json_error('Na tento termín nemáte přístup.', 403);
     }
-    return run_by_id($runId);
+    return $run;
 }
 
 function scanner_run_public(array $run): array

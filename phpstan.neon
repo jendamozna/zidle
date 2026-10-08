@@ -1,0 +1,14 @@
+# Static analysis of the PHP backend: vendor/bin/phpstan analyse (run from api/ with -c ../phpstan.neon)
+parameters:
+    level: 8
+    paths:
+        - api
+        - tests/php
+    excludePaths:
+        - api/vendor
+        - api/config.local.php
+    bootstrapFiles:
+        - api/vendor/autoload.php
+    ignoreErrors:
+        # Database rows and JSON payloads are plain arrays throughout the code.
+        - identifier: missingType.iterableValue

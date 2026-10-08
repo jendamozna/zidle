@@ -113,7 +113,7 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['run-save', 'run
             }
             $rules[] = ['from' => iso_utc(prague_time($from)), 'percent' => (int) $percent]; // stored in UTC
         }
-        if ($errors) {
+        if ($errors || $starts === null) {
             $_SESSION['flash'] = implode(' ', $errors);
         } else {
             $rulesJson = $locked ? json_encode($existing['storno_rules']) : json_encode(normalize_storno_rules($rules), JSON_UNESCAPED_UNICODE);
@@ -137,7 +137,7 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['vip-add', 'vip-
     if ($action === 'vip-add') {
         $flash = add_vip_guest(
             (int) ($_POST['run_id'] ?? 0),
-            trim(preg_replace('/\s+/u', ' ', (string) ($_POST['name'] ?? ''))),
+            trim(preg_replace('/\s+/u', ' ', (string) ($_POST['name'] ?? '')) ?? ''),
             array_values(array_unique(array_map('strval', (array) ($_POST['seats'] ?? [])))),
             trim((string) ($_POST['note'] ?? ''))
         );
@@ -190,44 +190,6 @@ if (!empty($_SESSION['admin']) && $csrfOk && in_array($action, ['payment', 'canc
     exit;
 }
 $flash = $_SESSION['flash'] ?? null;
-
-/**
- * Adds a VIP guest holding the given seats of the run (free of charge). The seats
- * show as taken on the public map; fails when one of them is no longer free.
- */
-function add_vip_guest(int $runId, string $name, array $seats, string $note): string
-{
-    if ($name === '' || mb_strlen($name) > 200 || mb_strlen($note) > 255 || !run_by_id($runId)) {
-        return 'Vyplňte termín a jméno.';
-    }
-    if (!$seats || count($seats) > 50 || array_filter($seats, static fn ($s) => !is_valid_seat_id($s))) {
-        return 'Vyberte na plánku 1 až 50 míst.';
-    }
-    usort($seats, 'compare_seat_ids');
-    $pdo = db();
-    $pdo->beginTransaction();
-    try {
-        $placeholders = implode(',', array_fill(0, count($seats), '?'));
-        $taken = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE run_id = ? AND seat_id IN ($placeholders) FOR UPDATE");
-        $taken->execute([$runId, ...$seats]);
-        if ($conflict = $taken->fetchAll(PDO::FETCH_COLUMN)) {
-            $pdo->rollBack();
-            return 'Místa ' . implode(', ', $conflict) . ' už jsou obsazená. Vyberte jiná.';
-        }
-        $pdo->prepare('INSERT INTO vip_guests (run_id, name, section, seats, persons, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            ->execute([$runId, $name, explode('-', $seats[0])[0], implode(',', $seats), count($seats), $note, db_time(now_utc())]);
-        $vipId = (int) $pdo->lastInsertId();
-        $insert = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, vip_guest_id) VALUES (?, ?, ?)');
-        foreach ($seats as $seat) {
-            $insert->execute([$runId, $seat, $vipId]);
-        }
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
-    }
-    return "VIP host {$name} přidán (" . count($seats) . ' ' . (count($seats) === 1 ? 'místo' : (count($seats) < 5 ? 'místa' : 'míst')) . ').';
-}
 
 /** True once any reservation (in any status) exists for the run. */
 function run_has_reservations(int $runId): bool
@@ -375,7 +337,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
-    $totals = db()->query("SELECT status, COUNT(*) n, SUM(seat_count) seats, SUM(amount) amount FROM reservations GROUP BY status")
+    $totals = db_query("SELECT status, COUNT(*) n, SUM(seat_count) seats, SUM(amount) amount FROM reservations GROUP BY status")
         ->fetchAll(PDO::FETCH_UNIQUE);
     $prague = new DateTimeZone('Europe/Prague');
     $fmt = static fn ($t) => $t ? (new DateTimeImmutable($t, new DateTimeZone('UTC')))->setTimezone($prague)->format('j. n. Y H:i') : '';
@@ -401,7 +363,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   <?php if ($view === 'scanners'):
       $newInvite = $_SESSION['invite_link'] ?? null;
       unset($_SESSION['invite_link']);
-      $invites = db()->query('SELECT * FROM scanner_invites ORDER BY revoked_at IS NOT NULL, name')->fetchAll();
+      $invites = db_query('SELECT * FROM scanner_invites ORDER BY revoked_at IS NOT NULL, name')->fetchAll();
       $runChecks = static function (array $selected) use ($h): string {
           $out = '';
           foreach (runs() as $run) {
@@ -627,7 +589,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <?php foreach (['pending', 'paid'] as $s): $t = $totals[$s] ?? ['n' => 0, 'seats' => 0, 'amount' => 0]; ?>
       <div class="card"><?= $h($statusLabels[$s]) ?><strong><?= (int) $t['seats'] ?> míst</strong><?= $kc($t['amount']) ?> · <?= (int) $t['n'] ?> rez.</div>
     <?php endforeach ?>
-    <?php $refunds = db()->query('SELECT COUNT(*) n, COALESCE(SUM(refund_amount - refunded_amount), 0) amount FROM reservations WHERE refund_amount > refunded_amount')->fetch(); ?>
+    <?php $refunds = db_query('SELECT COUNT(*) n, COALESCE(SUM(refund_amount - refunded_amount), 0) amount FROM reservations WHERE refund_amount > refunded_amount')->fetch(); ?>
     <?php if ($refunds['n'] > 0): ?>
       <a class="card attention" href="admin.php?status=refund">K vrácení<strong><?= $kc($refunds['amount']) ?></strong><?= (int) $refunds['n'] ?> rez.</a>
     <?php endif ?>
@@ -638,7 +600,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <div class="flash warn">Osobní údaje se mažou <?= $h(format_prague(db_time($deleteAt))) ?>. U <?= (int) $refunds['n'] ?> rez. zbývá vrátit peníze – jejich jméno a e-mail se smažou až po označení „Vráceno“.</div>
   <?php endif ?>
 
-  <?php $perRun = db()->query("SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id")->fetchAll(PDO::FETCH_KEY_PAIR); ?>
+  <?php $perRun = db_query("SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id")->fetchAll(PDO::FETCH_KEY_PAIR); ?>
   <div class="stats">
     <?php foreach (runs() as $run): $held = (int) ($perRun[$run['id']] ?? 0); ?>
       <a class="card <?= $runFilter === $run['id'] ? 'selected' : '' ?>" href="admin.php?run=<?= (int) $run['id'] ?>"><?= $h(run_label($run)) ?><strong><?= $held ?> / <?= total_capacity() ?></strong><?= total_capacity() - $held ?> volných</a>

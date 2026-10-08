@@ -13,7 +13,7 @@ run_api(function (): void {
         cleanup_rate_limits();
     }
 
-    $held = db()->query('SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id')->fetchAll(PDO::FETCH_KEY_PAIR);
+    $held = db_query('SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id')->fetchAll(PDO::FETCH_KEY_PAIR);
     $runs = array_values(array_map(
         static fn ($run) => run_public($run, total_capacity() - (int) ($held[$run['id']] ?? 0)),
         runs()

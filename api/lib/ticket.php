@@ -35,7 +35,7 @@ function ticket_signature(string $payload): string
 function ticket_name(array $r): string
 {
     $name = trim($r['first_name'] . ' ' . $r['last_name']);
-    return trim(preg_replace('/[|\p{Cc}]+/u', ' ', $name));
+    return trim(preg_replace('/[|\p{Cc}]+/u', ' ', $name) ?? '');
 }
 
 function ticket_code(array $r): string

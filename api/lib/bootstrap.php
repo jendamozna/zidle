@@ -8,16 +8,27 @@ require_once __DIR__ . '/settings.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/cancellation.php';
 require_once __DIR__ . '/payments.php';
+require_once __DIR__ . '/vip.php';
 require_once __DIR__ . '/scanner_access.php';
 require_once __DIR__ . '/altcha.php';
 
-function config(string $key)
+function config(string $key): mixed
 {
     static $config = null;
     if ($config === null) {
         $config = require __DIR__ . '/../config.php';
     }
     return $config[$key] ?? null;
+}
+
+/** db()->query() for fixed SQL; PDO throws on errors, this only narrows the type. */
+function db_query(string $sql): PDOStatement
+{
+    $stmt = db()->query($sql);
+    if ($stmt === false) {
+        throw new RuntimeException('Query failed: ' . $sql);
+    }
+    return $stmt;
 }
 
 function db(): PDO
@@ -75,7 +86,7 @@ function send_cors(): void
     }
 }
 
-function json_response($data, int $status = 200): void
+function json_response(mixed $data, int $status = 200): never
 {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
@@ -84,7 +95,7 @@ function json_response($data, int $status = 200): void
     exit;
 }
 
-function json_error(string $message, int $status, array $extra = []): void
+function json_error(string $message, int $status, array $extra = []): never
 {
     json_response(['error' => $message] + $extra, $status);
 }
@@ -149,8 +160,9 @@ function expire_reservations(): int
 
 function strip_diacritics(string $text): string
 {
-    $converted = class_exists('Transliterator')
-        ? Transliterator::create('Any-Latin; Latin-ASCII')->transliterate($text)
+    $transliterator = class_exists('Transliterator') ? Transliterator::create('Any-Latin; Latin-ASCII') : null;
+    $converted = $transliterator !== null
+        ? $transliterator->transliterate($text)
         : iconv('UTF-8', 'ASCII//TRANSLIT', $text);
     return (string) $converted;
 }
@@ -158,14 +170,14 @@ function strip_diacritics(string $text): string
 /** Specific symbol from config, digits only (max 10), '' when not set. */
 function specific_symbol(): string
 {
-    return substr(preg_replace('/\D/', '', (string) config('PAYMENT_SPECIFIC_SYMBOL')), 0, 10);
+    return substr(preg_replace('/\D/', '', (string) config('PAYMENT_SPECIFIC_SYMBOL')) ?? '', 0, 10);
 }
 
 /** Czech QR payment string (Short Payment Descriptor, "QR Platba"). */
 function spd_string(array $r): string
 {
     $clean = static fn (string $v, int $max) =>
-        substr(trim(preg_replace('/[^A-Za-z0-9 .,\/+\-:]/', '', strip_diacritics($v))), 0, $max);
+        substr(trim(preg_replace('/[^A-Za-z0-9 .,\/+\-:]/', '', strip_diacritics($v)) ?? ''), 0, $max);
 
     $acc = strtoupper(str_replace(' ', '', (string) config('BANK_IBAN')));
     $bic = trim((string) config('BANK_BIC'));
