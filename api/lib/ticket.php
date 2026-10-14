@@ -146,13 +146,96 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         . '</div></body></html>';
 
     $subject = ($subject ?? ($intro ? 'Nová vstupenka' : 'Vstupenka')) . ' – Moje židle 2026';
+    $ics = ticket_ics($r);
     $ok = deliver_mail($r['email'], $subject, $text, $html, [
         ['cid' => 'ticket-qr', 'data' => $png, 'name' => 'vstupenka.png', 'type' => 'image/png'],
+    ], $ics === null ? [] : [
+        ['data' => $ics, 'name' => 'udalost.ics', 'type' => 'text/calendar; charset=UTF-8; method=REQUEST'],
     ]);
     if (!$ok) {
         error_log('[zidle] Failed to send ticket e-mail for reservation ' . $r['id']);
     }
     return $ok;
+}
+
+/**
+ * Calendar invitation (iCalendar, METHOD:REQUEST) for the reservation's run, attached
+ * to the ticket e-mail as udalost.ics so Gmail/Outlook show the event card.
+ * UID is stable per reservation and SEQUENCE grows, so a new ticket updates the event.
+ * Null when the run no longer exists.
+ */
+function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
+{
+    $run = run_by_id((int) $r['run_id']);
+    if ($run === null) {
+        return null;
+    }
+    $now ??= now_utc();
+    $utc = static fn (DateTimeImmutable $t) => $t->setTimezone(new DateTimeZone('UTC'))->format('Ymd\THis\Z');
+    $start = run_starts($run);
+    $end = $start->modify('+' . max(1, (int) config('EVENT_DURATION_MINUTES')) . ' minutes');
+    $host = parse_url((string) config('PUBLIC_URL'), PHP_URL_HOST) ?: (explode('@', mail_sender())[1] ?? '') ?: 'moje-zidle';
+    $name = trim($r['first_name'] . ' ' . $r['last_name']);
+    $seats = seat_labels($r['seats']);
+    $link = reservation_link($r);
+    $description = implode("\n", [
+        'Místa: ' . implode('; ', $seats),
+        'Variabilní symbol: ' . $r['variable_symbol'],
+        'Při vstupu prosím ukažte QR kód z e-mailu se vstupenkou.',
+        ...($link ? ['Rezervace: ' . $link] : []),
+        ...(contact_line() !== '' ? [contact_line()] : []),
+    ]);
+    $location = trim((string) config('EVENT_LOCATION'));
+    $lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Moje zidle 2026//Rezervace//CS',
+        'CALSCALE:GREGORIAN',
+        'METHOD:REQUEST',
+        'BEGIN:VEVENT',
+        'UID:zidle-' . (int) $r['id'] . '@' . $host,
+        'SEQUENCE:' . $now->getTimestamp(),
+        'DTSTAMP:' . $utc($now),
+        'DTSTART:' . $utc($start),
+        'DTEND:' . $utc($end),
+        'SUMMARY:' . ics_text('Moje židle 2026' . ($run['label'] !== '' ? ' · ' . $run['label'] : '') . ' – ' . implode('; ', $seats)),
+        'DESCRIPTION:' . ics_text($description),
+        ...($location !== '' ? ['LOCATION:' . ics_text($location)] : []),
+        'ORGANIZER;CN=' . ics_param(MAIL_FROM_NAME) . ':mailto:' . mail_sender(),
+        'ATTENDEE;CN=' . ics_param($name) . ';ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:' . $r['email'],
+        'STATUS:CONFIRMED',
+        'TRANSP:OPAQUE',
+        'END:VEVENT',
+        'END:VCALENDAR',
+    ];
+    return implode("\r\n", array_map('ics_fold', $lines)) . "\r\n";
+}
+
+/** iCalendar TEXT value: escapes \\ ; , and newlines. */
+function ics_text(string $value): string
+{
+    return str_replace(["\\", ';', ',', "\r\n", "\n"], ['\\\\', '\\;', '\\,', '\\n', '\\n'], $value);
+}
+
+/** iCalendar parameter value (CN=…): quoted, without characters it can't hold. */
+function ics_param(string $value): string
+{
+    return '"' . str_replace(['"', "\r", "\n"], '', $value) . '"';
+}
+
+/** Folds a content line to at most 75 octets without splitting UTF-8 characters. */
+function ics_fold(string $line): string
+{
+    $out = '';
+    $current = '';
+    foreach (mb_str_split($line) as $char) {
+        if (strlen($current) + strlen($char) > ($out === '' ? 75 : 74)) {
+            $out .= ($out === '' ? '' : "\r\n ") . $current;
+            $current = '';
+        }
+        $current .= $char;
+    }
+    return $out === '' ? $current : $out . "\r\n " . $current;
 }
 
 /** "ML-1-1,ML-1-2,BC-2-5" → ["Levá hlavní: ř. 1 m. 1, 2", "Balkon střed: ř. 2 m. 5"] */

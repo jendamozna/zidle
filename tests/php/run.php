@@ -238,6 +238,27 @@ test('ticket code round-trips and rejects tampering', function (): void {
     same(null, parse_ticket_code(str_replace('BC-1-2', 'BC-1-3', $code)), 'tampered');
 });
 
+test('the ticket calendar event covers the run with folded, escaped lines', function (): void {
+    $r = row(reservation(['BC-2-1', 'BC-2-2'], 'paid', 1, 'Nováková, Jana'));
+    $now = now_utc();
+    $ics = (string) ticket_ics($r, $now);
+    $start = run_starts(runs()[1]);
+    $unfolded = str_replace("\r\n ", '', $ics);
+    contains('METHOD:REQUEST', $ics, 'method');
+    contains('DTSTART:' . $start->format('Ymd\THis\Z'), $ics, 'start');
+    contains('DTEND:' . $start->modify('+' . (int) config('EVENT_DURATION_MINUTES') . ' minutes')->format('Ymd\THis\Z'), $ics, 'end');
+    contains('UID:zidle-' . $r['id'] . '@', $ics, 'uid');
+    contains('SEQUENCE:' . $now->getTimestamp(), $ics, 'sequence');
+    contains('ATTENDEE;CN="Test Nováková, Jana";', $unfolded, 'attendee');
+    contains('SUMMARY:Moje židle 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels($r['seats']))), $unfolded, 'summary');
+    contains('Variabilní symbol: ' . $r['variable_symbol'], $unfolded, 'description');
+    same(true, str_ends_with($ics, "END:VCALENDAR\r\n"), 'CRLF');
+    foreach (explode("\r\n", $ics) as $line) {
+        same(true, strlen($line) <= 75 && mb_check_encoding($line, 'UTF-8'), "line length: {$line}");
+    }
+    same(null, ticket_ics(['run_id' => 999] + $r), 'missing run');
+});
+
 // ------------------------------------------------------------------- layout
 
 test('the layout for the apps lists all sections in order with their shape', function (): void {

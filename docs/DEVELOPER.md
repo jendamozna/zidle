@@ -68,7 +68,7 @@ api/
   lib/vip.php          add_vip_guest() (VIP guest with seats), vip_list() (scanner)
   lib/offline.php      scanning without a connection: scanner_snapshot(), apply_offline_scans(), conflicts
   lib/admin_users.php  admin accounts: admin_login(), admin_invite(), admin_accept_invite(), admin_set_disabled()
-  lib/ticket.php       ticket QR code (sign/parse), qr_png(), ticket e-mail, seat_labels()
+  lib/ticket.php       ticket QR code (sign/parse), qr_png(), ticket e-mail + calendar event (ticket_ics()), seat_labels()
   lib/antispam.php     form token, rate limits, login limits
   lib/altcha.php       invisible ALTCHA: challenge, verification, replay protection
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
@@ -151,6 +151,8 @@ environment variables of the same name override them (local file wins).
 | `REFUND_DAYS` | 14 | refund promise in e-mails |
 | `DATA_RETENTION_DAYS` | 30 | personal data purged this long after the last run start |
 | `MAX_SEATS_PER_RESERVATION` | 20 | also enforced in the UI |
+| `EVENT_LOCATION` | `''` | `LOCATION` of the calendar event in the ticket e-mail (`udalost.ics`); `''` = omitted |
+| `EVENT_DURATION_MINUTES` | 120 | calendar event end = run start + this (min. 1) |
 | `RESERVATIONS_PER_IP_PER_HOUR` | 5 | used when ALTCHA is disabled |
 | `RESERVATIONS_PER_IP_PER_HOUR_ALTCHA` | 30 | used when ALTCHA is enabled (each reservation costs proof-of-work; lets several people book from one shared network) |
 | `ALTCHA_CHALLENGES_PER_IP_PER_HOUR` | 300 | challenges issued by `altcha.php` per IP |
@@ -412,6 +414,21 @@ platba přišla.“*
   JS mirror: `src/scanner/ticket.js` (display/offline only).
 - Ticket e-mail: inline PNG (`qr_png()`), run, name, seats, VS; resend in
   admin. Paid reservation page shows the same QR.
+- **Calendar event** (`ticket_ics()`): every ticket e-mail carries the
+  attachment `udalost.ics` (`text/calendar; charset=UTF-8; method=REQUEST`),
+  so Gmail/Outlook show an event card with *Add to calendar*. iCalendar 2.0,
+  `METHOD:REQUEST`, CRLF, lines folded at 75 octets (UTF-8 safe), TEXT
+  values escaped (`ics_text()`). One `VEVENT`: `UID:zidle-<reservation
+  id>@<host of PUBLIC_URL, else of the sender, else moje-zidle>` (stable, so a
+  new ticket after a partial cancellation updates the same event),
+  `SEQUENCE` = current Unix time, `DTSTART` = run start, `DTEND` = start +
+  `EVENT_DURATION_MINUTES` (both UTC `…Z`), `SUMMARY` *„Moje židle 2026[ · <run
+  label>] – <seat labels>“*, `DESCRIPTION` *„Místa: …“*, *„Variabilní symbol:
+  …“*, *„Při vstupu prosím ukažte QR kód z e-mailu se vstupenkou.“*,
+  *„Rezervace: <link>“* (with `PUBLIC_URL`) and the contact line,
+  `LOCATION` = `EVENT_LOCATION` (omitted when empty), `ORGANIZER;CN="Moje
+  židle 2026":mailto:<sender>`, `ATTENDEE;CN="<name>";ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:<customer>`,
+  `STATUS:CONFIRMED`. No attachment when the run no longer exists.
 - **Verify** (`organizer.php` `verify {code, runId, confirmOutside}`): access
   to run required (403 `Na tento termín nemáte přístup.`); load reservation
   by id + VS (legacy: VS) `FOR UPDATE`; result:
@@ -630,16 +647,16 @@ Tabs:
 ## 15. E-mails
 
 Only when `MAIL_ENABLED`. All mail goes through `deliver_mail(to, subject,
-text, html?, inline[])` (PHPMailer, UTF-8): with `SMTP_HOST` via SMTP
+text, html?, inline[], attachments[])` (PHPMailer, UTF-8; attachments base64): with `SMTP_HOST` via SMTP
 (`SMTP_PORT`, `SMTP_AUTH`, login `SMTP_USER` or `SMTP_SENDER` / `SMTP_PASSWORD`; port 465 =
 SMTPS, otherwise opportunistic STARTTLS; connect timeout and per-reply limit
-15 s), otherwise PHP `mail()` from `MAIL_FROM`. Sender name *Moje židle 2026*;
+15 s), otherwise PHP `mail()` from `MAIL_FROM` (`mail_sender()`). Sender name *Moje židle 2026*;
 `Reply-To` = `CONTACT_EMAIL` when set. Every e-mail ends with *„Kontakt: <e-mail> ·
 <phone>“* (`contact_line()`) when a contact is configured.
 Failures return false and are logged as `[zidle] Mail to … failed: <reason>`;
 mail is sent synchronously within the request. Texts are plain
 (`send_customer_email()`) except the ticket (HTML + text alternative with the
-QR as inline image `cid:ticket-qr`). All contain `Termín: <run>`.
+QR as inline image `cid:ticket-qr` and the calendar event `udalost.ics`, §11). All contain `Termín: <run>`.
 
 | Subject | Trigger |
 | --- | --- |
@@ -752,7 +769,8 @@ customer storno fee; admin full refund; cancelling a partly paid pending
 reservation; partial cancellation completing a covered reservation; double
 booking rejected by the primary key; VIP seats (conflict, sorting, freeing
 on delete); GDPR purge keeping contacts while a refund is due; ticket code
-round trip and tamper detection; admin accounts (invite, short/mismatched
+round trip and tamper detection; ticket calendar event (run start/end,
+UID, SEQUENCE, escaping, line folding, missing run); admin accounts (invite, short/mismatched
 password, accept, used link, case-insensitive login, wrong password,
 duplicate and invalid e-mail, new link = new password while the old one
 works until then, expired link, disabled account cannot sign in and loses

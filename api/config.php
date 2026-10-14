@@ -17,6 +17,10 @@ return (static function (): array {
         'DATA_RETENTION_DAYS' => 30,     // personal data is deleted this many days after the start of the last run
         'MAX_SEATS_PER_RESERVATION' => 20,
 
+        // Calendar event (udalost.ics) attached to the ticket e-mail
+        'EVENT_LOCATION' => '',          // place shown in the calendar, e.g. "Kostel sv. Václava, Náměstí 1, Praha"; '' = none
+        'EVENT_DURATION_MINUTES' => 120, // end of the calendar event = run start + this
+
         // Spam / bot protection
         'RESERVATIONS_PER_IP_PER_HOUR' => 5,          // without ALTCHA
         'RESERVATIONS_PER_IP_PER_HOUR_ALTCHA' => 30,  // with ALTCHA (each reservation costs proof-of-work); shared networks
