@@ -10,10 +10,11 @@ const MAIL_FROM_NAME = 'Moje židle 2026';
 
 /**
  * Sends one e-mail. $html is optional (multipart/alternative with $text);
- * $inline are embedded images: [['cid' => 'ticket-qr', 'data' => <binary>, 'name' => 'x.png', 'type' => 'image/png']].
+ * $inline are embedded images: [['cid' => 'ticket-qr', 'data' => <binary>, 'name' => 'x.png', 'type' => 'image/png']];
+ * $attachments are files: [['data' => <binary>, 'name' => 'udalost.ics', 'type' => 'text/calendar; method=REQUEST']].
  * Returns false (and logs the reason) when the message could not be handed over.
  */
-function deliver_mail(string $to, string $subject, string $text, ?string $html = null, array $inline = []): bool
+function deliver_mail(string $to, string $subject, string $text, ?string $html = null, array $inline = [], array $attachments = []): bool
 {
     require_once __DIR__ . '/../vendor/autoload.php';
     $mail = new PHPMailer(true);
@@ -35,12 +36,10 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
             // Never let a slow or silent SMTP server block a request for long
             // (PHPMailer otherwise waits up to 300 s for each reply).
             $mail->getSMTPInstance()->Timelimit = 15;
-            $from = (string) config('SMTP_SENDER');
         } else {
             $mail->isMail();
-            $from = (string) config('MAIL_FROM');
         }
-        $mail->setFrom($from, MAIL_FROM_NAME);
+        $mail->setFrom(mail_sender(), MAIL_FROM_NAME);
         if (filter_var((string) config('CONTACT_EMAIL'), FILTER_VALIDATE_EMAIL)) {
             $mail->addReplyTo((string) config('CONTACT_EMAIL'), MAIL_FROM_NAME);
         }
@@ -56,11 +55,20 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
         foreach ($inline as $file) {
             $mail->addStringEmbeddedImage($file['data'], $file['cid'], $file['name'], PHPMailer::ENCODING_BASE64, $file['type']);
         }
+        foreach ($attachments as $file) {
+            $mail->addStringAttachment($file['data'], $file['name'], PHPMailer::ENCODING_BASE64, $file['type']);
+        }
         return $mail->send();
     } catch (MailerException $e) {
         error_log('[zidle] Mail to ' . $to . ' failed: ' . $mail->ErrorInfo);
         return false;
     }
+}
+
+/** Sender address (From): SMTP_SENDER with SMTP, otherwise MAIL_FROM. */
+function mail_sender(): string
+{
+    return (string) config(trim((string) config('SMTP_HOST')) !== '' ? 'SMTP_SENDER' : 'MAIL_FROM');
 }
 
 function mail_enabled(): bool
