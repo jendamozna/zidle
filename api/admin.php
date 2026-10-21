@@ -754,7 +754,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <div class="card table">
     <table>
-      <thead><tr><th>E-mail (login)</th><th>Role</th><th>Pozvánka</th><th>Pozval(a)</th><th>Naposledy přihlášen(a)</th><th></th></tr></thead>
+      <thead><tr><th>E-mail (login)</th><th>Role</th><th>Pozvánka</th><th>Naposledy přihlášen(a)</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($users as $u):
           $pending = $u['password_hash'] === null;
@@ -785,8 +785,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
               </form>
             </details>
           </td>
-          <td><span class="badge <?= $badge ?>"><?= $h($label) ?></span></td>
-          <td><?= $h($u['invited_by']) ?><br><small><?= $h($fmt($u['created_at'])) ?></small></td>
+          <td><span class="badge <?= $badge ?>"><?= $h($label) ?></span>
+            <br><small><?= $u['invited_by'] === 'deploy' ? 'první správce (deploy)' : 'pozval(a) ' . $h($u['invited_by']) ?>, <?= $h($fmt($u['created_at'])) ?></small></td>
           <td><?= $h($fmt($u['last_login_at'])) ?: '–' ?></td>
           <td>
             <div class="actions">

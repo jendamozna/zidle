@@ -859,8 +859,9 @@ Tabs:
   run checkboxes + **Uložit** (`user-roles` → `admin_set_roles()`: at least one
   role, *„Svou vlastní roli Správce nelze odebrat.“*; on success
   `save_user_runs()` and *„Role a termíny účtu X uloženy.“*),
-  invitation state *Přijata <time>* / *Nepřijata (platí do …)* / *Nepřijata –
-  vypršela* / *Účet vypnut*, invited by + created, last sign-in. Actions:
+  column *Pozvánka*: state *Přijata <time>* / *Nepřijata (platí do …)* /
+  *Nepřijata – vypršela* / *Účet vypnut* and below *pozval(a) <e-mail>, <created>*
+  (*první správce (deploy), …* for the deployed one), last sign-in. Actions:
   **Poslat znovu** (`user-link`, only not accepted: new token + e-mail, the
   previous link stops working), **Vypnout** (`user-disable`, not yourself:
   *„Svůj vlastní účet nelze vypnout.“*; also clears open links; *„Účet X
