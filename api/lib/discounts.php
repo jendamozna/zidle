@@ -94,7 +94,7 @@ function send_discount_code_email(int $id): bool
         'Platí na libovolný termín a lze ho použít jednou. Z rezervace se odečte cena jednoho místa'
             . ' (nejdražšího – nejdřív dospělého, pak dětského).',
         '',
-        'Vstupenky na TZG 2026',
+        'Koncert TZG 2026',
         ...(contact_line() !== '' ? [contact_line()] : []),
     ]);
     $ok = deliver_mail($c['email'], mail_subject('Slevový kód'), $body);

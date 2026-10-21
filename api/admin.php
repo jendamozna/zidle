@@ -312,7 +312,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Správa rezervací – Vstupenky na TZG 2026</title>
+<title>Správa rezervací – Koncert TZG 2026</title>
 <style>
   /* Admin is desktop-first (accountant at a computer); narrow screens get only
      small adjustments at the end, wide tables scroll horizontally. */

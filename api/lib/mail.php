@@ -6,9 +6,9 @@ declare(strict_types=1);
 use PHPMailer\PHPMailer\Exception as MailerException;
 use PHPMailer\PHPMailer\PHPMailer;
 
-const MAIL_FROM_NAME = 'Vstupenky na TZG 2026';
+const MAIL_FROM_NAME = 'Koncert TZG 2026';
 
-/** "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Vstupenky na TZG 2026"). */
+/** "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Koncert TZG 2026"). */
 function mail_subject(string $subject): string
 {
     return 'TZG 2026: ' . $subject;
@@ -149,7 +149,7 @@ function send_customer_email(array $r, string $subject, array $lines): bool
     $body = implode("\n", array_merge(
         ["Dobrý den, {$r['first_name']} {$r['last_name']},", ''],
         $lines,
-        ['', 'Vstupenky na TZG 2026'],
+        ['', 'Koncert TZG 2026'],
         contact_line() !== '' ? [contact_line()] : []
     ));
     $ok = deliver_mail($r['email'], mail_subject($subject), $body);

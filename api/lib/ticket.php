@@ -145,7 +145,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
     $html = '<!doctype html><html><body style="margin:0;background:#f5f1ea;font-family:Arial,sans-serif;color:#2b2620">'
         . '<div style="max-width:480px;margin:0 auto;padding:24px 16px">'
         . '<div style="background:#fffdf9;border-radius:18px;padding:24px;text-align:center">'
-        . '<h1 style="margin:0 0 4px;font-family:Georgia,serif;font-size:24px">Vstupenky na TZG <span style="color:#8a5a2b">2026</span></h1>'
+        . '<h1 style="margin:0 0 4px;font-family:Georgia,serif;font-size:24px">Koncert TZG <span style="color:#8a5a2b">2026</span></h1>'
         . '<p style="margin:0 0 20px;color:#6b6256">Vstupenky · VS ' . $h($r['variable_symbol']) . '</p>'
         . ($intro ? '<p style="margin:0 0 20px;text-align:left;line-height:1.5">' . implode('<br>', array_map($h, $intro)) . '</p>' : '')
         . '<p style="margin:0 0 8px;font-size:20px;font-weight:bold;color:#8a5a2b">' . $h(preg_replace('/^Termín: /', '', run_line($r))) . '</p>'
@@ -187,7 +187,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
     $utc = static fn (DateTimeImmutable $t) => $t->setTimezone(new DateTimeZone('UTC'))->format('Ymd\THis\Z');
     $start = run_starts($run);
     $end = $start->modify('+' . max(1, (int) config('EVENT_DURATION_MINUTES')) . ' minutes');
-    $host = parse_url((string) config('PUBLIC_URL'), PHP_URL_HOST) ?: (explode('@', mail_sender())[1] ?? '') ?: 'moje-zidle';
+    $host = parse_url((string) config('PUBLIC_URL'), PHP_URL_HOST) ?: (explode('@', mail_sender())[1] ?? '') ?: 'koncert-tzg';
     $name = trim($r['first_name'] . ' ' . $r['last_name']);
     $seats = seat_labels($r['seats']);
     $link = reservation_link($r);
@@ -202,7 +202,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
     $lines = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
-        'PRODID:-//Vstupenky TZG 2026//Rezervace//CS',
+        'PRODID:-//Koncert TZG 2026//Rezervace//CS',
         'CALSCALE:GREGORIAN',
         'METHOD:REQUEST',
         'BEGIN:VEVENT',

@@ -1,4 +1,4 @@
-# Vstupenky na TZG 2026 – developer documentation
+# Koncert TZG 2026 – developer documentation
 
 Technical reference of the application. It describes the code **1:1** –
 every change of behaviour, texts, limits, API, database or formats must
@@ -183,7 +183,7 @@ name override them (local file wins).
 | `BANK_BIC` | `''` | appended to SPD `ACC` |
 | `BANK_ACCOUNT_DISPLAY` | `''` | Czech account number shown to customers |
 | `PAYMENT_RECIPIENT` | `Farnost` | SPD `RN` |
-| `PAYMENT_MESSAGE` | `Vstupenky TZG 2026` | SPD `MSG` prefix (+ last name) |
+| `PAYMENT_MESSAGE` | `Koncert TZG 2026` | SPD `MSG` prefix (+ last name) |
 | `PAYMENT_SPECIFIC_SYMBOL` | `''` | SPD `X-SS`, digits only, max 10 |
 | `DEPLOY_TOKEN` | `''` | token for `POST api/deploy.php` that creates the first Správce (§12); ≥ 32 characters, `''` = disabled; may be removed afterwards |
 | `SCAN_WINDOW_BEFORE_MINUTES` / `SCAN_WINDOW_AFTER_MINUTES` | 60 / 60 | check-in window around the run start |
@@ -193,7 +193,7 @@ name override them (local file wins).
 | `SMTP_HOST` | `''` | SMTP server; `''` = send with PHP `mail()` |
 | `SMTP_PORT` | 587 | 465 = implicit TLS (SMTPS); other ports use STARTTLS when the server offers it |
 | `SMTP_AUTH` | `true` | log in with `SMTP_USER` (or `SMTP_SENDER`) / `SMTP_PASSWORD` |
-| `SMTP_SENDER` | `''` | sender address (`From`, name *Vstupenky na TZG 2026*) |
+| `SMTP_SENDER` | `''` | sender address (`From`, name *Koncert TZG 2026*) |
 | `SMTP_USER` | `''` | SMTP login when it differs from the sender (e.g. `apikey`); `''` = `SMTP_SENDER` |
 | `SMTP_PASSWORD` | `''` | SMTP password |
 | `CONTACT_EMAIL` | `''` | organizers' contact: website footer, last line of every e-mail, `Reply-To` of e-mails |
@@ -550,7 +550,7 @@ and the tickets handed out; each seat is checked in separately.
   *„Rozstříhejte podle čárkované čáry. Každá vstupenka platí pro jedno místo –
   při vstupu se načte její QR kód.“*, then the current seats in seat order,
   `TICKETS_PER_PAGE` = 4 per page, each 60 mm high with a dashed cut line:
-  QR, *Vstupenky na TZG 2026*, run, section, *řada / místo*, kind, the name on
+  QR, *Koncert TZG 2026*, run, section, *řada / místo*, kind, the name on
   the ticket (`ticket_holder()`), *„VS … · vstupenka n z N“*. `GET tickets.php?token=` downloads it
   (`vstupenky-<VS>.pdf`) for paid reservations, else 404 *„Vstupenky nejsou
   k dispozici – rezervace není zaplacená.“*
@@ -559,7 +559,7 @@ and the tickets handed out; each seat is checked in separately.
   so Gmail/Outlook show an event card with *Add to calendar*. iCalendar 2.0,
   `METHOD:REQUEST`, CRLF, lines folded at 75 octets (UTF-8 safe), TEXT
   values escaped (`ics_text()`). One `VEVENT`: `UID:zidle-<reservation
-  id>@<host of PUBLIC_URL, else of the sender, else moje-zidle>` (stable, so a
+  id>@<host of PUBLIC_URL, else of the sender, else koncert-tzg>` (stable, so a
   new ticket after a partial cancellation updates the same event),
   `SEQUENCE` = current Unix time, `DTSTART` = run start, `DTEND` = start +
   `EVENT_DURATION_MINUTES` (both UTC `…Z`), `SUMMARY` *„TZG 2026[ · <run
@@ -567,8 +567,8 @@ and the tickets handed out; each seat is checked in separately.
   …“*, *„Při vstupu prosím ukažte QR kódy vstupenek z e-mailu (1 QR kód = 1
   místo).“*,
   *„Rezervace: <link>“* (with `PUBLIC_URL`) and the contact line,
-  `LOCATION` = `EVENT_LOCATION` (omitted when empty), `ORGANIZER;CN="Moje
-  židle 2026":mailto:<sender>`, `ATTENDEE;CN="<name>";ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:<customer>`,
+  `LOCATION` = `EVENT_LOCATION` (omitted when empty), `ORGANIZER;CN="Koncert TZG
+  2026":mailto:<sender>`, `ATTENDEE;CN="<name>";ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:<customer>`,
   `STATUS:CONFIRMED`. No attachment when the run no longer exists.
 - **Verify** (`organizer.php` `verify {code, runId, confirmOutside}` →
   `verify_ticket()` in `lib/checkin.php`): access to run required (403 `Na
@@ -877,7 +877,7 @@ Only when `MAIL_ENABLED`. All mail goes through `deliver_mail(to, subject,
 text, html?, inline[], attachments[])` (PHPMailer, UTF-8; attachments base64): with `SMTP_HOST` via SMTP
 (`SMTP_PORT`, `SMTP_AUTH`, login `SMTP_USER` or `SMTP_SENDER` / `SMTP_PASSWORD`; port 465 =
 SMTPS, otherwise opportunistic STARTTLS; connect timeout and per-reply limit
-15 s), otherwise PHP `mail()` from `MAIL_FROM` (`mail_sender()`). Sender name *Vstupenky na TZG 2026*;
+15 s), otherwise PHP `mail()` from `MAIL_FROM` (`mail_sender()`). Sender name *Koncert TZG 2026*;
 `Reply-To` = `CONTACT_EMAIL` when set. Every e-mail ends with *„Kontakt: <e-mail> ·
 <phone>“* (`contact_line()`) when a contact is configured.
 Failures return false and are logged as `[zidle] Mail to … failed: <reason>`;
@@ -887,12 +887,12 @@ QR per seat as inline images `cid:ticket-qr-<n>`, `vstupenky.pdf` and the
 calendar event `udalost.ics`, §11). All reservation e-mails contain `Termín: <run>`.
 
 Subjects are `mail_subject()` = *„TZG 2026: <subject>“* (the sender name already says
-*Vstupenky na TZG 2026*).
+*Koncert TZG 2026*).
 
 | Subject | Trigger |
 | --- | --- |
 | Rezervace míst | reservation created (payment details, link if `PUBLIC_URL`) |
-| Pozvánka | user invited or invitation sent again (`send_admin_invite_email()`: *„Dobrý den,“*, *„<inviter e-mail> Vás zve do systému Vstupenky na TZG 2026 – role: <roles>.“*, *„Účet vznikne, až si na tomto odkazu vytvoříte heslo (platí 7 dní):“* + link, *„Přihlašovací jméno je Váš e-mail: …“*) |
+| Pozvánka | user invited or invitation sent again (`send_admin_invite_email()`: *„Dobrý den,“*, *„<inviter e-mail> Vás zve do systému Koncert TZG 2026 – role: <roles>.“*, *„Účet vznikne, až si na tomto odkazu vytvoříte heslo (platí 7 dní):“* + link, *„Přihlašovací jméno je Váš e-mail: …“*) |
 | Nové heslo | forgotten password requested for an active account (`request_password_reset()`: *„někdo (nejspíš Vy) požádal o nové heslo…“*, link valid 60 minut, *„Pokud jste o nové heslo nežádali, e-mail ignorujte – dosavadní heslo platí dál.“*) |
 | Připomínka platby | cron: pending, due within 24 h, created ≥ 24 h before due, once |
 | Rezervace zrušena | cron: expired within the last 3 days, once (refund line for money that already arrived; *„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“*) |

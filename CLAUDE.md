@@ -1,4 +1,4 @@
-# Vstupenky na TZG 2026 – project rules
+# Koncert TZG 2026 – project rules
 
 ## Documentation (mandatory)
 

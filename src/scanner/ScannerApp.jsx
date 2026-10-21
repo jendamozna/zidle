@@ -106,7 +106,7 @@ function LoginScreen({ onLoggedIn }) {
   return (
     <form className="scan-login" onSubmit={submit}>
       <h1 className="brand">
-        Vstupenky na TZG <span>2026</span>
+        Koncert TZG <span>2026</span>
       </h1>
       <p className="muted">Odbavení vstupenek</p>
       <label className="field">
