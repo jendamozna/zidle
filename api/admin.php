@@ -370,8 +370,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .settings button { align-self:flex-start; }
   .hint { margin:0; font-size:.85rem; color:var(--ink-2); }
   .plan-bar { display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-bottom:16px; position:sticky; top:8px; z-index:2; }
-  .plan-legend { display:inline-flex; align-items:center; gap:6px; font-size:.85rem; color:var(--ink-2); margin-right:auto; }
-  .plan-legend i { display:inline-block; width:14px; height:14px; border-radius:4px; margin-left:8px; }
+  .plan-legend { display:inline-flex; align-items:center; gap:6px; font-size:.85rem; color:var(--ink-2); margin-right:auto; white-space:nowrap; }
+  .plan-legend i { display:inline-block; flex:none; width:14px; height:14px; border-radius:4px; margin-left:8px; }
   .plan-level { margin-bottom:16px; }
   .plan-level .section-title { margin:0 0 8px; }
   .plan-map { position:relative; width:100%; container-type:inline-size; }
@@ -385,7 +385,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .plan-name .link { background:none; border:0; padding:0; color:var(--accent); font-weight:500; font-size:.75rem; text-decoration:underline; }
   .ps { position:absolute; width:2.2%; aspect-ratio:1; transform:translate(-50%, -50%); cursor:pointer; }
   .ps input { position:absolute; opacity:0; pointer-events:none; }
-  .ps span, .plan-legend i { display:grid; place-items:center; width:100%; height:100%; border-radius:5px; font-size:max(9px, .9cqi); font-weight:600; }
+  .ps span { display:grid; place-items:center; width:100%; height:100%; border-radius:5px; font-size:max(9px, .9cqi); font-weight:600; }
   .ps span, .ps-free { background:#d8f0d9; border:1px solid #a4d4a8; color:#24572f; }
   .ps input:checked + span, .ps-reserve { background:#efe9df; border:1px dashed #8e8577; color:#8e8577; }
   .ps-held span, i.ps-held { background:#efb3aa; border:1px solid #e39a90; color:#7a2a20; }
