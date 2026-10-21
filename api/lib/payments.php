@@ -15,12 +15,14 @@ function amount_due(array $r): int
 
 /**
  * Inside an open transaction: a pending reservation whose received money covers
- * its price becomes paid; a surplus is due for refund. Returns true when it did.
+ * its price becomes paid; a surplus is due for refund. A price of 0 (only seats paid
+ * by discount codes left) is covered without any money. Returns true when it did.
  */
 function complete_if_covered(PDO $pdo, array $r): bool
 {
     $received = (int) $r['paid_amount'];
-    if ($r['status'] !== 'pending' || $received <= 0 || $received - (int) $r['refunded_amount'] < (int) $r['amount']) {
+    $covered = (int) $r['amount'] === 0 || ($received > 0 && $received - (int) $r['refunded_amount'] >= (int) $r['amount']);
+    if ($r['status'] !== 'pending' || !$covered) {
         return false;
     }
     $surplus = $received - (int) $r['amount'];

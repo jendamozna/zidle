@@ -21,7 +21,12 @@ CREATE TABLE IF NOT EXISTS reservations (
   email           VARCHAR(190) NOT NULL,
   seats           TEXT         NOT NULL COMMENT 'Comma separated seat ids currently in the reservation (kept after cancellation for history)',
   cancelled_seats TEXT         NOT NULL DEFAULT '' COMMENT 'Seats cancelled individually, comma separated',
+  child_seats     TEXT         NOT NULL DEFAULT '' COMMENT 'Seats with a child ticket (4–17 years), comma separated; the others are adult',
+  free_seats      TEXT         NOT NULL DEFAULT '' COMMENT 'Seats paid by a discount code (price 0), comma separated',
+  infants         TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Children up to 3 years on a lap: no seat, no ticket, free',
   seat_count      SMALLINT UNSIGNED NOT NULL,
+  adult_price     INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK per adult seat when the reservation was made',
+  child_price     INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK per child seat when the reservation was made',
   amount          INT UNSIGNED NOT NULL COMMENT 'CZK, price of the seats currently in the reservation',
   paid_amount     INT UNSIGNED NULL COMMENT 'CZK received',
   variable_symbol VARCHAR(10)  NULL,
@@ -38,13 +43,43 @@ CREATE TABLE IF NOT EXISTS reservations (
   ticket_sent_at  DATETIME     NULL COMMENT 'When the e-mail with the ticket QR code was sent',
   reminder_sent_at      DATETIME NULL,
   expiry_notice_sent_at DATETIME NULL,
-  checked_in_at   DATETIME     NULL COMMENT 'First scan of the ticket at the entrance',
-  checked_in_by   VARCHAR(100) NULL COMMENT 'Scanner invite name that checked the ticket in',
+  checked_in_at   DATETIME     NULL COMMENT 'First check-in of any seat of the reservation (ticket_checkins)',
+  checked_in_by   VARCHAR(100) NULL COMMENT 'Scanner invite name of that first check-in',
+  sold_by         VARCHAR(100) NULL COMMENT 'Sold at the entrance by this organizer (scanner); NULL = booked on the website',
+  payment_checked_at DATETIME  NULL COMMENT 'UTC; accountant confirmed that the payment of an on-site sale arrived',
   PRIMARY KEY (id),
   UNIQUE KEY uq_token (token),
   UNIQUE KEY uq_vs (variable_symbol),
   KEY idx_status_expires (status, expires_at),
   KEY idx_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+-- One row per checked-in seat ticket (one QR code = one seat).
+CREATE TABLE IF NOT EXISTS ticket_checkins (
+  reservation_id INT UNSIGNED NOT NULL,
+  seat_id        VARCHAR(12)  NOT NULL,
+  checked_in_at  DATETIME     NOT NULL COMMENT 'UTC',
+  checked_in_by  VARCHAR(100) NOT NULL,
+  PRIMARY KEY (reservation_id, seat_id),
+  CONSTRAINT fk_checkin_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+-- Discount codes sent by the admin to e-mail addresses. One code = one seat free
+-- (the most expensive seat of the reservation), any run, used once.
+CREATE TABLE IF NOT EXISTS discount_codes (
+  id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  code           CHAR(8)      NOT NULL COMMENT 'Upper case, shown as XXXX-XXXX',
+  email          VARCHAR(190) NOT NULL COMMENT 'Where the code was sent (emptied by the GDPR purge)',
+  created_at     DATETIME     NOT NULL COMMENT 'UTC',
+  created_by     VARCHAR(100) NOT NULL DEFAULT '',
+  emailed_at     DATETIME     NULL COMMENT 'UTC, last successful e-mail with the code',
+  used_at        DATETIME     NULL COMMENT 'UTC',
+  reservation_id INT UNSIGNED NULL,
+  seat_id        VARCHAR(12)  NULL COMMENT 'Seat that became free with the code',
+  revoked_at     DATETIME     NULL COMMENT 'UTC; revoked codes cannot be used',
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_code (code),
+  KEY idx_reservation (reservation_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- VIP guests entered by the management. They do not pay; their seats are held

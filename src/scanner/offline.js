@@ -61,11 +61,11 @@ export function saveSnapshot(snapshot) {
   });
 }
 
-/** Records an online check-in in the snapshot, so a later offline scan of the same ticket says "used". */
-export function markTicketCheckedIn(runId, id, checkedInAt) {
+/** Records an online check-in of a seat in the snapshot, so a later offline scan of the same ticket says "used". */
+export function markTicketCheckedIn(runId, id, seat, checkedInAt) {
   update((data) => {
     const ticket = data.snapshots[runId]?.tickets.find((t) => t.id === id);
-    if (ticket && !ticket.checkedInAt) ticket.checkedInAt = checkedInAt;
+    if (ticket && !ticket.checkedIn?.[seat]) ticket.checkedIn = { ...ticket.checkedIn, [seat]: { at: checkedInAt, by: null } };
   });
 }
 
@@ -95,32 +95,35 @@ export function clearOffline() {
 }
 
 /**
- * Checks a decoded ticket against the run's snapshot (and the check-ins queued on
- * this device). Returns {result, ticket, changed, checkedInAt}; result is one of
- * valid / used / unpaid / cancelled / unknown (not in this run's list).
+ * Checks a decoded seat ticket against the run's snapshot (and the check-ins queued on
+ * this device). Returns {result, ticket, checkedInAt}; result is one of
+ * valid / used / seat_cancelled / unpaid / cancelled / unknown (not in this run's list).
  */
 export function verifyOffline(decoded, snapshot, queue) {
-  const found = snapshot.tickets.find((t) =>
-    decoded.id !== null ? t.id === decoded.id : t.variableSymbol === decoded.variableSymbol,
-  );
+  const found = snapshot.tickets.find((t) => t.id === decoded.id);
   if (!found || found.variableSymbol !== decoded.variableSymbol) {
     return { result: 'unknown', ticket: decoded };
   }
+  const queuedFor = (seat) =>
+    queue.find((e) => e.runId === snapshot.runId && e.type === 'ticket' && e.id === found.id && e.seat === seat);
+  const checkedIn = (seat) => found.checkedIn?.[seat]?.at ?? queuedFor(seat)?.at ?? null;
   const ticket = {
     id: found.id,
     variableSymbol: found.variableSymbol,
-    count: found.seats.length,
+    seat: decoded.seat,
+    kind: found.childSeats?.includes(decoded.seat) ? 'child' : found.seats.includes(decoded.seat) ? 'adult' : decoded.kind,
     name: found.name || decoded.name,
     seats: found.seats,
+    count: found.seats.length,
+    checkedIn: found.seats.filter(checkedIn).length,
+    infants: found.infants ?? 0,
   };
-  const changed = found.seats.join(',') !== decoded.seats.join(',');
-  if (found.status === 'pending') return { result: 'unpaid', ticket, changed };
-  if (found.status !== 'paid') return { result: 'cancelled', ticket, changed };
-  const queued = queue.find((e) => e.runId === snapshot.runId && e.type === 'ticket' && e.id === found.id);
-  if (found.checkedInAt || queued) {
-    return { result: 'used', ticket, changed, checkedInAt: found.checkedInAt ?? queued.at };
-  }
-  return { result: 'valid', ticket, changed };
+  if (found.status === 'pending') return { result: 'unpaid', ticket };
+  if (found.status !== 'paid') return { result: 'cancelled', ticket };
+  if (!found.seats.includes(decoded.seat)) return { result: 'seat_cancelled', ticket };
+  const at = checkedIn(decoded.seat);
+  if (at) return { result: 'used', ticket, checkedInAt: at };
+  return { result: 'valid', ticket: { ...ticket, checkedIn: ticket.checkedIn + 1 } };
 }
 
 /** VIP list with this device's not yet sent arrivals/undos applied. */

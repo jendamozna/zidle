@@ -39,11 +39,14 @@ async function login(page) {
   await page.getByRole('button', { name: /Přihlásit/ }).click();
 }
 
-test('scanner checks a ticket in and warns on the second scan', async ({ page }) => {
+test('scanner checks a seat ticket in and warns on the second scan', async ({ page }) => {
   await fakeCamera(page, seed().ticket);
   await login(page);
   await expect(page.locator('.scan-result h2')).toHaveText('Platná vstupenka', { timeout: 20_000 });
   await expect(page.locator('.scan-ticket')).toContainText('Test Vstupenka');
+  await expect(page.locator('.scan-seat-big')).toContainText('řada 1 · místo 1');
+  await expect(page.locator('.scan-kind')).toHaveText('Dospělý');
+  await expect(page.locator('.scan-count')).toHaveText('rezervace 2 místa · odbaveno 1 z 2');
   await page.getByRole('button', { name: 'Skenovat další' }).click();
   await expect(page.locator('.scan-result h2')).toHaveText('Už odbaveno', { timeout: 20_000 });
 });
@@ -84,7 +87,7 @@ test('without a connection the scanner checks tickets against the downloaded lis
   await expect(page.locator('.offline-strip')).toContainText('Odesláno 2 odbavení bez spojení.', { timeout: 20_000 });
 
   const snapshot = await (await page.request.post('/api/organizer.php', { data: { action: 'snapshot', runId: 2 } })).json();
-  expect(snapshot.tickets.find((t) => t.name === 'Test Offline').checkedInBy).toContain('(offline)');
+  expect(snapshot.tickets.find((t) => t.name === 'Test Offline').checkedIn['BC-2-1'].by).toContain('(offline)');
   expect(snapshot.vips.find((v) => v.name === 'Paní Offline').checkedInAt).not.toBeNull();
 });
 
@@ -102,4 +105,21 @@ test('the scanner opens without a connection after it was used online once', asy
   await expect(page.locator('.run-select select')).toBeVisible();
   await expect(page.locator('.offline-strip')).toContainText('Bez spojení');
   await context.setOffline(false);
+});
+
+test('organizer sells free seats at the entrance: QR payment, then the seats are checked in', async ({ page }) => {
+  await login(page);
+  await page.getByRole('tab', { name: 'Prodej' }).click();
+  await page.locator('.sale-sections button').first().click();
+  await page.getByRole('button', { name: 'Řada 4, místo 5' }).click();
+  await page.getByRole('button', { name: 'Řada 4, místo 6' }).click();
+  await page.getByRole('button', { name: 'Děti 4–17 let: více' }).click();
+  await page.getByRole('button', { name: /QR platba 450 Kč/ }).click();
+  await expect(page.locator('.sale-pay img')).toBeVisible();
+  await expect(page.locator('.sale-amount')).toHaveText('450 Kč');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Zaplaceno – vpustit' }).click();
+  await expect(page.locator('.sale-done')).toHaveText('Zaplaceno 450 Kč – 2 místa odbavena.');
+  // The section stays open; the sold seats are taken now.
+  await expect(page.getByRole('button', { name: 'Řada 4, místo 5' })).toBeDisabled();
 });

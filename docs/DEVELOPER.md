@@ -51,40 +51,48 @@ is used only for admin input and for display.
 
 ```
 api/
-  admin.php            admin UI (login, invitation page, reservations, VIP, scanner invites, accountants, runs)
+  admin.php            admin UI (login, invitation page, reservations, VIP, discount codes, scanner invites, accountants, settings)
   seats.php            GET runs + taken seats of a run + seating layout
+  tickets.php          GET printable tickets (PDF) of a paid reservation
   altcha.php           GET invisible ALTCHA challenge
   reservations.php     POST create reservation, GET reservation by token
   cancel.php           POST customer cancellation
-  organizer.php        scanner API (access, verify, VIP)
+  organizer.php        scanner API (access, verify, VIP, offline, on-site sale)
   cron.php             scheduled jobs (CLI only); cron-expire.php = alias
-  config.php           defaults (+ config.local.php / env overrides)
+  config.php           defaults (+ config.local.php / environment / api/.env overrides); .env.example
   lib/bootstrap.php    config(), db(), db_query(), JSON helpers (json_response/json_error end the request), expire_reservations(), QR payment, reservation_payload()
   lib/layout.php       LEVELS, SECTIONS (the only layout definition), layout_public(), total_capacity(),
                        is_valid_seat_id(), compare_seat_ids()
-  lib/settings.php     runs: loading, times, storno rules, check-in window, run_public()
+  lib/settings.php     runs: loading, times, storno rules, check-in window, run_public(); payment deadline rules
+  lib/pricing.php      adult / child seats, discount-free seats, seat_value(), reservation_seat_items()
+  lib/discounts.php    discount codes: create + e-mail, revoke, lock for a reservation
+  lib/booking.php      book_reservation() (prices, codes, seats, VS, first e-mail), generate_variable_symbol()
+  lib/checkin.php      verify_ticket() – online check-in of one seat ticket
+  lib/onsite.php       selling at the entrance (scanner tab Prodej)
   lib/cancellation.php cancellation_terms(), cancel_seats(), notices, reminders, GDPR purge
   lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
   lib/vip.php          add_vip_guest() (VIP guest with seats), vip_list() (scanner)
   lib/offline.php      scanning without a connection: scanner_snapshot(), apply_offline_scans(), conflicts
   lib/admin_users.php  admin accounts: admin_login(), admin_invite(), admin_accept_invite(), admin_set_disabled()
-  lib/ticket.php       ticket QR code (sign/parse), qr_png(), ticket e-mail + calendar event (ticket_ics()), seat_labels()
+  lib/ticket.php       seat ticket QR code (sign/parse), qr_png(), ticket e-mail + calendar event (ticket_ics()), seat_label(s)()
+  lib/ticket_pdf.php   printable tickets vstupenky.pdf (dompdf)
   lib/antispam.php     form token, rate limits, login limits
   lib/altcha.php       invisible ALTCHA: challenge, verification, replay protection
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
   lib/scanner_access.php  scanner invites, device cookie, app_base_url()
 db/schema.sql          full schema for a new database
-db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–012)
+db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–013)
 src/                   customer app
   App.jsx              views: run picker / map / section / reservation page; form; toasts
   hooks/useSeats.js    seat state of one run, polling, reserve()
   data/layout.js       layout loaded from the server (setLayout()), seat ids, occupancy levels, CZK formatting
   data/seatService.js  API client (seats, reservations, cancel)
   components/          RunPicker, Overview, SectionCard, SectionDetail, ReservationPanel,
-                       ReservationForm, PaymentView
+                       ReservationForm, PaymentView, Stepper
+  pricing.js           seat prices / discount preview (mirror of lib/pricing.php), code formatting
   altcha.js            invisible ALTCHA solver (altcha-lib, WebCrypto PBKDF2)
   runs.js, storno.js, plural.js   formatting helpers
-src/scanner/           organizer scanner (ScannerApp, VipView, useQrCamera, ticket.js, api.js,
+src/scanner/           organizer scanner (ScannerApp, VipView, SaleView, useQrCamera, ticket.js, api.js,
                        offline.js + useOffline.js = offline mode)
 public/sw.js           service worker: keeps the scanner on the device for offline start
 docs/DEVELOPER.md      this file
@@ -105,8 +113,8 @@ playwright.config.js   Playwright config (starts php -S and vite preview)
 mariadb -e "CREATE DATABASE zidle CHARACTER SET utf8mb4"
 mariadb -e "CREATE USER 'zidle'@'localhost' IDENTIFIED BY '…'; GRANT ALL ON zidle.* TO 'zidle'@'localhost'"
 mariadb zidle < db/schema.sql
-(cd api && composer install --no-dev)   # chillerlan/php-qrcode (needs GD), phpmailer/phpmailer, altcha-org/altcha
-cp api/config.local.example.php api/config.local.php
+(cd api && composer install --no-dev)   # chillerlan/php-qrcode (needs GD), phpmailer/phpmailer, altcha-org/altcha, dompdf/dompdf
+cp api/config.local.example.php api/config.local.php   # and/or: cp api/.env.example api/.env
 
 npm install
 php -S 127.0.0.1:8000 -t .   # API (dev)
@@ -116,7 +124,7 @@ npm run build                # dist/index.html, dist/scanner.html
 
 Deployment: upload `dist/` and `api/` (including `api/vendor/`) side by side,
 so the apps reach the API at `./api/`. HTTPS is required (camera access).
-`.htaccess` files deny `config*.php`, `cron*.php`, `composer.*`, `api/lib/`,
+`.htaccess` files deny `.env*`, `config*.php`, `cron*.php`, `composer.*`, `api/lib/`,
 `api/vendor/`. Behind a proxy/CDN the real client IP must reach
 `REMOTE_ADDR` (e.g. Apache `mod_remoteip`), otherwise rate limits are shared.
 
@@ -139,14 +147,19 @@ origin; then set `CORS_ORIGIN`.
 
 ## 4. Configuration
 
-`api/config.php` holds defaults; `api/config.local.php` (array) and
-environment variables of the same name override them (local file wins).
+`api/config.php` holds defaults; they are overridden by, first wins:
+`api/config.local.php` (array), environment variables of the same name, and
+`api/.env` (not committed; template `api/.env.example` with the SMTP / e-mail
+keys). `.env` format: `KEY=value` per line, `#` comments (also after an
+unquoted value), optional `export ` prefix, `"…"` (backslash escapes) or
+`'…'` quoting; any key of the table below can be set there.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS` | `127.0.0.1`, `3306`, `zidle`, `zidle`, `''` | PDO connection; session `time_zone = '+00:00'` |
-| `SEAT_PRICE` | 300 | CZK per seat for new reservations |
-| `PAYMENT_DEADLINE_HOURS` | 72 | due date = now + this, capped at the run start |
+| `SEAT_PRICE` | 300 | CZK per adult seat (from 18 years) for new reservations |
+| `CHILD_SEAT_PRICE` | 150 | CZK per child seat (4–17 years); children up to 3 years sit on a lap for free (no seat, no ticket) |
+| `PAYMENT_DEADLINE_HOURS` | 72 | hours to pay before the first payment deadline rule (§8); due date capped at the run start |
 | `PAYMENT_GRACE_HOURS` | 48 | unpaid reservations expire this long after the due date |
 | `REFUND_DAYS` | 14 | refund promise in e-mails |
 | `DATA_RETENTION_DAYS` | 30 | personal data purged this long after the last run start |
@@ -162,7 +175,7 @@ environment variables of the same name override them (local file wins).
 | `ALTCHA_ENABLED` | `true` | invisible ALTCHA on the reservation form |
 | `ALTCHA_COST` | 1000 | PBKDF2 iterations per attempt |
 | `ALTCHA_COUNTER_MAX` | 6000 | attempts needed: random `max/3 … max` (≈ 1–2 s on a computer, ≈ 4–5 s on a slow phone) |
-| `BANK_IBAN` | **required** | reservations are refused (503) without it |
+| `BANK_IBAN` | **required** | reservations and on-site sales are refused (503) without it |
 | `BANK_BIC` | `''` | appended to SPD `ACC` |
 | `BANK_ACCOUNT_DISPLAY` | `''` | Czech account number shown to customers |
 | `PAYMENT_RECIPIENT` | `Farnost` | SPD `RN` |
@@ -215,7 +228,19 @@ environment variables of the same name override them (local file wins).
 
   Seat id `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-4-12`.
 - **Reservation** – one run, customer data, current seats, price, VS, status,
-  history (cancelled seats, fees, refunds, check-in).
+  history (cancelled seats, fees, refunds, check-in). Each seat is an
+  **adult** (from 18, `adult_price`) or **child** seat (4–17, `child_price`;
+  listed in `child_seats`); the prices are stored on the reservation when it
+  is made. `infants` = children up to 3 years on a lap (no seat, no ticket,
+  free). Seats paid by a discount code are in `free_seats` (value 0).
+  `seat_value()` = 0 for a free seat, else the kind's price; `amount` = sum
+  over the current seats.
+- **Ticket** – one per seat (1 QR code = 1 chair, §11); checked in per seat
+  (`ticket_checkins`).
+- **Discount code** – sent by the admin to an e-mail; any run, used once,
+  makes the most expensive seat of the reservation free (§8).
+- **On-site sale** – reservation sold at the entrance by an organizer
+  (`sold_by`, §9).
 - **Held seat** – row in `reservation_seats` (`run_id`, `seat_id`) while the
   reservation is `pending` or `paid`, or while a VIP guest holds it.
 - **VIP guest** – name, specific seats, note, per run; no payment.
@@ -232,14 +257,16 @@ All `DATETIME` columns and JSON dates are UTC.
 | Table | Purpose / key columns |
 | --- | --- |
 | `runs` | `id`, `label`, `starts_at`, `booking_closes_at` (NULL = start), `storno_rules` JSON `[{"from":"YYYY-MM-DDTHH:MM:SSZ","percent":50}]` |
-| `reservations` | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `seat_count`, `amount` (price of current seats), `paid_amount` (sum of all received transfers), `variable_symbol` (unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `cancelled_by` (`customer`/`admin`), `cancel_fee`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at`, `checked_in_by` |
+| `reservations` | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `child_seats` (CSV, child tickets incl. cancelled ones), `free_seats` (CSV, paid by discount codes), `infants`, `seat_count`, `adult_price`, `child_price` (CZK per seat when booked; migration 013 sets both to `amount / seat_count` for older rows), `amount` (price of current seats), `paid_amount` (sum of all received transfers), `variable_symbol` (unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `cancelled_by` (`customer`/`admin`), `cancel_fee`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at` / `checked_in_by` (first seat checked in), `sold_by` (organizer of an on-site sale, NULL = website), `payment_checked_at` (accountant verified an on-site payment) |
+| `ticket_checkins` | PK (`reservation_id`, `seat_id`), `checked_in_at`, `checked_in_by`; FK cascade. One row per checked-in seat ticket (migration 013 adds all seats of reservations checked in before). |
+| `discount_codes` | `code` (8 chars, unique, shown `XXXX-XXXX`), `email`, `created_at`, `created_by`, `emailed_at`, `used_at`, `reservation_id`, `seat_id` (the seat made free), `revoked_at` |
 | `reservation_seats` | PK (`run_id`, `seat_id`), `reservation_id` or `vip_guest_id` (both FK cascade, exactly one set). Prevents double booking per run, VIP seats included. |
 | `vip_guests` | `run_id`, `name`, `section` (section of the first seat), `seats` (CSV; `''` for guests added before migration 010), `persons` (= number of seats), `note`, `created_at`, `checked_in_at`, `checked_in_by` |
 | `scanner_invites` | `name`, `token_hash` (sha256, unique), `created_at`, `last_used_at`, `revoked_at` |
 | `scanner_invite_runs` | PK (`invite_id`, `run_id`) |
 | `scan_conflicts` | offline check-ins that could not be applied (§11): `run_id`, `reservation_id` / `vip_guest_id` (NULL when unknown), `label` (VS + name / VIP name), `reason` (`already_checked_in` / `not_paid` / `unknown`), `scanned_at` (device time), `scanned_by`, `other_at` / `other_by` (the check-in that won), `created_at` |
 | `rate_limits` | `bucket` (sha256 of key), `hits`, `window_start` |
-| `settings` | reserved (unused) |
+| `settings` | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8) |
 | `admin_users` | admin accounts (§14): `email` (unique, lower case, login), `name`, `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open link token, unique), `invite_expires_at`, `invited_by` (name), `created_at`, `accepted_at`, `last_login_at`, `disabled_at` |
 
 `runs()` rewrites legacy storno rule dates (Prague local `YYYY-MM-DD HH:MM`)
@@ -275,39 +302,61 @@ stage/entrance or balcony direction and railing, legend. Seat states:
 rezervovat nejvýše N míst.`); when booking is closed seats cannot be
 selected (`Rezervace na tento termín jsou uzavřeny.`).
 
-**Top bar**: free seats, total price, **Rezervovat** (or `Rezervace uzavřeny`).
+**Top bar**: free seats, total price (selected seats × adult price), **Rezervovat** (or `Rezervace uzavřeny`).
 **Footer** (all customer views): *Kontakt na pořadatele* with `CONTACT_EMAIL`
 (`mailto:`) and `CONTACT_PHONE` (`tel:`) from `seats.php` → `contact`; hidden
 when neither is configured.
 **Reservation panel** (`ReservationPanel.jsx`): selected seats per section,
-remove chip, total, Reserve; shown on the map when something is selected and
-in a section detail with own seats.
+remove chip, total (× adult price), note *„Děti 4–17 let 150 Kč, do 3 let na
+klíně zdarma. Dětské vstupenky a slevové kódy zadáte v dalším kroku.“*,
+Reserve; shown on the map when something is selected and in a section detail
+with own seats.
 
-**Form** (`ReservationForm.jsx`): run, summary, first/last name, e-mail
-(client validation), honeypot `hp`, invisible ALTCHA (solving starts when
+**Form** (`ReservationForm.jsx`): run; fieldset *Vstupenky (N míst)*:
+*Dospělí* (seats − children, adult price), steppers (`Stepper.jsx`, − / +)
+*Děti 4–17 let* (0…seats, child price) and *Děti do 3 let na klíně* (0…seats,
+*„zdarma, bez vlastního místa a vstupenky“*); *Slevové kódy*: input +
+**Použít** (Enter too) → chip `XXXX-XXXX` (× removes); local checks *„Kód má 8
+znaků, např. ABCD-EFGH.“*, *„Tento kód už je zadaný.“*, *„Každý kód platí na
+jedno místo – víc kódů než míst nelze použít.“*; hint *„Každý kód = jedno
+místo zdarma (nejdražší).“*; validity is checked by the server on submit.
+Summary *„2 × 300 Kč · 1 × 150 Kč · sleva −300 Kč“* + total, computed by
+`priceSeats()` (`src/pricing.js`, same rules as the server); first/last
+name, e-mail (client validation), honeypot `hp`, invisible ALTCHA (solving starts when
 the form opens; submit waits for it with the button text *Ověřuji…*; on an
-`altcha` error it solves a new challenge and retries once), notes (due date, storno text from
+`altcha` error it solves a new challenge and retries once), notes (due date with the hours in effect now – only when there is
+something to pay, *„Po zaplacení přijde e-mailem vstupenka pro každé místo
+zvlášť (1 QR kód = 1 židle), i k vytištění.“*, storno text from
 `stornoText()`, GDPR sentence: *„Jméno a e-mail použijeme jen pro vyřízení
 této rezervace a do N dnů po posledním představení je smažeme.“*), submit
-**Rezervovat a zaplatit**. 409/403 close the form with a toast and refresh.
+**Rezervovat a zaplatit** (total 0: **Rezervovat zdarma**). Sent as
+`children`, `infants`, `codes`. Server field errors (incl. `codes`) are shown
+at the fields. 409/403 close the form with a toast and refresh.
 
 **Reservation page** (`PaymentView.jsx`, `/?r=<token>`): run, price of the
-seats, status chip; pending → SPD QR + copyable account/IBAN/VS/SS/amount
+seats, status chip; list of seats with kind and price (*„zdarma (slevový
+kód)“*) and the infants line; pending → SPD QR + copyable account/IBAN/VS/SS/amount
 (amount = still to pay, `payment.amount`) + due date (red overdue notice
 after it); after a partial payment also *„Už jsme přijali X z Y. Doplaťte
-prosím zbývajících Z se stejným variabilním symbolem.“*; paid → ticket QR;
+prosím zbývajících Z se stejným variabilním symbolem.“*; paid → section
+*Vstupenky*: one card per seat (QR, section, row/seat, kind, *i z N*,
+*odbaveno* when checked in) and **Stáhnout PDF k tisku** (`tickets.php`);
 cancellation info (`CancellationInfo`: cancelled seats / fee / refund; for an
 expired reservation with money to return *„Rezervace propadla, přijatá platba
 se vrací.“*; for a paid one with a surplus *„Přišlo víc, než bylo potřeba.“*
 + refund line) and cancel panel (`CancelPanel`, §10; pending whole
 cancellation says *„Už přijatých X pošleme zpět…“* when something arrived,
-partial shows the new amount to pay minus what arrived).
+partial shows the new amount to pay minus what arrived; prices per seat from
+`cancellation.seatPrices`; for seats worth 0 *„Místa zdarma se slevovým kódem
+se nevracejí – kód zůstává použitý.“*; paid partial *„Na e-mail přijdou nové
+vstupenky.“*).
 
 ## 8. Reservation lifecycle
 
 ```
 pending ──payment recorded, whole price arrived──▶ paid
 pending ──expires_at + GRACE passed──────────────▶ expired ──payment recorded──▶ paid (run not started, price covered, seats free)
+(new, price 0 – all seats paid by discount codes) ──▶ paid at once
 pending / paid ──cancel (customer/admin)─────────▶ cancelled
 ```
 
@@ -326,14 +375,34 @@ deletes `reservation_seats` of `expired`/`cancelled` reservations.
 | honeypot empty, form token valid | 400 `Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.` |
 | ALTCHA payload valid and unused (if `ALTCHA_ENABLED`) | 400 `Ověření proti robotům se nezdařilo. Zkuste to prosím znovu.` + `code: "altcha"` |
 | names, e-mail, 1–20 valid unique seats | 422 `Zkontrolujte zadané údaje.` / seat message, `fields` |
+| `children` integer 0…seats | 422 `Dětských vstupenek může být nejvýše tolik, kolik je míst.` |
+| `infants` integer 0…seats | 422 `Dětí do 3 let na klíně může být nejvýše tolik, kolik je míst.` |
+| `codes` array, ≤ seats, each once, 8 chars of the code alphabet (after `normalize_discount_code()`) | 422 `Slevových kódů může být nejvýše tolik, kolik je míst.` / `Každý slevový kód lze zadat jen jednou.` / `Slevový kód X neplatí nebo už byl použit.` (field `codes`) |
 | IP rate limit (`RESERVATIONS_PER_IP_PER_HOUR_ALTCHA` with ALTCHA, else `RESERVATIONS_PER_IP_PER_HOUR`) | 429 `Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.` |
-| < 2 pending for the e-mail in this run | 429 `Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.` |
+| < 2 pending for the e-mail in this run (not for a reservation costing 0 or an on-site sale) | 429 `Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.` |
 | seats free in the run (`FOR UPDATE`; duplicate key fallback) | 409 `Některá místa už mezitím někdo rezervoval.` + `conflict` |
+| every code exists, unused, not revoked (`lock_discount_codes()`, `FOR UPDATE`) | 422 `Slevový kód XXXX-XXXX neplatí nebo už byl použit.` + `fields.codes` |
 
-Then in one transaction: insert reservation (`expires_at = min(now +
-PAYMENT_DEADLINE_HOURS, run start)`), random unique 10-digit VS
-(`generate_variable_symbol()`), insert seats; send payment e-mail; respond
-201 with `reservation_payload()`.
+The last three checks and the rest are `book_reservation()`
+(`lib/booking.php`). Prices: seats sorted, the last `children` seats are
+child seats (`assign_child_seats()`); each code frees one seat, the most
+expensive first – adult seats, then child seats, in seat order
+(`assign_free_seats()`); `amount` = sum of `seat_value()`. In one
+transaction: insert reservation (`adult_price`/`child_price` from config,
+`expires_at = min(now + payment_deadline_hours(now), run start)`; amount 0 →
+status `paid`, `paid_at` now), random unique 10-digit VS
+(`generate_variable_symbol()`), mark the codes used (`used_at`,
+`reservation_id`, `seat_id` = the freed seat), insert seats. Then amount 0 →
+ticket e-mail *Vstupenky* (intro *„děkujeme za rezervaci. Všechna místa jsou
+hrazená slevovými kódy, rezervace je potvrzena.“*), otherwise the payment
+e-mail; respond 201 with `reservation_payload()`.
+
+**Payment deadline rules** (admin → Nastavení → *Splatnost plateb*, settings
+`payment_deadlines`): rows *Rezervace od* (Prague input, stored UTC) +
+*Splatnost (hodin)* 1–720. `payment_deadline_hours(at)` = hours of the latest
+rule with `from ≤ at`, else `PAYMENT_DEADLINE_HOURS`. Applies to reservations
+made from then on (existing ones keep their due date); `seats.php`
+`deadlineHours` = hours in effect now.
 
 ## 9. Payments
 
@@ -364,17 +433,38 @@ PAYMENT_DEADLINE_HOURS, run start)`), random unique 10-digit VS
   rezervace obnovena – zaplaceno.“*, *„Přijato X – <reason>. K vrácení na účet
   plátce: Y.“* + ticket/e-mail result.
 - Reminder 24 h before the due date, expiry notice after expiry (§16).
+- **On-site sale** (`lib/onsite.php`, scanner tab *Prodej*, §11): while seats
+  are free, an organizer sells them at the entrance. `sale-create` → 
+  `book_reservation()` with `sold_by` = device name, name *Prodej na místě*,
+  no e-mail, due at once, no pending limit; the scanner shows the SPD QR
+  (amount, VS, account). The customer pays in the banking app and shows the
+  sent payment; **Zaplaceno – vpustit** (`sale-paid`, `confirm()` *„Zákazník
+  ukázal odeslanou platbu X?“*) → `paid`, `paid_amount = amount`, all seats
+  checked in by the organizer: *„Zaplaceno X – N místa odbavena.“*
+  **Zrušit prodej** (`sale-cancel`) cancels it (admin cancellation, seats
+  free): *„Prodej zrušen, místa jsou volná.“* A sale no longer pending → 409
+  *„Prodej už není otevřený.“* The transfer is not verified at the entrance:
+  admin shows such reservations as *na místě – ověřte, že platba dorazila*
+  (card and filter *Na místě – ověřit platbu*) with **Platba dorazila**
+  (`onsite-checked` → `payment_checked_at`, *„Platba za prodej na místě
+  ověřena.“*) instead of *přišla platba*. A sale left pending (neither
+  button) expires like any reservation.
 
 ## 10. Cancellation and refunds
 
 `cancellation_terms($r)` (in every reservation payload): `allowed` false
 (`inactive`, `checked_in`, `event_started` = run started); else `percent`
-(`storno_percent(run, now)` for paid, 0 for pending), `seatPrice`, `fee`,
+(`storno_percent(run, now)` for paid, 0 for pending), `seatPrices`, `fee`,
 `refund` for all seats (pending: the part of the price that already arrived).
 
 Storno rules (per run): before the first rule 0 %; from each rule's `from`
 its percent applies, the highest started rule wins.
-`fee = round(seatPrice × count × percent / 100)`.
+
+Money is per seat: `fee = round(value × percent / 100)` where value is the
+sum of `seat_value()` of the cancelled seats – a seat paid by a discount code
+is worth 0, so nothing is refunded for it and the code stays used.
+`cancellation_terms()` also returns `seatPrices` (current seat → value) for
+the frontend.
 
 `cancel_seats(id, seatIds|null, by)`:
 
@@ -386,18 +476,21 @@ its percent applies, the highest started rule wins.
 
 - seats must belong to the reservation (`Vyberte místa z této rezervace.`);
 - all remaining seats → status `cancelled`, `cancelled_by`, seats deleted;
-- part → `seats`, `seat_count`, `amount` reduced, `cancelled_seats` appended;
+- part → `seats`, `seat_count`, `amount` (= value of the remaining seats)
+  reduced, `cancelled_seats` appended;
 - paid: `cancel_fee` and `refund_amount` accumulate; refunds go to the
   paying account (no account is collected);
 - pending, whole: a part of the price that already arrived → `refund_amount`;
 - pending, part: when what already arrived covers the lower price the
-  reservation becomes `paid` (`complete_if_covered()`, surplus refunded);
+  reservation becomes `paid` (`complete_if_covered()`, surplus refunded; a
+  remaining price of 0 – only seats paid by codes – counts as covered);
 - admin **Vráceno** sets `refunded_amount = refund_amount`, `refunded_at`;
   due = `refund_amount − refunded_amount`.
 
 E-mails (`send_cancellation_notice()`): paid part → *Nová vstupenka* (ticket
-e-mail with intro: cancelled seats, fee, refund line, *„Původní vstupenka už
-neplatí.“*); pending part now fully paid → *Vstupenka* (intro: cancelled
+e-mail with intro: cancelled seats, fee, refund line, *„Posíláme novou
+vstupenku na zbývající místa. Původní vstupenka už neplatí.“* – the tickets of
+the cancelled seats stop working, §11); pending part now fully paid → *Vstupenka* (intro: cancelled
 seats, *„Platba za zbývající místa je kompletní, rezervace je potvrzena.“*,
 surplus refund line); other pending part → *Změna rezervace* (new payment
 details); whole → *Rezervace zrušena* with fee/refund line; pending whole
@@ -408,12 +501,34 @@ platba přišla.“*
 
 ## 11. Tickets and check-in
 
-- **Code** (`ticket_code()`): `Z26|<reservation id>|<VS>|<seat count>|<name>|<seats CSV>|<sig>`;
-  `sig` = first 22 chars of base64url HMAC-SHA256(`TICKET_SECRET`, payload).
-  `parse_ticket_code()` also accepts legacy 6-part codes without the id.
-  JS mirror: `src/scanner/ticket.js` (display/offline only).
-- Ticket e-mail: inline PNG (`qr_png()`), run, name, seats, VS; resend in
-  admin. Paid reservation page shows the same QR.
+One ticket = one seat (1 QR code = 1 chair), so a printed sheet can be cut
+and the tickets handed out; each seat is checked in separately.
+
+- **Code** (`ticket_code(r, seat)`): `Z26M|<reservation id>|<VS>|<seat>|<kind A/C>|<name>|<sig>`
+  (kind A = adult, C = child); `sig` = first 22 chars of base64url
+  HMAC-SHA256(`TICKET_SECRET`, payload). `parse_ticket_code()` →
+  `{id, variableSymbol, seat, kind, name}`; older formats (`Z26|…`, one code
+  per reservation) are no longer accepted (`invalid`). JS mirror:
+  `src/scanner/ticket.js` (display/offline only).
+- **Ticket e-mail** (`send_ticket_email()`, HTML + text): run, name, summary
+  (`seat_kinds_summary()`, e.g. *„2 dospělí, 1 dítě 4–17 let, 1 dítě do 3 let
+  na klíně“*), *„Každé místo má vlastní QR kód – 1 QR kód = 1 židle.“*, then
+  per seat an inline PNG (`cid:ticket-qr-<n>`), `seat_label()` (*„Levá hlavní ·
+  řada 1 · místo 2“*) and *„<kind> · vstupenka n z N“*; footer *„V příloze je
+  soubor vstupenky.pdf k vytištění – vstupenky rozstříhejte, každá platí pro
+  jedno místo. Při vstupu můžete QR kódy ukázat i na mobilu.“* (+ *„Děti do 3
+  let na klíně vstupenku nepotřebují.“*). Attachments `vstupenky.pdf` and
+  `udalost.ics`. Resend in admin. The paid reservation page shows the same
+  QR codes.
+- **Printable PDF** (`ticket_pdf()`, dompdf, DejaVu fonts): A4, note
+  *„Rozstříhejte podle čárkované čáry. Každá vstupenka platí pro jedno místo –
+  při vstupu se načte její QR kód.“*, then the current seats in seat order,
+  `TICKETS_PER_PAGE` = 4 per page, each 60 mm high with a dashed cut line:
+  QR, *Moje židle 2026*, run, section, *řada / místo*, kind, *„<name> · VS … ·
+  vstupenka n z N“* (+ *„V rezervaci také N dítě do 3 let na klíně (bez
+  vstupenky).“*). `GET tickets.php?token=` downloads it
+  (`vstupenky-<VS>.pdf`) for paid reservations, else 404 *„Vstupenky nejsou
+  k dispozici – rezervace není zaplacená.“*
 - **Calendar event** (`ticket_ics()`): every ticket e-mail carries the
   attachment `udalost.ics` (`text/calendar; charset=UTF-8; method=REQUEST`),
   so Gmail/Outlook show an event card with *Add to calendar*. iCalendar 2.0,
@@ -424,35 +539,52 @@ platba přišla.“*
   `SEQUENCE` = current Unix time, `DTSTART` = run start, `DTEND` = start +
   `EVENT_DURATION_MINUTES` (both UTC `…Z`), `SUMMARY` *„Moje židle 2026[ · <run
   label>] – <seat labels>“*, `DESCRIPTION` *„Místa: …“*, *„Variabilní symbol:
-  …“*, *„Při vstupu prosím ukažte QR kód z e-mailu se vstupenkou.“*,
+  …“*, *„Při vstupu prosím ukažte QR kódy vstupenek z e-mailu (1 QR kód = 1
+  místo).“*,
   *„Rezervace: <link>“* (with `PUBLIC_URL`) and the contact line,
   `LOCATION` = `EVENT_LOCATION` (omitted when empty), `ORGANIZER;CN="Moje
   židle 2026":mailto:<sender>`, `ATTENDEE;CN="<name>";ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:<customer>`,
   `STATUS:CONFIRMED`. No attachment when the run no longer exists.
-- **Verify** (`organizer.php` `verify {code, runId, confirmOutside}`): access
-  to run required (403 `Na tento termín nemáte přístup.`); load reservation
-  by id + VS (legacy: VS) `FOR UPDATE`; result:
+- **Verify** (`organizer.php` `verify {code, runId, confirmOutside}` →
+  `verify_ticket()` in `lib/checkin.php`): access to run required (403 `Na
+  tento termín nemáte přístup.`); load reservation by id + VS `FOR UPDATE`;
+  result for the seat of the code:
 
   | result | when | check-in recorded |
   | --- | --- | --- |
   | `invalid` | bad signature/format or not found | no |
   | `wrong_run` | pending/paid of another run | no |
-  | `used` | paid, already checked in | no |
-  | `outside_window` | paid, first scan, outside window, not confirmed | no |
-  | `valid` | paid, first scan | yes (`checked_in_at`, `checked_in_by`) |
+  | `seat_cancelled` | paid, the seat was cancelled from the reservation | no |
+  | `used` | paid, this seat already checked in | no |
+  | `outside_window` | paid, first scan of the seat, outside window, not confirmed | no |
+  | `valid` | paid, first scan of the seat | yes (`ticket_checkins` row; the reservation's `checked_in_at`/`by` keep the first one) |
   | `unpaid` / `cancelled` | status pending / expired or cancelled | no |
 
-  Response contains current DB data (seats, count, name, run label,
-  `changed` when seats differ from the code, `checkedInBy`).
-- **Scanner UI** results: `Platná vstupenka`, `Už odbaveno` (+ first time),
-  `Nezaplaceno`, `Rezervace zrušena`, `Neplatný kód`, `To je platební QR kód`
-  (code starts with `SPD*`), `Jiný termín` (+ ticket run),
-  `Mimo čas odbavení – neodbaveno`, `Není v seznamu termínu` (offline, see
-  below), `Neověřeno – bez spojení` (no connection and no list). Ticket
-  footnote: *„aktuální stav ze systému“*, *„bez spojení, podle seznamu z
-  HH:MM“* (+ *„Odbavení se odešle, jakmile bude spojení.“* for a valid one) or
-  *„údaje z QR kódu, neověřeno“*. Camera: rear camera, centre square decoded by `jsqr` every 120 ms, torch
-  when supported, stopped while the page is hidden.
+  Response: `ticket {id, variableSymbol, seat, kind, name, seats (current),
+  count, checkedIn (seats checked in), infants}`, `checkedInAt` /
+  `checkedInBy` of the seat, `status`, `run`.
+- **Scanner UI** (tabs *Vstupenky* / *VIP* / *Prodej*) results: `Platná
+  vstupenka`, `Už odbaveno` (+ first time), `Místo zrušeno` (*„Toto místo bylo
+  z rezervace zrušeno, ostatní místa platí.“*), `Nezaplaceno`, `Rezervace
+  zrušena`, `Neplatný kód`, `To je platební QR kód` (code starts with `SPD*`),
+  `Jiný termín` (+ ticket run), `Mimo čas odbavení – neodbaveno`, `Není v
+  seznamu termínu` (offline, see below), `Neověřeno – bez spojení` (no
+  connection and no list). The card shows the seat in large type (section,
+  *řada · místo*, kind chip *Dospělý* / *Dítě 4–17 let*), the name,
+  *„rezervace N míst · odbaveno K z N“*, *„+ N dítě do 3 let na klíně (bez
+  vstupenky)“*. Ticket footnote: *„aktuální stav ze systému“*, *„bez spojení,
+  podle seznamu z HH:MM“* (+ *„Odbavení se odešle, jakmile bude spojení.“* for
+  a valid one) or *„údaje z QR kódu, neověřeno“*. Camera: rear camera, centre
+  square decoded by `jsqr` every 120 ms, torch when supported, stopped while
+  the page is hidden.
+- **Prodej** tab (`SaleView.jsx`, on-site sale §9; needs a connection, else
+  *„Prodej na místě potřebuje internet. Zkuste to znovu, až bude spojení.“*):
+  `sale-seats` → section chips with free counts, the section's seat grid
+  (held seats disabled), up to `maxSeats`; steppers *Děti 4–17 let*, *Děti do 3
+  let na klíně*; button *„QR platba <total> · N míst“* → `sale-create` → QR
+  payment screen *Zaplaťte QR kódem* (amount, VS, account, seats with kinds
+  and prices) with **Zaplaceno – vpustit** / **Zrušit prodej**; afterwards the
+  result message and a fresh seat list. 409 reloads the seats.
 - **Check-in window**: `run_scan_window()` = start − BEFORE … start + AFTER.
   Default run in the scanner: run whose window is open, else remembered
   (localStorage `zidle-scanner-run`), else next upcoming, else last. Outside
@@ -474,21 +606,21 @@ platba přišla.“*
   load; a stored session without `layout` is ignored); without one *„Bez
   spojení. Poprvé se scanner musí přihlásit s internetem.“*
 - **Snapshot** (`organizer.php` `snapshot {runId}` → `scanner_snapshot()`):
-  `{runId, at, tickets: [{id, variableSymbol, name, seats, status,
-  checkedInAt, checkedInBy}], vips: vip_list()}` – all reservations of the
+  `{runId, at, tickets: [{id, variableSymbol, name, seats, childSeats,
+  infants, status, checkedIn: {seat: {at, by}}}], vips: vip_list()}` – all reservations of the
   run (any status), no e-mails or money. `useOffline(runId)` loads it for the
   selected run on start, every 60 s and on the browser `online` event, and
   keeps it in localStorage key `zidle-scanner-offline` (`src/scanner/offline.js`:
   `session`, `snapshots` per run, `queue`). An online `valid` result also
-  marks the ticket checked in in the stored snapshot.
-- **Offline ticket check** (`verifyOffline()`): find by id (legacy: VS), VS
-  must match → not found `unknown` (*„Vstupenka není v seznamu tohoto termínu
-  – může být na jiný termín, nebo neplatná.“*); pending `unpaid`;
-  cancelled/expired `cancelled`; paid and checked in (snapshot or this
-  device's queue) `used` with the time; else `valid` and an event
-  `{uid, runId, type: "ticket", id, variableSymbol, at}` is queued. Seats come
-  from the snapshot (`changed` as online). The check-in window works as
-  online (run times from the cached session).
+  marks the seat checked in in the stored snapshot (`markTicketCheckedIn()`).
+- **Offline ticket check** (`verifyOffline()`): find by id, VS must match →
+  not found `unknown` (*„Vstupenka není v seznamu tohoto termínu – může být na
+  jiný termín, nebo neplatná.“*); pending `unpaid`; cancelled/expired
+  `cancelled`; seat not in the reservation `seat_cancelled`; seat checked in
+  (snapshot or this device's queue) `used` with the time; else `valid` and an
+  event `{uid, runId, type: "ticket", id, variableSymbol, seat, at}` is
+  queued. Kind, seats and counts come from the snapshot. The check-in window
+  works as online (run times from the cached session).
 - **Offline VIP** (`VipView`): list from the snapshot when `vip-list` fails;
   **Vpustit** queues `vip-checkin {id, at}`; **Vrátit** removes a queued
   arrival, otherwise queues `vip-undo {id}`; queued events are applied over
@@ -498,10 +630,12 @@ platba přišla.“*
   request, snapshot refresh, `online` event); sent events leave the queue;
   403 for a run drops its events. Server, in order, each in a transaction:
   `ticket` – reservation by id + VS + run `FOR UPDATE`: not found → conflict
-  `unknown`; not paid → `not_paid`; not checked in → `checked_in_at` = device
-  time, `checked_in_by` = `<device name> (offline)`; the same time and device
-  again → ok (resend); otherwise → `already_checked_in` (the first check-in
-  stays). `vip-checkin` likewise (`unknown`, `already_checked_in`);
+  `unknown`; not paid or the seat not in the reservation → `not_paid`; seat
+  not checked in → `ticket_checkins` row with the device time and
+  `<device name> (offline)` (the reservation keeps its earliest check-in); the
+  same time and device again → ok (resend); otherwise → `already_checked_in`
+  (the first check-in stays). Conflict labels name the seat
+  (`reservation_label()`: *„VS … <name> · <seat_label()>“*). `vip-checkin` likewise (`unknown`, `already_checked_in`);
   `vip-undo` clears the arrival. Device time is limited to the last 48 hours
   (`OFFLINE_MAX_AGE_HOURS`) and never later than now. Conflicts go to
   `scan_conflicts` (the same conflict only once). Response
@@ -518,8 +652,8 @@ platba přišla.“*
   stored data; a 401 removes it too. Snapshots of runs no longer in the
   session or ended more than a day ago are removed on the next online start.
 - Limit: devices offline at the same time do not see each other's
-  check-ins; the same ticket shown at two such entrances passes both and
-  appears as a conflict after sending.
+  check-ins; the same seat ticket shown at two such entrances passes both and
+  appears as a conflict after sending. On-site sales need a connection.
 
 ## 12. Scanner access (invites)
 
@@ -613,24 +747,48 @@ header shows *Přihlášen: <name>*.
 
 Tabs:
 
-- **Rezervace** – cards per status (pending/paid), refunds due, per run
-  occupancy (VIP seats count as held); filters run/status (incl. `refund`)/
-  search (VS, name, e-mail, seat). Amount column: *přijato X* when it differs
-  from the price, *zbývá doplatit Y* for partly paid pending. Actions:
-  `payment` (§9), `ticket` (send/resend), `cancel`, `cancel-seats`,
-  `refunded`, `email` (change). Within 14 days of the GDPR deletion date and
+- **Rezervace** – cards per status (pending/paid), refunds due, on-site
+  sales to verify (*Na místě – ověřit platbu*), per run occupancy (VIP seats
+  count as held); filters run/status (incl. `refund`, `onsite`)/ search (VS,
+  name, e-mail, seat). Name column: *prodal(a) <organizer>* for on-site sales.
+  Seats column: one seat per line with *dítě* / *kód* chips and ✓ when
+  checked in, *+ N dítě do 3 let na klíně*. Status column: *odbaveno K z N
+  míst, poprvé <time> (<by>)*; on-site paid *na místě – ověřte, že platba
+  dorazila* / *platba ověřena <time>*. Amount column: *přijato X* when it
+  differs from the price, *zbývá doplatit Y* for partly paid pending.
+  Actions: `payment` (§9), `ticket` (send/resend; not without an e-mail),
+  **PDF vstupenek** (`tickets.php`), `cancel`, `cancel-seats` (confirm
+  mentions that seats free by a code are not refunded), `refunded`, `email`
+  (change), `onsite-checked` (**Platba dorazila**, §9; replaces *přišla
+  platba* for unverified on-site sales). Within 14 days of the GDPR deletion date and
   while refunds are due, a warning: *„Osobní údaje se mažou <date>. U N rez.
   zbývá vrátit peníze – jejich jméno a e-mail se smažou až po označení
   „Vráceno“.“*
 - **VIP** – `vip-add` (with `seats[]`), `vip-delete`, `vip-reset` (§13).
+- **Slevové kódy** – cards *Kódů celkem* / *Použito* / *Nepoužito*; form
+  *Rozeslat slevové kódy* (textarea of e-mails separated by new lines,
+  commas, semicolons or spaces; an address listed N times gets N codes) →
+  `code-create` → `create_discount_codes()`: max 200
+  (*„Najednou lze poslat nejvýše 200 kódů.“*), any invalid address →
+  *„Neplatné e-maily: … Nic nebylo vytvořeno.“*; else one random code per
+  address (8 chars of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`) e-mailed at once:
+  *„Vytvořeno N kódů, e-mailem odesláno M.“* (+ *„Některé e-maily se
+  neodeslaly – zkuste „Poslat znovu“.“* / *„E-maily jsou vypnuté
+  (MAIL_ENABLED).“*). Search (e-mail, code, VS); table (last 1000): code,
+  e-mail, created (+ by), sent, state *Nepoužitý* / *Použitý* (time, VS link,
+  run, seat) / *Zrušený*; for unused: **Poslat znovu** (`code-resend`) and
+  **Zrušit** (`code-revoke`, *„Kód zrušen – už ho nelze použít.“*).
 - **Účetní** – see above.
 - **Pořadatelé** – `invite-save` (create / edit name+runs / new link),
   `invite-revoke`; below the invites *Odbavení bez spojení – konflikty*
   (last 500 `scan_conflicts`: time, run, label, reason *už odbaveno jinde* /
-  *vstupenka neplatila (nezaplaceno / zrušeno)* / *neznámá vstupenka*
+  *vstupenka neplatila (nezaplaceno / zrušeno / místo zrušeno)* / *neznámá vstupenka*
   (`CONFLICT_REASONS`), device, earlier check-in). The tab shows the number
   of conflicts in a red badge.
-- **Nastavení** – runs: `run-save` (start required, label, booking cut-off
+- **Nastavení** – *Splatnost plateb* (`deadline-save`, §8; errors
+  *„Splatnost N: zadejte datum a počet hodin 1–720.“*, success *„Splatnost
+  uložena. Platí pro nové rezervace, už vytvořené si splatnost ponechají.“*;
+  shows *„Nyní platí: N hodin“*); runs: `run-save` (start required, label, booking cut-off
   before start, storno rows), `run-delete` (only without reservations/VIP;
   removes invite links and offline scan conflicts of the run). Shows the GDPR deletion date.
   **Lock:** once a run has any reservation (`run_has_reservations()`, any
@@ -655,8 +813,9 @@ SMTPS, otherwise opportunistic STARTTLS; connect timeout and per-reply limit
 <phone>“* (`contact_line()`) when a contact is configured.
 Failures return false and are logged as `[zidle] Mail to … failed: <reason>`;
 mail is sent synchronously within the request. Texts are plain
-(`send_customer_email()`) except the ticket (HTML + text alternative with the
-QR as inline image `cid:ticket-qr` and the calendar event `udalost.ics`, §11). All contain `Termín: <run>`.
+(`send_customer_email()`) except the ticket (HTML + text alternative with one
+QR per seat as inline images `cid:ticket-qr-<n>`, `vstupenky.pdf` and the
+calendar event `udalost.ics`, §11). All reservation e-mails contain `Termín: <run>`.
 
 | Subject | Trigger |
 | --- | --- |
@@ -665,6 +824,8 @@ QR as inline image `cid:ticket-qr` and the calendar event `udalost.ics`, §11). 
 | Připomínka platby | cron: pending, due within 24 h, created ≥ 24 h before due, once |
 | Rezervace zrušena | cron: expired within the last 3 days, once (refund line for money that already arrived; *„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“*) |
 | Vstupenka | recorded payment completes the price / expired restored / pending partial cancellation now covered / resend |
+| Vstupenky | new reservation paid fully by discount codes |
+| Slevový kód | admin created or resent a code (`send_discount_code_email()`: *„posíláme Vám slevový kód na jedno místo zdarma na představení Moje židle 2026: XXXX-XXXX“*, where to enter it, *„Platí na libovolný termín a lze ho použít jednou. Z rezervace se odečte cena jednoho místa (nejdražšího – nejdřív dospělého, pak dětského).“*); `emailed_at` set |
 | Přijata část platby | recorded payment below the price |
 | Vrácení platby | recorded payment that can't be used (§9 reasons) |
 | Nová vstupenka | partial cancellation of a paid reservation |
@@ -679,7 +840,7 @@ Purge after `last_run_start() + DATA_RETENTION_DAYS`: empties first/last
 name and e-mail of all reservations except those with money still to return
 (`refund_amount > refunded_amount`; they are emptied by the first cron run
 after **Vráceno**), deletes all VIP guests (their seat rows cascade) and
-all `scan_conflicts`; VS,
+all `scan_conflicts` and empties the e-mails of `discount_codes`; VS,
 amounts, seats and statuses stay.
 
 ## 17. Spam and abuse protection
@@ -702,18 +863,21 @@ amounts, seats and statuses stay.
   ALTCHA), cancellations
   20/h per IP, logins/invites per IP.
 - Pending reservations per e-mail and run.
+- Discount codes are guessed only through reservations (IP limit + ALTCHA);
+  the code space is 32⁸.
 
 ## 18. HTTP API
 
 | Method | Endpoint | Body / query | Response |
 | --- | --- | --- | --- |
-| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price`, `deadlineHours`, `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays`, `layout` {levels, sections} |
+| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, stornoRules), `runId`, `taken[]`, `price` (adult seat), `childPrice`, `deadlineHours` (in effect now), `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays`, `layout` {levels, sections} |
 | GET | `altcha.php` | – | `{enabled, challenge}` (ALTCHA v2 challenge: `parameters`, `signature`) |
-| POST | `reservations.php` | `runId, firstName, lastName, email, seats[], formToken, hp, altcha` | 201 reservation payload |
-| GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, ticket, cancellation, refunds) |
+| POST | `reservations.php` | `runId, firstName, lastName, email, seats[], children, infants, codes[], formToken, hp, altcha` | 201 reservation payload |
+| GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, `tickets[]` {seat, kind, price, free, code (paid only), checkedInAt}, infants, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, cancellation (+ `seatPrices`), refunds) |
+| GET | `tickets.php?token=` | – | PDF of a paid reservation's tickets (§11), else 404 |
 | POST | `cancel.php` | `token, seats?` | reservation payload |
 | GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`), `layout` |
-| POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `vip-list {runId}`, `vip-checkin {id, runId, confirmOutside?}`, `vip-undo {id, runId}`, `snapshot {runId}`, `sync {runId, events}` | see §11–13 |
+| POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `vip-list {runId}`, `vip-checkin {id, runId, confirmOutside?}`, `vip-undo {id, runId}`, `snapshot {runId}`, `sync {runId, events}`, `sale-seats {runId}` → `{taken, price, childPrice, maxSeats}`, `sale-create {runId, seats, children, infants}` → 201 `{sale: {id, status, variableSymbol, amount, seats, tickets, infants, spd, account, iban}}` (errors 422 *„Vyberte 1 až 20 volných míst.“* / *„Dětí může být nejvýše tolik, kolik je míst.“*, 409 seats taken, 503 no IBAN), `sale-paid {runId, id}` → `{message}`, `sale-cancel {runId, id}` → `{message}` | see §9, §11–13 |
 
 Errors: `{"error": "<Czech message>", …}` with HTTP status; uncaught
 exceptions are logged (`[zidle]`) and return 500 `Chyba serveru. Zkuste to
@@ -723,7 +887,9 @@ prosím znovu.`
 
 - Seat id: `^[A-Z]{2}-\d{1,2}-\d{1,2}$`, validated against `SECTIONS`.
 - VS: random 10 digits (first digit non-zero), unique.
-- Ticket: §11. Payment: §9.
+- Ticket: §11 (one per seat). Payment: §9.
+- Discount code: 8 chars `[A-HJ-NP-Z2-9]`, shown `XXXX-XXXX`; input is
+  normalized (upper case, anything but letters/digits removed).
 - Invite token: 48 hex; device cookie values §12.
 - Times in API responses: ISO 8601 UTC with `Z`.
 
@@ -737,7 +903,7 @@ ticket format kept identical, schema + migration for DB changes, Czech UI.
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`
 (older runs of the same ref are cancelled). PHP 8.3, Node 22, MariaDB 10.11
-service (`root`/`root`, database `zidle_test`); the php job sets `ADMIN_PASSWORD=ci-admin-master` for the master login test.
+service (`root`/`root`, database `zidle_test`); the php job sets `ADMIN_PASSWORD=ci-admin-master` for the master login test and `BANK_IBAN` for the on-site sale test.
 
 | Job | Steps |
 | --- | --- |
@@ -760,7 +926,8 @@ browser globals.
 refuses to run unless `DB_NAME` ends with `_test`, recreates all tables from
 `db/schema.sql` (`reset_database()`: run 1 in 30 days with a 50 % storno rule
 from yesterday, run 2 started an hour ago) and creates reservations directly
-(`reservation()`). Covered: partial payment → paid with surplus refund; SPD
+(`reservation()`: adult seats 300 Kč, optional child seats 150 Kč and seats
+free by a code). Covered: partial payment → paid with surplus refund; SPD
 and payload ask for the missing amount; late payment restoring an expired
 reservation / refunded when seats are taken, after the run, or short;
 expiry refunding a partial payment and a later full payment restoring it;
@@ -769,7 +936,18 @@ customer storno fee; admin full refund; cancelling a partly paid pending
 reservation; partial cancellation completing a covered reservation; double
 booking rejected by the primary key; VIP seats (conflict, sorting, freeing
 on delete); GDPR purge keeping contacts while a refund is due; ticket code
-round trip and tamper detection; ticket calendar event (run start/end,
+round trip per seat with its kind, tamper detection and one ticket per seat
+in the payload; printable PDF (four tickets per page); child seats and free
+seats (most expensive first); booking with child seats, infants and a code
+(450 Kč, code marked used for the seat); a code used once, revoked and
+unknown codes refused; a reservation paid fully by codes is paid at once;
+codes per listed e-mail, invalid address creates nothing; storno of a free
+seat returns nothing, of a child seat its price minus the fee; pending with
+only free seats left becomes paid; payment deadline rules by booking time;
+online check-in per seat (outside window, used, child kind, cancelled seat,
+other run, old format); offline check-in of separate seats; on-site sale
+(QR amount, seat held, paid → all seats checked in, only once, cancel frees
+the seat); ticket calendar event (run start/end,
 UID, SEQUENCE, escaping, line folding, missing run); admin accounts (invite, short/mismatched
 password, accept, used link, case-insensitive login, wrong password,
 duplicate and invalid e-mail, new link = new password while the old one
@@ -781,12 +959,12 @@ VIP included), offline check-ins with device time and first-wins, resend
 without a new conflict, second device → `already_checked_in` recorded once,
 unpaid / unknown / other-run tickets → conflicts, device time limits, VIP
 arrival conflict and undo. Locally:
-`DB_NAME=zidle_test MAIL_ENABLED=0 php tests/php/run.php` (values in
+`DB_NAME=zidle_test MAIL_ENABLED=0 BANK_IBAN=CZ6508000000192000145399 php tests/php/run.php` (values in
 `config.local.php` take precedence over the environment).
 
-**Consistency** (`tests/consistency.mjs`): a ticket code made by
-`ticket_code()` is decoded by `src/scanner/ticket.js` (id, VS, count, name,
-seats).
+**Consistency** (`tests/consistency.mjs`): seat ticket codes made by
+`ticket_code()` (adult and child seat) are decoded by `src/scanner/ticket.js`
+(id, VS, seat, kind, name).
 
 **Playwright** (`playwright.config.js`, `tests/e2e/`): one worker, project
 *mobile* (Pixel 7, `cs-CZ`, Europe/Prague); admin tests use a 1360 × 900
@@ -798,30 +976,43 @@ desktop viewport. Web servers: `php -S 127.0.0.1:8000 -t .` with `ENV`
 `tests/e2e/seed.php` (fresh database: run 1 *Premiéra* in 30 days with a
 pending reservation, run 2 *Dnes* in 20 minutes with a paid ticket and a VIP
 guest on ML-1-1/2, plus a second paid ticket and VIP *Paní Offline* for the
-offline test) and stores its JSON output in `tests/e2e/.seed.json`.
+offline test, the first paid ticket with a child seat, three discount codes
+for *zakaznik@example.com*) and stores its JSON output (`ticket` /
+`offlineTicket` = seat ticket codes, `codes`) in `tests/e2e/.seed.json`.
 Tests:
 
 - `customer.spec.js` – choose *Premiéra*, the plan has as many section cards
   as the server layout and its balcony heading, two seats, form (waits for
   `FORM_MIN_SECONDS`, real invisible ALTCHA), payment page with QR, 600 Kč
   and VS, seats taken in `seats.php`, cancel all → *Rezervaci jste zrušili.*
-  and seats free; run picker without horizontal scroll.
+  and seats free; run picker without horizontal scroll; three seats with one
+  child, one infant and a seeded discount code (bad format message, summary
+  *2 × 300 Kč · 1 × 150 Kč · sleva −300 Kč*, 450 Kč on the payment page with
+  the seat kinds) and the used code refused next time; two seats paid by two
+  codes → *Rezervovat zdarma*, *Zaplaceno*, two ticket QR codes and the PDF
+  download.
 - `admin.spec.js` – record 200 Kč (*zbývá doplatit 400 Kč*, input prefilled
   400), then the rest → *Zaplaceno*; VIP with two seats picked on the plan →
-  flash, gold seats, taken in `seats.php`; invite an accountant (link shown
+  flash, gold seats, taken in `seats.php`; discount codes (invalid e-mail →
+  nothing created, the same e-mail twice → two codes, revoke one); payment
+  deadline rule (*Nyní platí: 24 hodin*, `seats.php` `deadlineHours`, removed
+  again); invite an accountant (link shown
   in the tab, status *Čeká na heslo*), in another browser context the link →
   mismatched passwords error → password set and signed in (*Vítejte*,
   *Přihlášen*), sign out and in with e-mail + password, the used link is
   invalid, the admin disables the account → signed out on the next load.
 - `scanner.spec.js` – password login; the camera is replaced by a canvas
-  stream showing the seeded ticket QR (`getUserMedia` stub) → *Platná
-  vstupenka*, next scan *Už odbaveno*; VIP tab shows the seats, **Vpustit**
+  stream showing the seeded seat ticket QR (`getUserMedia` stub) → *Platná
+  vstupenka* with the seat, *Dospělý* and *rezervace 2 místa · odbaveno 1 z
+  2*, next scan *Už odbaveno*; VIP tab shows the seats, **Vpustit**
   records the arrival; offline (`context.setOffline`, after the snapshot was
   loaded): ticket *Platná vstupenka* *„bez spojení, podle seznamu z“*, strip
   *k odeslání: 1*, next scan *Už odbaveno*, VIP arrival, *k odeslání: 2*;
   back online → *„Odesláno 2 odbavení bez spojení.“* and both check-ins are on
   the server (`(offline)`); the scanner opens offline after one online visit
-  (service worker) with the cached session and the offline strip.
+  (service worker) with the cached session and the offline strip; tab
+  *Prodej*: two seats with one child → QR payment 450 Kč → **Zaplaceno –
+  vpustit** → *„Zaplaceno 450 Kč – 2 místa odbavena.“* and the seats taken.
 
 Locally `npm run test:e2e` needs PHP, MariaDB with a `zidle_test` database
 and the `DB_*` variables; move `api/config.local.php` aside or make sure it

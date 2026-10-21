@@ -164,3 +164,43 @@ function last_run_start(): ?DateTimeImmutable
     $runs = runs();
     return $runs ? run_starts(end($runs)) : null;
 }
+
+/**
+ * Payment deadline rules (admin → Nastavení, stored in settings "payment_deadlines"):
+ * [{"from": "YYYY-MM-DDTHH:MM:SSZ" (UTC), "hours": 24}, ...] sorted by from.
+ * A reservation made at or after a rule's "from" gets that many hours to pay;
+ * before the first rule PAYMENT_DEADLINE_HOURS applies.
+ */
+function payment_deadline_rules(): array
+{
+    $stmt = db()->prepare('SELECT value FROM settings WHERE name = ?');
+    $stmt->execute(['payment_deadlines']);
+    $rules = [];
+    foreach ((array) json_decode((string) $stmt->fetchColumn(), true) as $r) {
+        $from = is_array($r) ? storno_from((string) ($r['from'] ?? '')) : null;
+        if ($from !== null && (int) ($r['hours'] ?? 0) > 0) {
+            $rules[] = ['from' => iso_utc($from), 'hours' => (int) $r['hours']];
+        }
+    }
+    usort($rules, static fn ($a, $b) => strcmp($a['from'], $b['from']));
+    return $rules;
+}
+
+function save_payment_deadline_rules(array $rules): void
+{
+    usort($rules, static fn ($a, $b) => strcmp($a['from'], $b['from']));
+    db()->prepare('INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)')
+        ->execute(['payment_deadlines', json_encode($rules)]);
+}
+
+/** Hours to pay for a reservation made at $at (the latest started rule, else PAYMENT_DEADLINE_HOURS). */
+function payment_deadline_hours(DateTimeImmutable $at): int
+{
+    $hours = (int) config('PAYMENT_DEADLINE_HOURS');
+    foreach (payment_deadline_rules() as $rule) {
+        if (new DateTimeImmutable($rule['from']) <= $at) {
+            $hours = $rule['hours'];
+        }
+    }
+    return $hours;
+}

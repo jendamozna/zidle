@@ -4,6 +4,8 @@ import { seatsLabel } from '../plural.js';
 import { stornoText } from '../storno.js';
 import { runLabel } from '../runs.js';
 import { createAltcha } from '../altcha.js';
+import { formatCode, isCodeFormat, normalizeCode, priceSeats } from '../pricing.js';
+import Stepper from './Stepper.jsx';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -18,6 +20,12 @@ function validate(values) {
 export default function ReservationForm({ stats, deadlineHours, run, dataRetentionDays, submitting, onSubmit, onClose }) {
   const storno = stornoText(run?.stornoRules);
   const [values, setValues] = useState({ firstName: '', lastName: '', email: '', hp: '' });
+  const [children, setChildren] = useState(0);
+  const [infants, setInfants] = useState(0);
+  const [codes, setCodes] = useState([]);
+  const [codeInput, setCodeInput] = useState('');
+  const seatCount = stats.selectedCount;
+  const prices = priceSeats(stats.selected, children, codes.length, stats.price, stats.childPrice);
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const firstInput = useRef(null);
@@ -38,6 +46,19 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
     setErrors((errs) => ({ ...errs, [field]: undefined }));
   };
 
+  const addCode = () => {
+    const code = normalizeCode(codeInput);
+    if (!code) return;
+    let error;
+    if (!isCodeFormat(code)) error = 'Kód má 8 znaků, např. ABCD-EFGH.';
+    else if (codes.includes(code)) error = 'Tento kód už je zadaný.';
+    else if (codes.length >= seatCount) error = 'Každý kód platí na jedno místo – víc kódů než míst nelze použít.';
+    setErrors((errs) => ({ ...errs, codes: error }));
+    if (error) return;
+    setCodes((prev) => [...prev, code]);
+    setCodeInput('');
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const found = validate(values);
@@ -49,6 +70,9 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
       lastName: values.lastName.trim(),
       email: values.email.trim(),
       hp: values.hp,
+      children,
+      infants,
+      codes,
     };
     const send = async (payload) => onSubmit({ ...customer, altcha: payload });
     try {
@@ -107,9 +131,88 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
           Termín <strong>{runLabel(run)}</strong>
         </p>
 
+        <fieldset className="tickets" disabled={submitting}>
+          <legend>Vstupenky ({seatsLabel(seatCount)})</legend>
+          <div className="stepper">
+            <span className="stepper-label">
+              Dospělí
+              <small>od 18 let · {formatCzk(stats.price)}</small>
+            </span>
+            <output className="stepper-fixed">{seatCount - children}</output>
+          </div>
+          <Stepper
+            label="Děti 4–17 let"
+            hint={formatCzk(stats.childPrice)}
+            value={children}
+            max={seatCount}
+            onChange={setChildren}
+          />
+          <Stepper
+            label="Děti do 3 let na klíně"
+            hint="zdarma, bez vlastního místa a vstupenky"
+            value={infants}
+            max={seatCount}
+            onChange={setInfants}
+          />
+        </fieldset>
+
+        <div className={`field codes ${errors.codes ? 'has-error' : ''}`}>
+          <label htmlFor="discount-code">Slevové kódy</label>
+          <div className="code-entry">
+            <input
+              id="discount-code"
+              value={codeInput}
+              onChange={(e) => {
+                setCodeInput(e.target.value);
+                setErrors((errs) => ({ ...errs, codes: undefined }));
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addCode();
+                }
+              }}
+              placeholder="ABCD-EFGH"
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              disabled={submitting}
+            />
+            <button type="button" className="btn btn-ghost" onClick={addCode} disabled={submitting || !codeInput.trim()}>
+              Použít
+            </button>
+          </div>
+          {codes.length > 0 && (
+            <div className="code-chips">
+              {codes.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  className="seat-chip"
+                  onClick={() => setCodes((prev) => prev.filter((c) => c !== code))}
+                  aria-label={`Odebrat kód ${formatCode(code)}`}
+                  disabled={submitting}
+                >
+                  {formatCode(code)}
+                  <span aria-hidden="true">×</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {errors.codes ? <small>{errors.codes}</small> : <span className="hint">Každý kód = jedno místo zdarma (nejdražší).</span>}
+        </div>
+
         <div className="modal-summary">
-          <span>{seatsLabel(stats.selectedCount)} × {formatCzk(stats.price)}</span>
-          <strong>{formatCzk(stats.total)}</strong>
+          <span>
+            {[
+              prices.adults && `${prices.adults} × ${formatCzk(stats.price)}`,
+              prices.children && `${prices.children} × ${formatCzk(stats.childPrice)}`,
+              prices.discount && `sleva −${formatCzk(prices.discount)}`,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+          <strong>{formatCzk(prices.total)}</strong>
         </div>
 
         <div className="field-row">
@@ -127,7 +230,10 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
         </div>
 
         <div className="modal-notes">
-          {deadlineHours ? <p>Splatnost {deadlineHours} hodin (nejpozději do začátku termínu), poté se místa uvolní.</p> : null}
+          {deadlineHours && prices.total > 0 ? (
+            <p>Splatnost {deadlineHours} hodin (nejpozději do začátku termínu), poté se místa uvolní.</p>
+          ) : null}
+          <p>Po zaplacení přijde e-mailem vstupenka pro každé místo zvlášť (1 QR kód = 1 židle), i k vytištění.</p>
           {storno && <p>Storno: {storno}.</p>}
           <p>
             Jméno a e-mail použijeme jen pro vyřízení této rezervace a
@@ -137,7 +243,7 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
         {formError && <p className="form-error" role="alert">{formError}</p>}
 
         <button type="submit" className="btn btn-primary btn-block" disabled={submitting || verifying}>
-          {verifying ? 'Ověřuji…' : submitting ? 'Rezervuji…' : 'Rezervovat a zaplatit'}
+          {verifying ? 'Ověřuji…' : submitting ? 'Rezervuji…' : prices.total > 0 ? 'Rezervovat a zaplatit' : 'Rezervovat zdarma'}
         </button>
       </form>
     </div>

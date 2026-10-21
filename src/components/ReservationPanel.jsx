@@ -47,6 +47,10 @@ export default function ReservationPanel({ stats, currentSectionId, submitting, 
           </span>
           <strong>{formatCzk(stats.total)}</strong>
         </div>
+        <p className="muted small panel-note">
+          Děti 4–17 let {formatCzk(stats.childPrice)}, do 3 let na klíně zdarma. Dětské vstupenky a slevové kódy zadáte
+          v dalším kroku.
+        </p>
         <button type="button" className="btn btn-primary btn-block" disabled={submitting} onClick={onReserve}>
           {submitting ? 'Rezervuji…' : 'Rezervovat'}
         </button>

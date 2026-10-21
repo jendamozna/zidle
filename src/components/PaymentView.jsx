@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { SECTION_BY_ID, compareSeatIds, formatCzk, parseSeatId } from '../data/layout.js';
-import { cancelReservation } from '../data/seatService.js';
+import { cancelReservation, ticketsPdfUrl } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
+import { KIND_LABELS } from '../pricing.js';
 import { stornoText } from '../storno.js';
 import { runLabel } from '../runs.js';
 
@@ -100,13 +101,15 @@ function CancelPanel({ reservation, onCancelled }) {
   const [selected, setSelected] = useState(() => new Set(reservation.seats));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const { percent, seatPrice } = reservation.cancellation;
+  const { percent, seatPrices } = reservation.cancellation;
   const isPaid = reservation.status === 'paid';
   const seats = [...reservation.seats].sort(compareSeatIds);
   const count = selected.size;
   const whole = count === seats.length;
+  const sum = (ids) => ids.reduce((total, id) => total + (seatPrices[id] ?? 0), 0);
   // Same calculation as the server (cancellation_money); the server's result is authoritative.
-  const value = isPaid ? seatPrice * count : 0;
+  // A seat paid by a discount code is worth 0 – nothing comes back for it.
+  const value = isPaid ? sum([...selected]) : 0;
   const received = reservation.payment.received;
   const fee = Math.round((value * percent) / 100);
   const refund = value - fee;
@@ -167,14 +170,16 @@ function CancelPanel({ reservation, onCancelled }) {
               : 'Nic neplatíte.')}
           {!isPaid &&
             !whole &&
-            `Nová částka k úhradě: ${formatCzk(Math.max(0, seatPrice * (seats.length - count) - received))}.`}
-          {isPaid && percent === 0 && `Částku ${formatCzk(refund)} pošleme zpět na účet, ze kterého platba přišla.`}
+            `Nová částka k úhradě: ${formatCzk(Math.max(0, sum(seats.filter((id) => !selected.has(id))) - received))}.`}
+          {isPaid && percent === 0 && refund > 0 && `Částku ${formatCzk(refund)} pošleme zpět na účet, ze kterého platba přišla.`}
+          {isPaid && value === 0 && 'Místa zdarma se slevovým kódem se nevracejí – kód zůstává použitý.'}
           {isPaid &&
             percent > 0 &&
             percent < 100 &&
+            value > 0 &&
             `Storno poplatek ${percent} % (${formatCzk(fee)}). Zbylých ${formatCzk(refund)} pošleme zpět na účet, ze kterého platba přišla.`}
-          {isPaid && percent >= 100 && 'Storno poplatek je 100 %, peníze se nevracejí.'}
-          {isPaid && !whole && ' Na e-mail přijde nová vstupenka.'}
+          {isPaid && percent >= 100 && value > 0 && 'Storno poplatek je 100 %, peníze se nevracejí.'}
+          {isPaid && !whole && ' Na e-mail přijdou nové vstupenky.'}
         </p>
       )}
       {error && <p className="form-error">{error}</p>}
@@ -190,28 +195,71 @@ function CancelPanel({ reservation, onCancelled }) {
   );
 }
 
-export default function PaymentView({ reservation, onChange, onBack }) {
+/** QR code image (data URL) of a text, or null while it is being drawn. */
+function useQrImage(text, width) {
   const [qr, setQr] = useState(null);
-  const { payment, status } = reservation;
-  const isPending = status === 'pending';
-  // Pending: bank payment QR. Paid: ticket QR scanned at the entrance.
-  const qrText = isPending ? payment.spd : reservation.ticket;
-
   useEffect(() => {
-    if (!qrText) {
+    if (!text) {
       setQr(null);
       return;
     }
-    QRCode.toDataURL(qrText, { width: 520, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#2b2620', light: '#ffffff' } })
+    QRCode.toDataURL(text, { width, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#2b2620', light: '#ffffff' } })
       .then(setQr)
       .catch(() => setQr(null));
-  }, [qrText]);
+  }, [text, width]);
+  return qr;
+}
 
-  const groups = {};
-  for (const id of [...reservation.seats].sort(compareSeatIds)) {
-    const { sectionId, row, seat } = parseSeatId(id);
-    (groups[sectionId] ??= []).push(`ř. ${row} · ${seat}`);
-  }
+function TicketCard({ ticket, index, count }) {
+  const qr = useQrImage(ticket.code, 400);
+  const { sectionId, row, seat } = parseSeatId(ticket.seat);
+  return (
+    <li className={`ticket-card ${ticket.checkedInAt ? 'is-used' : ''}`}>
+      {qr ? <img src={qr} alt={`QR kód vstupenky ${ticket.seat}`} width="200" height="200" /> : <div className="qr-placeholder" />}
+      <div>
+        <strong>{SECTION_BY_ID[sectionId]?.name ?? sectionId}</strong>
+        <span>
+          řada {row} · místo {seat}
+        </span>
+        <span className="muted small">
+          {KIND_LABELS[ticket.kind]} · {index + 1} z {count}
+          {ticket.checkedInAt && ' · odbaveno'}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+/** Paid: one ticket (QR code) per seat and the printable PDF. */
+function Tickets({ reservation }) {
+  const { tickets } = reservation;
+  if (!tickets.length || !tickets[0].code) return null;
+  return (
+    <section className="tickets-view" aria-labelledby="tickets-title">
+      <div className="tickets-head">
+        <div>
+          <h3 id="tickets-title">Vstupenky</h3>
+          <p className="muted small">Každé místo má vlastní QR kód – 1 QR kód = 1 židle. Ukažte je u vchodu na mobilu, nebo si je vytiskněte a rozstříhejte.</p>
+        </div>
+        <a className="btn btn-primary" href={ticketsPdfUrl(reservation.token)} download>
+          Stáhnout PDF k tisku
+        </a>
+      </div>
+      <ul className="ticket-grid">
+        {tickets.map((ticket, i) => (
+          <TicketCard key={ticket.seat} ticket={ticket} index={i} count={tickets.length} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export default function PaymentView({ reservation, onChange, onBack }) {
+  const { payment, status } = reservation;
+  const isPending = status === 'pending';
+  // Pending: bank payment QR. Paid: the tickets below, one QR per seat.
+  const qr = useQrImage(isPending ? payment.spd : null, 520);
+
 
   return (
     <div className="detail">
@@ -231,14 +279,10 @@ export default function PaymentView({ reservation, onChange, onBack }) {
       </div>
 
       <div className="payment">
-        {qrText && (
+        {isPending && (
           <div className="payment-qr">
-            {qr ? (
-              <img src={qr} alt={isPending ? 'QR kód pro platbu' : 'QR kód vstupenky'} width="260" height="260" />
-            ) : (
-              <div className="qr-placeholder" />
-            )}
-            <span className="muted">{isPending ? 'QR Platba' : 'Vstupenka'}</span>
+            {qr ? <img src={qr} alt="QR kód pro platbu" width="260" height="260" /> : <div className="qr-placeholder" />}
+            <span className="muted">QR Platba</span>
           </div>
         )}
 
@@ -283,15 +327,24 @@ export default function PaymentView({ reservation, onChange, onBack }) {
           )}
 
           <ul className="pay-seats">
-            {Object.entries(groups).map(([sectionId, seats]) => (
-              <li key={sectionId}>
-                <span>{SECTION_BY_ID[sectionId]?.name ?? sectionId}</span>
-                <span className="muted">{seats.join(', ')}</span>
+            {reservation.tickets.map((t) => (
+              <li key={t.seat}>
+                <span>{seatLabel(t.seat)}</span>
+                <span className="muted">
+                  {KIND_LABELS[t.kind]} · {t.free ? 'zdarma (slevový kód)' : formatCzk(t.price)}
+                </span>
               </li>
             ))}
+            {reservation.infants > 0 && (
+              <li>
+                <span>Děti do 3 let na klíně</span>
+                <span className="muted">{reservation.infants} · zdarma, bez vstupenky</span>
+              </li>
+            )}
           </ul>
           <p className="muted small">{reservation.email}</p>
 
+          {status === 'paid' && <Tickets reservation={reservation} />}
           <CancellationInfo reservation={reservation} />
           {reservation.cancellation?.allowed && (
             <div className="cancel-box">

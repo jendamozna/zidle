@@ -12,6 +12,10 @@
 //   POST organizer.php {action: "vip-undo", id, runId}
 //   POST organizer.php {action: "snapshot", runId}          → list for checking tickets offline (scanner_snapshot())
 //   POST organizer.php {action: "sync", runId, events}      → check-ins made offline (apply_offline_scans())
+//   POST organizer.php {action: "sale-seats", runId}        → {taken, price, childPrice, maxSeats} for selling on site
+//   POST organizer.php {action: "sale-create", runId, seats, children, infants} → {sale} with the QR payment (onsite.php)
+//   POST organizer.php {action: "sale-paid", runId, id}     → paid and checked in
+//   POST organizer.php {action: "sale-cancel", runId, id}   → seats free again
 // Outside the run's check-in window (SCAN_WINDOW_*), check-ins happen only with
 // confirmOutside = true; otherwise the result is "outside_window".
 declare(strict_types=1);
@@ -65,7 +69,7 @@ run_api(function (): void {
         case 'verify':
             $access = require_organizer();
             $run = require_run($access, (int) ($body['runId'] ?? 0));
-            verify_ticket((string) ($body['code'] ?? ''), $run, $access, !empty($body['confirmOutside']));
+            json_response(verify_ticket((string) ($body['code'] ?? ''), $run, $access, !empty($body['confirmOutside'])));
             // no break
         case 'vip-list':
             $access = require_organizer();
@@ -81,6 +85,43 @@ run_api(function (): void {
             $access = require_organizer();
             $run = require_run($access, (int) ($body['runId'] ?? 0));
             json_response(apply_offline_scans($access, $run, is_array($body['events'] ?? null) ? $body['events'] : []));
+            // no break
+        case 'sale-seats':
+            $access = require_organizer();
+            $run = require_run($access, (int) ($body['runId'] ?? 0));
+            expire_reservations();
+            json_response([
+                'taken' => run_taken_seats($run['id']),
+                'price' => adult_price(),
+                'childPrice' => child_price(),
+                'maxSeats' => (int) config('MAX_SEATS_PER_RESERVATION'),
+            ]);
+            // no break
+        case 'sale-create':
+            $access = require_organizer();
+            $run = require_run($access, (int) ($body['runId'] ?? 0));
+            $sold = onsite_sale_create($access, $run, $body['seats'] ?? null, $body['children'] ?? 0, $body['infants'] ?? 0);
+            if (isset($sold['error'])) {
+                json_error($sold['error'], $sold['status'], $sold['extra']);
+            }
+            json_response($sold, 201);
+            // no break
+        case 'sale-paid':
+            $access = require_organizer();
+            $run = require_run($access, (int) ($body['runId'] ?? 0));
+            $message = onsite_sale_paid($access, $run, (int) ($body['id'] ?? 0));
+            if ($message === null) {
+                json_error('Prodej už není otevřený.', 409);
+            }
+            json_response(['message' => $message]);
+            // no break
+        case 'sale-cancel':
+            $access = require_organizer();
+            $run = require_run($access, (int) ($body['runId'] ?? 0));
+            if (!onsite_sale_cancel($run, (int) ($body['id'] ?? 0))) {
+                json_error('Prodej už není otevřený.', 409);
+            }
+            json_response(['message' => 'Prodej zrušen, místa jsou volná.']);
             // no break
         case 'vip-checkin':
         case 'vip-undo':
@@ -129,79 +170,4 @@ function scanner_run_public(array $run): array
 {
     [$from, $to] = run_scan_window($run);
     return run_public($run) + ['scanFrom' => iso_utc($from), 'scanTo' => iso_utc($to)];
-}
-
-/**
- * result: valid          – paid, first scan (check-in recorded now)
- *         used           – paid, already scanned before
- *         unpaid         – reservation not paid yet
- *         cancelled      – reservation cancelled or expired
- *         invalid        – not our ticket, forged or altered
- *         wrong_run      – valid reservation, but for another run (not checked in)
- *         outside_window – would be valid, but the run is outside its check-in window
- *                          and the organizer did not confirm (not checked in)
- */
-function verify_ticket(string $code, array $run, array $access, bool $confirmOutside): void
-{
-    $ticket = parse_ticket_code($code);
-    if ($ticket === null) {
-        json_response(['result' => 'invalid']);
-    }
-
-    $pdo = db();
-    $pdo->beginTransaction();
-    // Current state is always loaded from the database: by reservation id
-    // (older tickets: by variable symbol); the VS must match as well.
-    $stmt = $ticket['id'] !== null
-        ? $pdo->prepare('SELECT * FROM reservations WHERE id = ? AND variable_symbol = ? FOR UPDATE')
-        : $pdo->prepare('SELECT * FROM reservations WHERE variable_symbol = ? FOR UPDATE');
-    $stmt->execute($ticket['id'] !== null ? [$ticket['id'], $ticket['variableSymbol']] : [$ticket['variableSymbol']]);
-    $r = $stmt->fetch();
-
-    if (!$r) {
-        $pdo->rollBack();
-        json_response(['result' => 'invalid', 'ticket' => $ticket]);
-    }
-    // Seats may have been cancelled individually since the ticket was issued:
-    // the database is authoritative, the scanner shows the current seats.
-    $changed = $r['seats'] !== implode(',', $ticket['seats']);
-
-    $wrongRun = (int) $r['run_id'] !== $run['id'];
-    $firstScan = $r['checked_in_at'] === null;
-    $outside = !run_in_scan_window($run) && !$confirmOutside;
-    if ($r['status'] === 'paid' && $firstScan && !$wrongRun && !$outside) {
-        $now = db_time(now_utc());
-        $pdo->prepare('UPDATE reservations SET checked_in_at = ?, checked_in_by = ? WHERE id = ?')
-            ->execute([$now, $access['name'], $r['id']]);
-        $r['checked_in_at'] = $now;
-        $r['checked_in_by'] = $access['name'];
-    }
-    $pdo->commit();
-
-    $result = match (true) {
-        $wrongRun && in_array($r['status'], ['pending', 'paid'], true) => 'wrong_run',
-        $r['status'] === 'paid' && !$firstScan => 'used',
-        $r['status'] === 'paid' && $outside => 'outside_window',
-        $r['status'] === 'paid' => 'valid',
-        $r['status'] === 'pending' => 'unpaid',
-        default => 'cancelled',
-    };
-    $ticketRun = run_by_id((int) $r['run_id']);
-    json_response([
-        'result' => $result,
-        'changed' => $changed,
-        'ticket' => [
-            'id' => (int) $r['id'],
-            'variableSymbol' => $r['variable_symbol'],
-            'count' => (int) $r['seat_count'],
-            'name' => trim($r['first_name'] . ' ' . $r['last_name']) ?: $ticket['name'],
-            'seats' => explode(',', $r['seats']),
-        ],
-        'checkedInAt' => iso_time($r['checked_in_at']),
-        'checkedInBy' => $r['checked_in_by'],
-        'status' => $r['status'],
-        'run' => $ticketRun ? ['id' => $ticketRun['id'], 'label' => run_label($ticketRun)] : null,
-        'cancelledSeats' => $r['cancelled_seats'] === '' ? [] : explode(',', $r['cancelled_seats']),
-        'email' => $r['email'],
-    ]);
 }

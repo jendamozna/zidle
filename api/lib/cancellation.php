@@ -3,17 +3,12 @@
 // deletion of personal data after the event.
 declare(strict_types=1);
 
-/** Price of one seat in this reservation (prices are stored per reservation). */
-function seat_price(array $r): int
-{
-    return (int) $r['seat_count'] > 0 ? intdiv((int) $r['amount'], (int) $r['seat_count']) : 0;
-}
-
 /**
  * What cancelling by the customer would mean right now.
  * allowed: false with a reason when the reservation can no longer be cancelled.
  * fee/refund are for the whole reservation; for single seats the frontend
- * uses seatPrice and percent (the server recalculates on cancellation).
+ * uses seatPrices (price of each current seat, 0 for a seat paid by a discount code)
+ * and percent (the server recalculates on cancellation).
  */
 function cancellation_terms(array $r): array
 {
@@ -29,28 +24,30 @@ function cancellation_terms(array $r): array
         return ['allowed' => false, 'reason' => 'event_started'];
     }
     $percent = $r['status'] === 'paid' ? storno_percent($run, now_utc()) : 0;
-    [$fee, $refund] = cancellation_money($r, (int) $r['seat_count'], 'customer');
+    $seats = seat_list((string) $r['seats']);
+    [$fee, $refund] = cancellation_money($r, $seats, 'customer');
     return [
         'allowed' => true,
         'percent' => $percent,
-        'seatPrice' => seat_price($r),
+        'seatPrices' => array_combine($seats, array_map(static fn ($seat) => seat_value($r, $seat), $seats)),
         'fee' => $fee,
         'refund' => $refund,
     ];
 }
 
 /**
- * [fee, refund] in CZK for cancelling $count seats. Unpaid: no fee; cancelling
+ * [fee, refund] in CZK for cancelling $seats. Unpaid: no fee; cancelling
  * all seats returns any part of the price that already arrived. Paid by customer:
- * storno fee in effect. Paid by admin: full refund.
+ * storno fee in effect. Paid by admin: full refund. A seat paid by a discount code
+ * is worth 0 – nothing comes back for it.
  */
-function cancellation_money(array $r, int $count, string $by): array
+function cancellation_money(array $r, array $seats, string $by): array
 {
     if ($r['status'] !== 'paid') {
         $kept = (int) $r['paid_amount'] - (int) $r['refund_amount'];
-        return [0, $count >= (int) $r['seat_count'] ? max(0, $kept) : 0];
+        return [0, count($seats) >= (int) $r['seat_count'] ? max(0, $kept) : 0];
     }
-    $value = seat_price($r) * $count;
+    $value = seats_value($r, $seats);
     $run = run_by_id((int) $r['run_id']);
     $percent = $by === 'customer' && $run !== null ? storno_percent($run, now_utc()) : 0;
     $fee = (int) round($value * $percent / 100);
@@ -89,7 +86,8 @@ function cancel_seats(int $id, ?array $seatIds, string $by): array
         $remaining = array_values(array_diff($current, $cancel));
         $whole = $remaining === [];
 
-        [$fee, $refund] = cancellation_money($r, count($cancel), $by);
+        [$fee, $refund] = cancellation_money($r, $cancel, $by);
+        $remainingAmount = seats_value($r, $remaining);
         $paid = $r['status'] === 'paid';
         $totalFee = $paid ? (int) $r['cancel_fee'] + $fee : $r['cancel_fee'];
         $totalRefund = $paid || $refund > 0 ? (int) $r['refund_amount'] + $refund : $r['refund_amount'];
@@ -106,7 +104,7 @@ function cancel_seats(int $id, ?array $seatIds, string $by): array
                 'UPDATE reservations SET seats = ?, seat_count = ?, amount = ?, cancelled_seats = ?,
                    cancel_fee = ?, refund_amount = ? WHERE id = ?'
             )->execute([
-                implode(',', $remaining), count($remaining), seat_price($r) * count($remaining),
+                implode(',', $remaining), count($remaining), $remainingAmount,
                 $cancelledSeats, $totalFee, $totalRefund, $id,
             ]);
             $placeholders = implode(',', array_fill(0, count($cancel), '?'));
@@ -114,7 +112,7 @@ function cancel_seats(int $id, ?array $seatIds, string $by): array
                 ->execute([$id, ...$cancel]);
             if (!$paid) {
                 // What already arrived may now cover the lower price.
-                complete_if_covered($pdo, array_merge($r, ['amount' => seat_price($r) * count($remaining)]));
+                complete_if_covered($pdo, array_merge($r, ['amount' => $remainingAmount]));
             }
         }
         $pdo->commit();
@@ -253,8 +251,8 @@ function data_deletion_at(): ?DateTimeImmutable
 
 /**
  * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails
- * (payment records – VS, amount, seats – stay for accounting)
- * and delete the VIP list and offline scan conflicts. Reservations with money still to return keep their
+ * (payment records – VS, amount, seats – stay for accounting), delete the VIP list and
+ * offline scan conflicts and empty the e-mails of discount codes. Reservations with money still to return keep their
  * contact until the refund is marked as done (the next run then removes it).
  * Returns the number of anonymized reservations.
  */
@@ -271,5 +269,6 @@ function purge_personal_data(): int
     $stmt->execute();
     db()->exec('DELETE FROM vip_guests');
     db()->exec('DELETE FROM scan_conflicts');
+    db()->exec("UPDATE discount_codes SET email = '' WHERE email <> ''");
     return $stmt->rowCount();
 }

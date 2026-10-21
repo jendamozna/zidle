@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { SECTIONS, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
+import { SECTION_BY_ID, parseSeatId, setLayout } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
+import { KIND_LABELS } from '../pricing.js';
 import { decodeTicket } from './ticket.js';
 import { acceptInvite, getSession, login, logout, verifyTicket } from './api.js';
 import { STALE_MS, cachedSession, clearOffline, getQueue, markTicketCheckedIn, saveSession, verifyOffline } from './offline.js';
 import { useOffline } from './useOffline.js';
 import { useQrCamera } from './useQrCamera.js';
 import VipView from './VipView.jsx';
+import SaleView from './SaleView.jsx';
 import { runLabel } from '../runs.js';
 
 const RUN_KEY = 'zidle-scanner-run';
@@ -62,6 +64,7 @@ const RESULT = {
   used: { tone: 'warn', title: 'Už odbaveno' },
   unpaid: { tone: 'bad', title: 'Nezaplaceno' },
   cancelled: { tone: 'bad', title: 'Rezervace zrušena' },
+  seat_cancelled: { tone: 'bad', title: 'Místo zrušeno' },
   invalid: { tone: 'bad', title: 'Neplatný kód' },
   payment: { tone: 'bad', title: 'To je platební QR kód' },
   wrong_run: { tone: 'bad', title: 'Jiný termín' },
@@ -79,18 +82,6 @@ const formatTime = (iso) =>
     minute: '2-digit',
     timeZone: 'Europe/Prague',
   }).format(new Date(iso));
-
-function groupSeats(seats) {
-  const bySection = {};
-  for (const id of [...seats].sort(compareSeatIds)) {
-    const { sectionId, row, seat } = parseSeatId(id);
-    ((bySection[sectionId] ??= {})[row] ??= []).push(seat);
-  }
-  return SECTIONS.filter((s) => bySection[s.id]).map((s) => ({
-    section: s,
-    rows: Object.entries(bySection[s.id]).map(([row, seats]) => ({ row, seats })),
-  }));
-}
 
 function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
   const [password, setPassword] = useState('');
@@ -144,6 +135,20 @@ function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
   );
 }
 
+/** The seat of a scanned ticket in large type, with its kind (adult / child). */
+function TicketSeat({ ticket }) {
+  const { sectionId, row, seat } = parseSeatId(ticket.seat);
+  return (
+    <div className="scan-seat-big">
+      <span className="scan-section">{SECTION_BY_ID[sectionId]?.name ?? sectionId}</span>
+      <span className="scan-place">
+        řada <strong>{row}</strong> · místo <strong>{seat}</strong>
+      </span>
+      <span className={`scan-kind kind-${ticket.kind}`}>{KIND_LABELS[ticket.kind]}</span>
+    </div>
+  );
+}
+
 function ResultCard({ scan, onNext }) {
   const { ticket, result, checkedInAt } = scan;
   const meta = RESULT[result];
@@ -158,35 +163,26 @@ function ResultCard({ scan, onNext }) {
           <h2>{meta.title}</h2>
           {result === 'used' && checkedInAt && <p>Poprvé načteno {formatTime(checkedInAt)}</p>}
           {result === 'wrong_run' && scan.run && <p>Vstupenka platí na {scan.run.label}</p>}
-          {scan.changed && <p>Část míst byla zrušena – platí jen uvedená místa.</p>}
         </div>
       </div>
 
       {ticket ? (
         <div className="scan-ticket">
+          <TicketSeat ticket={ticket} />
           <div className="scan-ticket-name">
             <strong>{ticket.name}</strong>
-            <span className="scan-count">{seatsLabel(ticket.count)}</span>
+            {ticket.count !== undefined && (
+              <span className="scan-count">
+                rezervace {seatsLabel(ticket.count)} · odbaveno {ticket.checkedIn} z {ticket.count}
+              </span>
+            )}
           </div>
-          <ul className="scan-seats">
-            {groupSeats(ticket.seats).map(({ section, rows }) => (
-              <li key={section.id}>
-                <span className="scan-section">{section.name}</span>
-                <span className="scan-rows">
-                  {rows.map(({ row, seats }) => (
-                    <span key={row} className="scan-row">
-                      <span className="muted">ř. {row}</span>
-                      {seats.map((s) => (
-                        <span key={s} className="scan-seat">
-                          {s}
-                        </span>
-                      ))}
-                    </span>
-                  ))}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {ticket.infants > 0 && (
+            <p className="small">
+              + {ticket.infants === 1 ? '1 dítě' : `${ticket.infants} děti`} do 3 let na klíně (bez vstupenky)
+            </p>
+          )}
+          {result === 'seat_cancelled' && <p className="small">Toto místo bylo z rezervace zrušeno, ostatní místa platí.</p>}
           {result === 'unknown' && (
             <p className="small">Vstupenka není v seznamu tohoto termínu – může být na jiný termín, nebo neplatná.</p>
           )}
@@ -242,7 +238,7 @@ function OfflineStrip({ offline }) {
 }
 
 function Scanner({ runs, name, onLogout, onUnauthorized }) {
-  const [mode, setMode] = useState('scan'); // scan | vip
+  const [mode, setMode] = useState('scan'); // scan | vip | sale
   const [scan, setScan] = useState(null);
   const [runId, setRunId] = useState(() => defaultRunId(runs));
   const [confirmed, setConfirmed] = useState(() => new Set()); // runs confirmed for check-in outside their window
@@ -284,13 +280,12 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
       try {
         const res = await verifyTicket(raw, runId, confirmOutside);
         reachable();
-        if (res.result === 'valid') markTicketCheckedIn(runId, res.ticket.id, res.checkedInAt);
+        if (res.result === 'valid') markTicketCheckedIn(runId, res.ticket.id, res.ticket.seat, res.checkedInAt);
         setScan({
           raw,
           ticket: res.ticket ?? decoded,
           result: res.result,
           checkedInAt: res.checkedInAt,
-          changed: res.changed,
           run: res.run,
         });
       } catch (err) {
@@ -306,7 +301,9 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
         // No connection: check against the downloaded list, queue the check-in.
         fail(err);
         const res = verifyOffline(decoded, snapshot, getQueue());
-        if (res.result === 'valid') enqueue({ type: 'ticket', id: res.ticket.id, variableSymbol: res.ticket.variableSymbol });
+        if (res.result === 'valid') {
+          enqueue({ type: 'ticket', id: res.ticket.id, variableSymbol: res.ticket.variableSymbol, seat: res.ticket.seat });
+        }
         setScan({ raw, ...res, offlineAt: snapshot.at });
       }
     },
@@ -371,6 +368,9 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
         <button type="button" role="tab" aria-selected={mode === 'vip'} onClick={() => switchMode('vip')}>
           VIP
         </button>
+        <button type="button" role="tab" aria-selected={mode === 'sale'} onClick={() => switchMode('sale')}>
+          Prodej
+        </button>
       </div>
 
       <OfflineStrip offline={offline} />
@@ -388,6 +388,8 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
           onSwitch={changeRun}
           onConfirm={() => setConfirmed((prev) => new Set(prev).add(runId))}
         />
+      ) : mode === 'sale' ? (
+        <SaleView key={runId} runId={runId} onUnauthorized={onUnauthorized} />
       ) : mode === 'vip' ? (
         <VipView key={runId} runId={runId} confirmOutside={confirmOutside} offline={offline} onUnauthorized={onUnauthorized} />
       ) : (

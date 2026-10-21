@@ -80,3 +80,39 @@ test('admin invites an accountant, who sets a password and signs in with the e-m
   await expect(jana.locator('input[name=email]')).toBeVisible();
   await other.close();
 });
+
+test('admin sends discount codes to e-mails and revokes an unused one', async ({ page }) => {
+  await adminLogin(page);
+  await page.getByRole('link', { name: 'Slevové kódy' }).click();
+  await page.fill('textarea[name=emails]', 'rodina@example.com\nrodina@example.com\nspatny-email');
+  await page.getByRole('button', { name: 'Vytvořit a poslat kódy' }).click();
+  await expect(page.locator('.flash')).toContainText('Neplatné e-maily: spatny-email. Nic nebylo vytvořeno.');
+
+  await page.fill('textarea[name=emails]', 'rodina@example.com\nrodina@example.com');
+  await page.getByRole('button', { name: 'Vytvořit a poslat kódy' }).click();
+  await expect(page.locator('.flash')).toContainText('Vytvořeno 2 kódy');
+  const rows = page.locator('tr', { hasText: 'rodina@example.com' });
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first().locator('.code')).toHaveText(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await rows.first().getByRole('button', { name: 'Zrušit' }).click();
+  await expect(page.locator('.flash')).toContainText('Kód zrušen');
+  await expect(page.locator('tr', { hasText: 'rodina@example.com' }).locator('.badge', { hasText: 'Zrušený' })).toHaveCount(1);
+});
+
+test('admin sets a shorter payment deadline for reservations from a date', async ({ page, request }) => {
+  await adminLogin(page);
+  await page.goto('http://127.0.0.1:8000/api/admin.php?view=settings');
+  await page.locator('input[name="deadline_from[]"]').first().fill('2020-01-01T00:00');
+  await page.locator('input[name="deadline_hours[]"]').first().fill('24');
+  await page.getByRole('button', { name: 'Uložit splatnost' }).click();
+  await expect(page.locator('.flash')).toContainText('Splatnost uložena.');
+  await expect(page.getByText('Nyní platí: 24 hodin')).toBeVisible();
+  expect((await (await request.get('http://127.0.0.1:8000/api/seats.php')).json()).deadlineHours).toBe(24);
+
+  await page.locator('input[name="deadline_from[]"]').first().fill('');
+  await page.locator('input[name="deadline_hours[]"]').first().fill('');
+  await page.getByRole('button', { name: 'Uložit splatnost' }).click();
+  await expect(page.getByText('Nyní platí: 72 hodin')).toBeVisible();
+});

@@ -1,6 +1,7 @@
 <?php
-// Default configuration. Override values in config.local.php (not committed)
-// or through environment variables of the same name.
+// Default configuration. Override values (first wins) in config.local.php (not committed),
+// environment variables of the same name, or api/.env (KEY=value lines, not committed –
+// e.g. the SMTP settings, see .env.example).
 
 return (static function (): array {
     $defaults = [
@@ -10,7 +11,8 @@ return (static function (): array {
         'DB_USER' => 'zidle',
         'DB_PASS' => '',
 
-        'SEAT_PRICE' => 300,             // CZK per seat
+        'SEAT_PRICE' => 300,             // CZK per adult seat (from 18 years)
+        'CHILD_SEAT_PRICE' => 150,       // CZK per child seat (4–17 years); up to 3 years on a lap for free, no seat
         'PAYMENT_DEADLINE_HOURS' => 72,  // due date shown to the customer
         'PAYMENT_GRACE_HOURS' => 48,     // unpaid reservations are cancelled this long after the due date (bank transfer delay)
         'REFUND_DAYS' => 14,             // refunds are promised within this many days (e-mails)
@@ -77,10 +79,27 @@ return (static function (): array {
 
     $local = is_file(__DIR__ . '/config.local.php') ? require __DIR__ . '/config.local.php' : [];
 
+    // api/.env: KEY=value per line; # comments, optional "export " and quotes around the value.
+    $dotenv = [];
+    $lines = is_file(__DIR__ . '/.env') ? file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : false;
+    foreach ($lines ?: [] as $line) {
+        if (preg_match('/^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/', $line, $m)) {
+            $value = $m[2];
+            if (preg_match('/^"(.*)"$/', $value, $q)) {
+                $value = stripcslashes($q[1]);
+            } elseif (preg_match("/^'(.*)'$/", $value, $q)) {
+                $value = $q[1];
+            } else {
+                $value = preg_replace('/\s+#.*$/', '', $value) ?? $value;
+            }
+            $dotenv[$m[1]] = $value;
+        }
+    }
+
     $config = [];
     foreach ($defaults as $key => $value) {
         $env = getenv($key);
-        $config[$key] = $local[$key] ?? ($env !== false ? $env : $value);
+        $config[$key] = $local[$key] ?? ($env !== false ? $env : ($dotenv[$key] ?? $value));
     }
 
     return $config;

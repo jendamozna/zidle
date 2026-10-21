@@ -43,3 +43,9 @@ export const vipUndo = (id, runId) => call({ action: 'vip-undo', id, runId });
 export const getSnapshot = (runId) => call({ action: 'snapshot', runId });
 /** Sends check-ins made offline: {results: [{status, reason}], conflicts}. */
 export const syncScans = (runId, events) => call({ action: 'sync', runId, events });
+/** Selling on site: {taken, price, childPrice, maxSeats} of the run. */
+export const saleSeats = (runId) => call({ action: 'sale-seats', runId });
+/** {sale: {id, variableSymbol, amount, seats, tickets, infants, spd, account, iban}} */
+export const saleCreate = (runId, seats, children, infants) => call({ action: 'sale-create', runId, seats, children, infants });
+export const salePaid = (runId, id) => call({ action: 'sale-paid', runId, id });
+export const saleCancel = (runId, id) => call({ action: 'sale-cancel', runId, id });

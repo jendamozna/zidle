@@ -1,18 +1,18 @@
-// Ticket QR format – keep in sync with api/lib/ticket.php:
-//   Z26|<reservation id>|<variable symbol>|<seat count>|<name>|<seat,seat,...>|<signature>
-// (older tickets: without the reservation id). Decoding here is only an
-// offline fallback; the scanner shows the current state loaded from the server.
+// Ticket QR format – keep in sync with api/lib/ticket.php. One code = one seat:
+//   Z26M|<reservation id>|<variable symbol>|<seat>|<kind A|C>|<name>|<signature>
+// Decoding here is only an offline fallback; the scanner shows the current state loaded from the server.
+
+const KINDS = { A: 'adult', C: 'child' };
 
 export function decodeTicket(text) {
   const parts = String(text).trim().split('|');
-  if (parts.length === 6) parts.splice(1, 0, '');
-  if (parts.length !== 7 || parts[0] !== 'Z26') return null;
-  const [, id, variableSymbol, count, name, seats] = parts;
+  if (parts.length !== 7 || parts[0] !== 'Z26M') return null;
+  const [, id, variableSymbol, seat, kind, name] = parts;
   return {
-    id: id ? Number(id) : null,
+    id: Number(id),
     variableSymbol,
-    count: Number(count),
+    seat,
+    kind: KINDS[kind] ?? 'adult',
     name,
-    seats: seats ? seats.split(',') : [],
   };
 }
