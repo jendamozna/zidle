@@ -120,6 +120,39 @@ function admin_from_session(mixed $id, mixed $fingerprint): ?array
     return hash_equals($me['pw'], $fingerprint) ? $me : null;
 }
 
+// ---------------------------------------------------------------- runs of an Odbavovatel
+
+/** Runs the account may check in (user_runs), in start order; a Správce checks in every run regardless. */
+function user_run_ids(int $id): array
+{
+    $stmt = db()->prepare('SELECT run_id FROM user_runs WHERE user_id = ?');
+    $stmt->execute([$id]);
+    $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    return array_values(array_filter(array_keys(runs()), static fn ($runId) => in_array($runId, $ids, true)));
+}
+
+/** Sets the runs of the account (unknown runs ignored). */
+function save_user_runs(int $id, array $runIds): void
+{
+    $runIds = array_values(array_unique(array_filter(array_map('intval', $runIds), static fn ($runId) => run_by_id($runId) !== null)));
+    $pdo = db();
+    $pdo->beginTransaction();
+    $pdo->prepare('DELETE FROM user_runs WHERE user_id = ?')->execute([$id]);
+    $insert = $pdo->prepare('INSERT INTO user_runs (user_id, run_id) VALUES (?, ?)');
+    foreach ($runIds as $runId) {
+        $insert->execute([$id, $runId]);
+    }
+    $pdo->commit();
+}
+
+/** E-mails of the accounts assigned to the run, sorted. */
+function run_scanner_emails(int $runId): array
+{
+    $stmt = db()->prepare('SELECT u.email FROM user_runs ur JOIN admin_users u ON u.id = ur.user_id WHERE ur.run_id = ? AND u.disabled_at IS NULL ORDER BY u.email');
+    $stmt->execute([$runId]);
+    return $stmt->fetchAll(PDO::FETCH_COLUMN);
+}
+
 // ---------------------------------------------------------------- deploy
 
 /** DEPLOY_TOKEN matches (and is long enough to be a real secret). */
@@ -177,10 +210,10 @@ function admin_new_invite(int $id): string
 }
 
 /**
- * Invites a new user with the given roles. Returns ['token' => string, 'user' => array]
- * or an error message for the admin.
+ * Invites a new user with the given roles and runs to check in (for an Odbavovatel).
+ * Returns ['token' => string, 'user' => array] or an error message for the admin.
  */
-function admin_invite(string $email, array $roles, string $invitedBy): array|string
+function admin_invite(string $email, array $roles, string $invitedBy, array $runIds = []): array|string
 {
     $email = mb_strtolower(trim($email));
     $roles = roles_csv($roles);
@@ -196,6 +229,7 @@ function admin_invite(string $email, array $roles, string $invitedBy): array|str
     db()->prepare('INSERT INTO admin_users (email, roles, invited_by, created_at) VALUES (?, ?, ?, ?)')
         ->execute([$email, $roles, mb_substr($invitedBy, 0, 200), db_time(now_utc())]);
     $id = (int) db()->lastInsertId();
+    save_user_runs($id, $runIds);
     $token = admin_new_invite($id);
     return ['token' => $token, 'user' => admin_user($id)];
 }
@@ -281,7 +315,7 @@ function admin_set_roles(int $id, array $roles, int $me): string
         return 'Svou vlastní roli Správce nelze odebrat.';
     }
     db()->prepare('UPDATE admin_users SET roles = ? WHERE id = ?')->execute([$csv, $id]);
-    return "Role účtu {$user['email']} uloženy.";
+    return "Role a termíny účtu {$user['email']} uloženy.";
 }
 
 /** Disables (true) or enables an account; nobody can disable themselves. Returns a message. */

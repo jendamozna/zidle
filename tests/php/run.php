@@ -579,7 +579,7 @@ test('roles: Správce everything, Účetní reservations, Odbavovatel the scanne
     same([false, false, true], $can(['scanner']), 'Odbavovatel');
     same([false, true, true], $can(['accountant', 'scanner']), 'Účetní + Odbavovatel');
     $me = account('role@example.cz', ['scanner']);
-    same('Role účtu role@example.cz uloženy.', admin_set_roles($me['id'], ['accountant', 'scanner'], 999), 'changed');
+    same('Role a termíny účtu role@example.cz uloženy.', admin_set_roles($me['id'], ['accountant', 'scanner'], 999), 'changed');
     same(['accountant', 'scanner'], admin_login('role@example.cz', 'dlouhe-heslo-1')['roles'] ?? null, 'new roles');
     $admin = account('admin2@example.cz', ['admin']);
     same('Svou vlastní roli Správce nelze odebrat.', admin_set_roles($admin['id'], ['accountant'], $admin['id']), 'not your own Správce role');
@@ -619,7 +619,7 @@ test('the scanner signs in Odbavovatel and Správce accounts; a new password, a 
     account('ucetni-jen@example.cz', ['accountant'], 'ucetni-heslo-1');
     same('Nesprávný e-mail nebo heslo.', scanner_login('vchod@example.cz', 'spatne-heslo'), 'wrong password');
     same('Tento účet nemá roli Odbavovatel. Požádejte správce o přidání role.', scanner_login('ucetni-jen@example.cz', 'ucetni-heslo-1'), 'Účet without the role');
-    same(['name' => 'vchod@example.cz', 'runIds' => null], array_intersect_key((array) scanner_login('vchod@example.cz', 'vchodove-heslo'), ['name' => 1, 'runIds' => 1]), 'signed in, all runs');
+    same(['name' => 'vchod@example.cz', 'runIds' => []], array_intersect_key((array) scanner_login('vchod@example.cz', 'vchodove-heslo'), ['name' => 1, 'runIds' => 1]), 'signed in, all runs');
     same(true, is_array(scanner_login('spravce@example.cz', 'spravcovo-heslo')), 'Správce may scan');
     $cookie = scanner_cookie_for($scanner);
     same($scanner['email'], scanner_access_from_cookie($cookie)['name'] ?? null, 'cookie');
@@ -631,6 +631,27 @@ test('the scanner signs in Odbavovatel and Správce accounts; a new password, a 
     $token = (string) request_password_reset('vchod@example.cz');
     reset_password($token, 'nove-vchodove-1', 'nove-vchodove-1');
     same(null, scanner_access_from_cookie($cookie), 'new password');
+});
+
+test('an Odbavovatel checks in only the assigned runs (none, one or several); a run can have several; a Správce checks in all', function (): void {
+    $none = account('bez-terminu@example.cz', ['scanner']);
+    same([[], []], [scanner_access_of($none)['runIds'], scanner_runs(scanner_access_of($none))], 'no run assigned');
+    $invite = admin_invite('dva-terminy@example.cz', ['scanner'], 'test', [1, 2, 999]);
+    $both = is_array($invite) ? (int) $invite['user']['id'] : 0;
+    same([2, 1], user_run_ids($both), 'invited with two runs (in start order), unknown run ignored');
+    save_user_runs($none['id'], [2]);
+    $access = scanner_access_of(signed_in_user(admin_user($none['id']) ?? []));
+    same([[2], false, true], [$access['runIds'], scanner_can_use_run($access, 1), scanner_can_use_run($access, 2)], 'one run');
+    same(['bez-terminu@example.cz', 'dva-terminy@example.cz'], run_scanner_emails(2), 'run 2 has two Odbavovatelé');
+    $admin = account('spravce-terminy@example.cz', ['admin', 'scanner']);
+    same(null, scanner_access_of($admin)['runIds'], 'Správce: every run');
+    db()->prepare('INSERT INTO runs (label, starts_at) VALUES (?, ?)')->execute(['Smazaný', db_time(now_utc()->modify('+40 days'))]);
+    $runId = (int) db()->lastInsertId();
+    runs(true);
+    save_user_runs($both, [1, 2, $runId]);
+    db()->prepare('DELETE FROM runs WHERE id = ?')->execute([$runId]);
+    runs(true);
+    same([2, 1], user_run_ids($both), 'a deleted run disappears from the assignment');
 });
 
 // ------------------------------------------------------------------ offline

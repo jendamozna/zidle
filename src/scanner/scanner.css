@@ -15,6 +15,12 @@
   place-items: center;
 }
 
+.scan-no-runs {
+  align-content: center;
+  gap: 0.75rem;
+  text-align: center;
+}
+
 .scan-login {
   min-height: 100vh;
   display: flex;

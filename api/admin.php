@@ -149,7 +149,7 @@ if ($canManage && $csrfOk && in_array($action, ['user-invite', 'user-link', 'use
     $roles = array_map('strval', (array) ($_POST['roles'] ?? []));
     if ($action === 'user-invite' || $action === 'user-link') {
         if ($action === 'user-invite') {
-            $result = admin_invite((string) ($_POST['email'] ?? ''), $roles, $me['email']);
+            $result = admin_invite((string) ($_POST['email'] ?? ''), $roles, $me['email'], (array) ($_POST['runs'] ?? []));
         } else {
             $user = admin_user($id);
             $result = match (true) {
@@ -170,6 +170,9 @@ if ($canManage && $csrfOk && in_array($action, ['user-invite', 'user-link', 'use
         }
     } elseif ($action === 'user-roles') {
         $_SESSION['flash'] = admin_set_roles($id, $roles, $me['id']);
+        if (str_starts_with($_SESSION['flash'], 'Role a termíny')) {
+            save_user_runs($id, (array) ($_POST['runs'] ?? []));
+        }
     } else {
         $_SESSION['flash'] = admin_set_disabled($id, $action === 'user-disable', $me['id']);
     }
@@ -712,11 +715,21 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           }
           return $out;
       };
+      // Runs an Odbavovatel checks in (a Správce checks in every run).
+      $runChecks = static function (array $selected) use ($h): string {
+          $out = '<span class="hint">Odbavuje termíny:</span>';
+          foreach (runs() as $run) {
+              $out .= '<label class="check"><input type="checkbox" name="runs[]" value="' . (int) $run['id'] . '"'
+                  . (in_array($run['id'], $selected, true) ? ' checked' : '') . '> ' . $h(run_label($run)) . '</label>';
+          }
+          return $out;
+      };
   ?>
   <p class="hint settings-intro">Uživatele zve správce zadáním e-mailu a rolí. Pozvaný dostane e-mail s odkazem
     (platí <?= ADMIN_INVITE_DAYS ?> dní); účet vznikne, až si na něm vytvoří heslo. Přihlašovací jméno je e-mail.
     <strong>Správce</strong> může vše, <strong>Účetní</strong> vidí jen rezervace a platby, <strong>Odbavovatel</strong>
-    jen odbavuje (scanner). Kdo má víc rolí, vidí všechny jejich možnosti v menu. Zapomenuté heslo si každý obnoví
+    jen odbavuje (scanner) – a to jen termíny, které mu tu přiřadíte (žádný, jeden i víc); správce odbavuje
+    všechny termíny. Kdo má víc rolí, vidí všechny jejich možnosti v menu. Zapomenuté heslo si každý obnoví
     sám na přihlašovací stránce.</p>
 
   <?php if ($newLink): ?>
@@ -735,6 +748,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <h2>Pozvat uživatele</h2>
     <label>E-mail (bude přihlašovací jméno)<input type="email" name="email" required maxlength="190" placeholder="jana@example.cz"></label>
     <div class="checks"><?= $roleChecks([]) ?></div>
+    <div class="checks"><?= $runChecks([]) ?></div>
     <button name="action" value="user-invite">Poslat pozvánku</button>
   </form>
 
@@ -757,12 +771,17 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td><strong><?= $h($u['email']) ?></strong><?= $self ? ' <small>(vy)</small>' : '' ?></td>
           <td>
             <?= $h(implode(', ', array_map(static fn ($r) => USER_ROLES[$r], user_roles($u)))) ?>
+            <?php $userRuns = user_run_ids((int) $u['id']);
+                if (in_array('scanner', user_roles($u), true) && !in_array('admin', user_roles($u), true)): ?>
+              <br><small class="<?= $userRuns ? '' : 'overdue' ?>">odbavuje: <?= $userRuns ? $h(implode(', ', array_map(static fn ($r) => run_label(runs()[$r]), $userRuns))) : 'žádný termín' ?></small>
+            <?php endif ?>
             <details class="edit-email"><summary>změnit</summary>
               <form method="post" class="roles-edit">
                 <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                 <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
                 <div class="checks"><?= $roleChecks(user_roles($u)) ?></div>
-                <button name="action" value="user-roles">Uložit role</button>
+                <div class="checks"><?= $runChecks($userRuns) ?></div>
+                <button name="action" value="user-roles">Uložit</button>
               </form>
             </details>
           </td>
@@ -870,6 +889,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     </div>
     <?php if ($locked): ?>
       <p class="hint locked">Představení už má rezervace – začátek nelze měnit (zákazníci rezervovali na tento čas).</p>
+    <?php endif ?>
+    <?php if ($run['id']): $scanners = run_scanner_emails((int) $run['id']); ?>
+      <p class="hint">Odbavují: <?= $scanners ? $h(implode(', ', $scanners)) : 'zatím nikdo' ?> (a všichni správci) – přiřazení v záložce
+        <a href="admin.php?view=users">Uživatelé</a>.</p>
     <?php endif ?>
     <div class="actions">
       <button name="action" value="run-save"><?= $run['id'] ? 'Uložit termín' : 'Přidat termín' ?></button>

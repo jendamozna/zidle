@@ -148,3 +148,14 @@ CREATE TABLE IF NOT EXISTS admin_users (
   UNIQUE KEY uq_invite (invite_hash),
   UNIQUE KEY uq_reset (reset_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+-- Runs an Odbavovatel may check in (0..n per account, 0..n accounts per run).
+-- A Správce checks in every run without rows here.
+CREATE TABLE IF NOT EXISTS user_runs (
+  user_id INT UNSIGNED NOT NULL,
+  run_id  INT UNSIGNED NOT NULL,
+  PRIMARY KEY (user_id, run_id),
+  KEY idx_run (run_id),
+  CONSTRAINT fk_user_runs_user FOREIGN KEY (user_id) REFERENCES admin_users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_runs_run FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;

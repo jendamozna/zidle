@@ -463,7 +463,18 @@ export default function ScannerApp() {
   if (session === 'error') return <div className="scan-center form-error">{error}</div>;
   if (session === 'out') return <LoginScreen onLoggedIn={loadSession} />;
   if (!info.runs.length) {
-    return <div className="scan-center muted">Zatím není žádný termín k odbavení.</div>;
+    // An Odbavovatel without assigned runs (or no runs at all yet).
+    return (
+      <div className="scan-center scan-no-runs">
+        <p className="muted">
+          Nemáte přiřazený žádný termín k odbavení. Požádejte správce, aby Vám termín přiřadil, a pak stránku obnovte.
+        </p>
+        {info.name && <p className="small muted">{info.name}</p>}
+        <button type="button" className="btn btn-ghost btn-small" onClick={handleLogout}>
+          Odhlásit
+        </button>
+      </div>
+    );
   }
   return (
     <Scanner runs={info.runs} name={info.name} admin={info.admin} onLogout={handleLogout} onUnauthorized={handleUnauthorized} />

@@ -1,6 +1,6 @@
 <?php
 // Organizer API used by the ticket scanner (scanner.html). Access: accounts with the role
-// Odbavovatel or Správce (scanner_access.php), all runs.
+// Odbavovatel or Správce (scanner_access.php); an Odbavovatel only the assigned runs, a Správce all.
 //   GET  organizer.php                                      → {loggedIn, name, admin, runs, layout}
 //                                                             (a signed-in admin session signs the scanner in too)
 //   POST organizer.php {action: "login", email, password}   → signs the device in

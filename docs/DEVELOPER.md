@@ -292,6 +292,7 @@ All `DATETIME` columns and JSON dates are UTC.
 | `rate_limits` | `bucket` (sha256 of key), `hits`, `window_start` |
 | `settings` | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8) |
 | `admin_users` | accounts (§12): `email` (unique, lower case, login – the account has no other name), `roles` (CSV of `admin` / `accountant` / `scanner`), `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open invitation token, unique), `invite_expires_at`, `reset_hash` (sha256 of the open forgotten-password token, unique), `reset_expires_at`, `invited_by` (e-mail of the inviting Správce, `deploy` for the first one), `created_at`, `accepted_at`, `last_login_at`, `disabled_at` |
+| `user_runs` | PK (`user_id`, `run_id`), FKs to `admin_users` and `runs` (cascade): runs an Odbavovatel checks in (§12) |
 
 Schema changes: update `db/schema.sql` (no migrations, §3).
 
@@ -688,7 +689,7 @@ have several; `user_can(me, what)`):
 | --- | --- | --- | --- |
 | Správce | `admin` | everything: all admin tabs and the scanner | `manage`, `reservations`, `scan` |
 | Účetní | `accountant` | admin tab *Rezervace* (reservations and payments, all its actions) | `reservations` |
-| Odbavovatel | `scanner` | only the scanner (check-in, on-site sale), all runs | `scan` |
+| Odbavovatel | `scanner` | only the scanner (check-in, on-site sale), only the runs assigned to the account (`user_runs`, 0..n; a run can have several Odbavovatelé) | `scan` |
 
 - **Deploy** (`POST api/deploy.php {token, email, password}`, JSON or
   form fields; rate limit 10/h per IP): `deploy_token_ok()` – `DEPLOY_TOKEN`
@@ -705,7 +706,8 @@ have several; `user_can(me, what)`):
   voláním POST api/deploy.php s tokenem DEPLOY_TOKEN z config.local.php (viz
   docs/DEVELOPER.md).“*
 - **Invitation** (Správce, tab *Uživatelé*, `user-invite {email,
-  roles[]}` → `admin_invite()`): valid e-mail ≤ 190 (*„Neplatný e-mail.“*), at least one
+  roles[], runs[]}` → `admin_invite()`; `runs[]` = runs the Odbavovatel checks
+  in, `save_user_runs()`, unknown runs ignored): valid e-mail ≤ 190 (*„Neplatný e-mail.“*), at least one
   role (*„Vyberte alespoň jednu roli.“*), e-mail not used yet (*„Účet s tímto
   e-mailem už existuje.“*); creates the account without a password and a
   48-hex token (only its sha256 stored) valid `ADMIN_INVITE_DAYS` = 7 days.
@@ -768,8 +770,16 @@ have several; `user_can(me, what)`):
   drops its offline data. The scanner header shows **Správa** (link to the
   admin) when the account also has Správce or Účetní. Check-ins and on-site
   sales are recorded with the account's e-mail.
+- **Runs of an Odbavovatel**: `scanner_access_of()` gives an Odbavovatel
+  `runIds` = `user_run_ids()` (assigned runs in start order, may be none), a
+  Správce `null` (every run). `scanner_runs()` / `require_run()` (403 *„Na
+  tento termín nemáte přístup.“*) limit everything – the run select, verify,
+  snapshot, sync and on-site sale – to them. With no run the scanner shows
+  *„Nemáte přiřazený žádný termín k odbavení. Požádejte správce, aby Vám
+  termín přiřadil, a pak stránku obnovte.“*, the e-mail and **Odhlásit**.
+  Deleting a run removes its assignments (FK cascade).
 
-## 13. Discount codes## 13. Discount codes
+## 13. Discount codes
 
 Free seats are given with discount codes (`lib/discounts.php`). The admin enters e-mail addresses (tab
 *Slevové kódy*, §14); each listed address gets one code by e-mail (§15), an
@@ -839,12 +849,16 @@ Tabs:
   **Zrušit** (`code-revoke`, *„Kód zrušen – už ho nelze použít.“*).
 - **Uživatelé** (Správce) – intro: *„Uživatele zve správce zadáním e-mailu a
   rolí. … Správce může vše, Účetní vidí jen rezervace a platby, Odbavovatel jen
-  odbavuje (scanner). Kdo má víc rolí, vidí všechny jejich možnosti v menu.
-  Zapomenuté heslo si každý obnoví sám na přihlašovací stránce.“*; form *Pozvat
-  uživatele* (e-mail, role checkboxes, `user-invite`, §12); list (active
-  first, by e-mail): e-mail (*(vy)*), roles with *změnit* → checkboxes +
-  **Uložit role** (`user-roles` → `admin_set_roles()`: at least one role,
-  *„Svou vlastní roli Správce nelze odebrat.“*, *„Role účtu X uloženy.“*),
+  odbavuje (scanner) – a to jen termíny, které mu tu přiřadíte (žádný, jeden i
+  víc); správce odbavuje všechny termíny. Kdo má víc rolí, vidí všechny jejich
+  možnosti v menu. Zapomenuté heslo si každý obnoví sám na přihlašovací
+  stránce.“*; form *Pozvat uživatele* (e-mail, role checkboxes, *Odbavuje
+  termíny:* run checkboxes, `user-invite`, §12); list (active first, by
+  e-mail): e-mail (*(vy)*), roles (for an Odbavovatel without Správce also
+  *odbavuje: <runs>* / red *odbavuje: žádný termín*) with *změnit* → role and
+  run checkboxes + **Uložit** (`user-roles` → `admin_set_roles()`: at least one
+  role, *„Svou vlastní roli Správce nelze odebrat.“*; on success
+  `save_user_runs()` and *„Role a termíny účtu X uloženy.“*),
   invitation state *Přijata <time>* / *Nepřijata (platí do …)* / *Nepřijata –
   vypršela* / *Účet vypnut*, invited by + created, last sign-in. Actions:
   **Poslat znovu** (`user-link`, only not accepted: new token + e-mail, the
@@ -860,7 +874,10 @@ Tabs:
   uložena. Platí pro nové rezervace, už vytvořené si splatnost ponechají.“*;
   shows *„Nyní platí: N hodin“*); runs: `run-save` (start required, label, booking cut-off
   before start), `run-delete` (only without reservations, else *„Termín má rezervace, nelze ho smazat.“*;
-  removes offline scan conflicts of the run). Shows the GDPR deletion date.
+  removes offline scan conflicts and Odbavovatel assignments of the run). Each
+  saved run shows *„Odbavují: <e-mails> / zatím nikdo (a všichni správci) –
+  přiřazení v záložce Uživatelé“* (`run_scanner_emails()`, active accounts).
+  Shows the GDPR deletion date.
   The intro says that customers cannot cancel themselves – only the Správce,
   with paid seats refunded in full. **Lock:** once a run has any reservation
   (`run_has_reservations()`, any status), its start can no longer be changed –
@@ -1035,7 +1052,9 @@ roles and what they may, several roles add up, changing roles, nobody
 removes their own Správce role; forgotten password: unknown e-mail does
 nothing, the old password works until changed, new password signs old
 sessions out, used and expired links, 3 e-mails an hour; disabled account
-cannot sign in and loses its session, nobody disables themselves; scanner
+cannot sign in and loses its session, nobody disables themselves; runs of an
+Odbavovatel (none, one or several, unknown run ignored, a run with two
+Odbavovatelé, a Správce every run, a deleted run leaves the assignment); scanner
 sign-in for Odbavovatel and Správce only, the cookie stops working after a
 removed role or a new password, forged cookie refused); security:
 a seat has one id (leading zeros / trailing new line refused, the same chair
@@ -1110,9 +1129,11 @@ Tests:
   (service worker) with the cached session and the offline strip; tab
   *Prodej*: two seats of the left wing with one child → QR payment 450 Kč → **Zaplaceno –
   vpustit** → *„Zaplaceno 450 Kč – 2 místa odbavena.“* and the seats taken;
-  the admin invites an Odbavovatel, the phone opens the link and sets a password
-  → lands in the scanner signed in (no *Správa* link), the admin sees
-  *Přijata*; a Správce signed in to the admin opens *Odbavení* and is signed in
+  the admin invites an Odbavovatel without a run, the phone opens the link and
+  sets a password → lands in the scanner with *Nemáte přiřazený žádný termín*,
+  the admin sees *Přijata* and *odbavuje: žádný termín*, assigns the run *Dnes*
+  (*změnit* → **Uložit**), the reloaded scanner offers only *Dnes* (no
+  *Správa* link); a Správce signed in to the admin opens *Odbavení* and is signed in
   to the scanner (with *Správa*).
 
 Locally `npm run test:e2e` needs PHP, MariaDB with a `zidle_test` database

@@ -110,7 +110,7 @@ test('organizer sells free seats at the entrance: QR payment, then the seats are
   await expect(page.getByRole('button', { name: /Řada 4, místo 5/ })).toBeDisabled();
 });
 
-test('an invited Odbavovatel sets a password and lands in the scanner; Správa is not for them', async ({ page, browser }) => {
+test('an invited Odbavovatel lands in the scanner; without an assigned run it asks for one, then checks in only that run', async ({ page, browser }) => {
   const admin = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   await adminLogin(admin);
   await admin.goto('http://127.0.0.1:8000/api/admin.php?view=users');
@@ -126,11 +126,24 @@ test('an invited Odbavovatel sets a password and lands in the scanner; Správa i
   await page.fill('input[name=password_again]', 'vchodove-heslo-b');
   await page.getByRole('button', { name: 'Uložit heslo a přihlásit' }).click();
   await expect(page).toHaveURL(/scanner\.html/);
-  await expect(page.locator('.scan-who')).toHaveText('vchod.b@example.cz');
-  await expect(page.getByRole('link', { name: 'Správa' })).toHaveCount(0);
+  await expect(page.locator('.scan-no-runs')).toContainText('Nemáte přiřazený žádný termín');
 
+  // The admin assigns one run.
   await admin.reload();
-  await expect(admin.locator('tr', { hasText: 'vchod.b@example.cz' })).toContainText('Přijata');
+  const row = admin.locator('tr', { hasText: 'vchod.b@example.cz' });
+  await expect(row).toContainText('Přijata');
+  await expect(row).toContainText('odbavuje: žádný termín');
+  await row.locator('summary').click();
+  await row.getByLabel('Dnes').check();
+  await row.getByRole('button', { name: 'Uložit' }).click();
+  await expect(admin.locator('.flash')).toContainText('Role a termíny účtu vchod.b@example.cz uloženy.');
+  await expect(admin.locator('tr', { hasText: 'vchod.b@example.cz' })).toContainText('odbavuje:');
+
+  await page.reload();
+  await expect(page.locator('.scan-who')).toHaveText('vchod.b@example.cz');
+  await expect(page.locator('.run-select option')).toHaveCount(1);
+  await expect(page.locator('.run-select option')).toContainText('Dnes');
+  await expect(page.getByRole('link', { name: 'Správa' })).toHaveCount(0);
 });
 
 test('a Správce signed in to the admin opens the scanner from the menu without signing in again', async ({ page }) => {
