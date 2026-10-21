@@ -1,7 +1,8 @@
 <?php
-// Admin page: list reservations, confirm received payments, cancel reservations,
-// manage discount codes, scanner invites, runs and admin accounts (accountants invited by e-mail).
-// Sign-in: e-mail + password of an account, or the master ADMIN_PASSWORD with an empty e-mail.
+// Admin page (roles in admin_users.php): Správce – everything (reservations, plan, discount
+// codes, users, settings, scanner); Účetní – reservations and payments; Odbavovatel – only the
+// scanner (signed in here, sent on to scanner.html). Sign-in: e-mail + password; invitation
+// link ?pozvanka=, forgotten password ?zapomenute → e-mailed link ?heslo=.
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 
@@ -12,9 +13,9 @@ header('X-Frame-Options: DENY');
 
 $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
-if (admin_login_impossible()) {
+if (!admin_exists()) {
     http_response_code(503);
-    exit('Nastavte ADMIN_PASSWORD v config.local.php (alespoň ' . MASTER_PASSWORD_MIN . ' znaků, ne „change-me“).');
+    exit('Aplikace zatím nemá správce. Vytvořte ho jednorázově voláním POST api/deploy.php s tokenem DEPLOY_TOKEN z config.local.php (viz docs/DEVELOPER.md).');
 }
 
 if (empty($_SESSION['csrf'])) {
@@ -23,20 +24,31 @@ if (empty($_SESSION['csrf'])) {
 $csrfOk = hash_equals($_SESSION['csrf'], (string) ($_POST['csrf'] ?? ''));
 $action = $_POST['action'] ?? null;
 
+/** Starts the session of a signed-in user and goes on (Odbavovatel only → the scanner). */
+$signIn = static function (array $user, ?string $flash = null): never {
+    session_regenerate_id(true);
+    $_SESSION['admin_id'] = $user['id'];
+    $_SESSION['admin_pw'] = $user['pw'];
+    if ($flash !== null) {
+        $_SESSION['flash'] = $flash;
+    }
+    header('Location: admin.php');
+    exit;
+};
+
 if ($action === 'login' && $csrfOk) {
     $loginEmail = trim((string) ($_POST['email'] ?? ''));
     if (!login_allowed('admin')) {
         $loginError = 'Příliš mnoho pokusů. Zkuste to za 15 minut.';
     } elseif ($signedIn = admin_login($loginEmail, (string) ($_POST['password'] ?? ''))) {
-        session_regenerate_id(true);
-        $_SESSION['admin_id'] = $signedIn['id'] ?? 0;
+        $signIn($signedIn);
     } else {
         sleep(1);
         $loginError = 'Nesprávný e-mail nebo heslo.';
     }
 }
 
-// Invitation link admin.php?pozvanka=<token>: the invitee sets a password and is signed in.
+// Invitation link admin.php?pozvanka=<token>: the invitee sets a password, the account exists from now on.
 $inviteToken = (string) ($_GET['pozvanka'] ?? '');
 if ($inviteToken !== '') {
     $inviteError = null;
@@ -45,30 +57,63 @@ if ($inviteToken !== '') {
             ? admin_accept_invite($inviteToken, (string) ($_POST['password'] ?? ''), (string) ($_POST['password_again'] ?? ''))
             : 'Příliš mnoho pokusů. Zkuste to za 15 minut.';
         if (is_array($accepted)) {
-            session_regenerate_id(true);
-            $_SESSION['admin_id'] = $accepted['id'];
-            $_SESSION['flash'] = "Vítejte, {$accepted['name']}. Heslo je nastavené, příště se přihlásíte e-mailem {$accepted['email']}.";
-            header('Location: admin.php');
-            exit;
+            $signIn($accepted, "Vítejte, {$accepted['name']}. Heslo je nastavené, příště se přihlásíte e-mailem {$accepted['email']}.");
         }
         $inviteError = $accepted;
     }
     $invited = admin_invited_user($inviteToken);
 }
 
-$me = admin_from_session($_SESSION['admin_id'] ?? null);
+// Forgotten password: admin.php?zapomenute → e-mail; the e-mailed link admin.php?heslo=<token> sets a new one.
+$forgot = isset($_GET['zapomenute']);
+$forgotDone = false;
+if ($forgot && $action === 'forgot' && $csrfOk) {
+    if (login_allowed('reset')) {
+        request_password_reset((string) ($_POST['email'] ?? ''));
+    }
+    $forgotDone = true; // the same answer whether the e-mail exists or not
+}
+$resetToken = (string) ($_GET['heslo'] ?? '');
+if ($resetToken !== '') {
+    $resetError = null;
+    if ($action === 'reset-password' && $csrfOk) {
+        $done = login_allowed('reset')
+            ? reset_password($resetToken, (string) ($_POST['password'] ?? ''), (string) ($_POST['password_again'] ?? ''))
+            : 'Příliš mnoho pokusů. Zkuste to za 15 minut.';
+        if (is_array($done)) {
+            $signIn($done, 'Heslo změněno.');
+        }
+        $resetError = $done;
+    }
+    $resetUser = password_reset_user($resetToken);
+}
+
+$me = admin_from_session($_SESSION['admin_id'] ?? null, $_SESSION['admin_pw'] ?? null);
 if ($action === 'logout' && $csrfOk) {
     $_SESSION = [];
     session_destroy();
     header('Location: admin.php');
     exit;
 }
+$canManage = $me !== null && user_can($me, 'manage');
+$canReservations = $me !== null && user_can($me, 'reservations');
+$canScan = $me !== null && user_can($me, 'scan');
+$scannerUrl = app_base_url() . '/scanner.html';
+// Odbavovatel only: nothing to do here, the scanner is their app.
+if ($me !== null && !$canReservations && $inviteToken === '' && $resetToken === '' && !$forgot) {
+    header('Location: ' . $scannerUrl);
+    exit;
+}
 
 $flash = null;
-$view = in_array($_GET['view'] ?? '', ['plan', 'codes', 'scanners', 'users', 'settings'], true) ? $_GET['view'] : 'reservations';
+// Tabs the user may open (Účetní: only reservations).
+$view = (string) ($_GET['view'] ?? 'reservations');
+if (!in_array($view, ['plan', 'codes', 'users', 'settings'], true) || !$canManage) {
+    $view = 'reservations';
+}
 
 // Plánek: which seats of a run are "Záložní" (not for sale).
-if ($me !== null && $csrfOk && in_array($action, ['plan-save', 'plan-default'], true)) {
+if ($canManage && $csrfOk && in_array($action, ['plan-save', 'plan-default'], true)) {
     $runId = (int) ($_POST['run_id'] ?? 0);
     if (run_by_id($runId) === null) {
         $_SESSION['flash'] = 'Vyberte termín.';
@@ -83,7 +128,7 @@ if ($me !== null && $csrfOk && in_array($action, ['plan-save', 'plan-default'], 
     exit;
 }
 
-if ($me !== null && $csrfOk && in_array($action, ['code-create', 'code-resend', 'code-revoke'], true)) {
+if ($canManage && $csrfOk && in_array($action, ['code-create', 'code-resend', 'code-revoke'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     if ($action === 'code-create') {
         $_SESSION['flash'] = create_discount_codes((string) ($_POST['emails'] ?? ''), $me['name']);
@@ -99,24 +144,32 @@ if ($me !== null && $csrfOk && in_array($action, ['code-create', 'code-resend', 
     exit;
 }
 
-if ($me !== null && $csrfOk && in_array($action, ['user-invite', 'user-link', 'user-disable', 'user-enable'], true)) {
+if ($canManage && $csrfOk && in_array($action, ['user-invite', 'user-link', 'user-roles', 'user-disable', 'user-enable'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
+    $roles = array_map('strval', (array) ($_POST['roles'] ?? []));
     if ($action === 'user-invite' || $action === 'user-link') {
         if ($action === 'user-invite') {
-            $result = admin_invite((string) ($_POST['email'] ?? ''), (string) ($_POST['name'] ?? ''), $me['name']);
+            $result = admin_invite((string) ($_POST['email'] ?? ''), (string) ($_POST['name'] ?? ''), $roles, $me['name']);
         } else {
             $user = admin_user($id);
-            $result = $user === null ? 'Účet nenalezen.' : ($user['disabled_at'] !== null ? 'Účet je vypnutý.' : ['token' => admin_new_invite($id), 'user' => $user]);
+            $result = match (true) {
+                $user === null => 'Účet nenalezen.',
+                $user['disabled_at'] !== null => 'Účet je vypnutý.',
+                $user['password_hash'] !== null => 'Pozvánka už byla přijata.',
+                default => ['token' => admin_new_invite($id), 'user' => $user],
+            };
         }
         if (is_string($result)) {
             $_SESSION['flash'] = $result;
         } else {
             $user = $result['user'] ?? [];
             $mailed = send_admin_invite_email($user, $result['token'], $me['name']);
-            $_SESSION['flash'] = ($action === 'user-invite' ? "Pozvánka pro {$user['email']} vytvořena." : "Nový odkaz pro {$user['email']} vytvořen, původní přestal platit.")
+            $_SESSION['flash'] = ($action === 'user-invite' ? "Pozvánka pro {$user['email']} vytvořena." : "Nová pozvánka pro {$user['email']} vytvořena, původní odkaz přestal platit.")
                 . ($mailed ? ' E-mail odeslán.' : ' E-mail se neodeslal – předejte odkaz sami.');
             $_SESSION['user_link'] = ['email' => $user['email'], 'link' => admin_invite_link($result['token'])];
         }
+    } elseif ($action === 'user-roles') {
+        $_SESSION['flash'] = admin_set_roles($id, $roles, $me['id']);
     } else {
         $_SESSION['flash'] = admin_set_disabled($id, $action === 'user-disable', $me['id']);
     }
@@ -124,29 +177,7 @@ if ($me !== null && $csrfOk && in_array($action, ['user-invite', 'user-link', 'u
     exit;
 }
 
-if ($me !== null && $csrfOk && in_array($action, ['invite-save', 'invite-revoke'], true)) {
-    $id = (int) ($_POST['id'] ?? 0);
-    if ($action === 'invite-revoke') {
-        db()->prepare('UPDATE scanner_invites SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL')->execute([db_time(now_utc()), $id]);
-        $_SESSION['flash'] = 'Přístup zrušen – zařízení s touto pozvánkou už nemohou odbavovat.';
-    } else {
-        $name = trim((string) ($_POST['name'] ?? ''));
-        $runIds = (array) ($_POST['runs'] ?? []);
-        if ($name === '' || mb_strlen($name) > 100 || !$runIds) {
-            $_SESSION['flash'] = 'Vyplňte jméno a vyberte alespoň jeden termín.';
-        } else {
-            $token = save_invite($id, $name, $runIds, !empty($_POST['new_link']));
-            $_SESSION['flash'] = $id === 0 ? "Pozvánka pro {$name} vytvořena." : ($token ? 'Vytvořen nový odkaz, původní přestal platit.' : 'Pozvánka uložena.');
-            if ($token) {
-                $_SESSION['invite_link'] = ['name' => $name, 'link' => invite_link($token)];
-            }
-        }
-    }
-    header('Location: admin.php?view=scanners');
-    exit;
-}
-
-if ($me !== null && $csrfOk && $action === 'deadline-save') {
+if ($canManage && $csrfOk && $action === 'deadline-save') {
     // Payment deadline by the time of booking: from <date> new reservations get <hours> to pay.
     $rules = [];
     $errors = [];
@@ -172,14 +203,13 @@ if ($me !== null && $csrfOk && $action === 'deadline-save') {
     exit;
 }
 
-if ($me !== null && $csrfOk && in_array($action, ['run-save', 'run-delete'], true)) {
+if ($canManage && $csrfOk && in_array($action, ['run-save', 'run-delete'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     if ($action === 'run-delete') {
         if (run_has_reservations($id)) {
             $_SESSION['flash'] = 'Termín má rezervace, nelze ho smazat.';
         } else {
             db()->prepare('DELETE FROM runs WHERE id = ?')->execute([$id]);
-            db()->prepare('DELETE FROM scanner_invite_runs WHERE run_id = ?')->execute([$id]);
             db()->prepare('DELETE FROM scan_conflicts WHERE run_id = ?')->execute([$id]);
             $_SESSION['flash'] = 'Termín smazán.';
         }
@@ -237,7 +267,7 @@ if ($me !== null && $csrfOk && in_array($action, ['run-save', 'run-delete'], tru
     exit;
 }
 
-if ($me !== null && $csrfOk && in_array($action, ['payment', 'cancel', 'cancel-seats', 'ticket', 'email', 'refunded', 'onsite-checked'], true)) {
+if ($canReservations && $csrfOk && in_array($action, ['payment', 'cancel', 'cancel-seats', 'ticket', 'email', 'refunded', 'onsite-checked'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     $now = db_time(now_utc());
     if ($action === 'onsite-checked') {
@@ -410,7 +440,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   <form class="card login" method="post">
     <h1>Správa rezervací</h1>
     <?php if ($invited): ?>
-      <p>Dobrý den, <strong><?= $h($invited['name']) ?></strong>. Vytvořte si heslo do správy rezervací.
+      <p>Dobrý den, <strong><?= $h($invited['name']) ?></strong>. Vytvořte si heslo – tím vznikne Váš účet
+        (role: <?= $h(implode(', ', array_map(static fn ($r) => USER_ROLES[$r], user_roles($invited)))) ?>).
         Přihlašovací jméno je Váš e-mail <strong><?= $h($invited['email']) ?></strong>.</p>
       <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
       <input type="hidden" name="action" value="accept-invite">
@@ -424,16 +455,47 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <a href="admin.php">Přejít na přihlášení</a>
     <?php endif ?>
   </form>
+<?php elseif ($resetToken !== ''): ?>
+  <form class="card login" method="post">
+    <h1>Nové heslo</h1>
+    <?php if ($resetUser): ?>
+      <p>Účet <strong><?= $h($resetUser['email']) ?></strong>. Zadejte nové heslo.</p>
+      <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+      <input type="hidden" name="action" value="reset-password">
+      <input type="email" value="<?= $h($resetUser['email']) ?>" autocomplete="username" readonly hidden>
+      <input type="password" name="password" placeholder="Nové heslo (alespoň <?= ADMIN_PASSWORD_MIN ?> znaků)" minlength="<?= ADMIN_PASSWORD_MIN ?>" autocomplete="new-password" autofocus required>
+      <input type="password" name="password_again" placeholder="Heslo znovu" autocomplete="new-password" required>
+      <?php if ($resetError): ?><div class="error"><?= $h($resetError) ?></div><?php endif ?>
+      <button>Uložit heslo a přihlásit</button>
+    <?php else: ?>
+      <p class="error">Odkaz neplatí nebo vypršel. Požádejte o nový.</p>
+      <a href="admin.php?zapomenute">Zapomněl jsem heslo</a>
+    <?php endif ?>
+  </form>
+<?php elseif ($forgot && $me === null): ?>
+  <form class="card login" method="post">
+    <h1>Zapomenuté heslo</h1>
+    <?php if ($forgotDone): ?>
+      <p>Pokud e-mail u nás má účet, poslali jsme na něj odkaz na nové heslo. Platí <?= PASSWORD_RESET_MINUTES ?> minut.</p>
+    <?php else: ?>
+      <p class="hint">Zadejte e-mail, kterým se přihlašujete. Pošleme na něj odkaz na nové heslo.</p>
+      <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+      <input type="hidden" name="action" value="forgot">
+      <input type="email" name="email" placeholder="E-mail" autocomplete="username" autofocus required>
+      <button>Poslat odkaz</button>
+    <?php endif ?>
+    <a href="admin.php">Zpět na přihlášení</a>
+  </form>
 <?php elseif ($me === null): ?>
   <form class="card login" method="post">
     <h1>Správa rezervací</h1>
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <input type="hidden" name="action" value="login">
-    <input type="email" name="email" placeholder="E-mail" value="<?= $h($loginEmail ?? '') ?>" autocomplete="username" autofocus>
+    <input type="email" name="email" placeholder="E-mail" value="<?= $h($loginEmail ?? '') ?>" autocomplete="username" autofocus required>
     <input type="password" name="password" placeholder="Heslo" autocomplete="current-password" required>
-    <?php if (admin_master_enabled()): ?><p class="hint">Hlavní heslo: e-mail nechte prázdný.</p><?php endif ?>
     <?php if (!empty($loginError)): ?><div class="error"><?= $h($loginError) ?></div><?php endif ?>
     <button>Přihlásit</button>
+    <a href="admin.php?zapomenute">Zapomněl jsem heslo</a>
   </form>
 <?php else:
     expire_reservations();
@@ -472,14 +534,16 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <h1>Správa rezervací</h1>
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
-      <a href="admin.php?view=plan" class="<?= $view === 'plan' ? 'active' : '' ?>">Plánek</a>
-      <a href="admin.php?view=codes" class="<?= $view === 'codes' ? 'active' : '' ?>">Slevové kódy</a>
-      <?php $conflictCount = (int) db_query('SELECT COUNT(*) FROM scan_conflicts')->fetchColumn(); ?>
-      <a href="admin.php?view=scanners" class="<?= $view === 'scanners' ? 'active' : '' ?>">Pořadatelé<?= $conflictCount ? ' <span class="tab-alert" title="Konflikty z odbavení bez spojení">' . $conflictCount . '</span>' : '' ?></a>
-      <a href="admin.php?view=users" class="<?= $view === 'users' ? 'active' : '' ?>">Účetní</a>
-      <a href="admin.php?view=settings" class="<?= $view === 'settings' ? 'active' : '' ?>">Nastavení</a>
+      <?php if ($canManage): ?>
+        <a href="admin.php?view=plan" class="<?= $view === 'plan' ? 'active' : '' ?>">Plánek</a>
+        <a href="admin.php?view=codes" class="<?= $view === 'codes' ? 'active' : '' ?>">Slevové kódy</a>
+        <?php $conflictCount = (int) db_query('SELECT COUNT(*) FROM scan_conflicts')->fetchColumn(); ?>
+        <a href="admin.php?view=users" class="<?= $view === 'users' ? 'active' : '' ?>">Uživatelé<?= $conflictCount ? ' <span class="tab-alert" title="Konflikty z odbavení bez spojení">' . $conflictCount . '</span>' : '' ?></a>
+        <a href="admin.php?view=settings" class="<?= $view === 'settings' ? 'active' : '' ?>">Nastavení</a>
+      <?php endif ?>
+      <?php if ($canScan): ?><a href="<?= $h($scannerUrl) ?>">Odbavení</a><?php endif ?>
     </nav>
-    <span class="me" title="<?= $h($me['email'] ?? '') ?>">Přihlášen: <strong><?= $h($me['name']) ?></strong></span>
+    <span class="me" title="<?= $h($me['email'] . ' · ' . implode(', ', array_map(static fn ($r) => USER_ROLES[$r], $me['roles']))) ?>">Přihlášen: <strong><?= $h($me['name']) ?></strong></span>
     <form method="post">
       <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
       <input type="hidden" name="action" value="logout">
@@ -647,31 +711,32 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     </table>
   </div>
 
-  <?php elseif ($view === 'scanners'):
-      $newInvite = $_SESSION['invite_link'] ?? null;
-      unset($_SESSION['invite_link']);
-      $invites = db_query('SELECT * FROM scanner_invites ORDER BY revoked_at IS NOT NULL, name')->fetchAll();
-      $runChecks = static function (array $selected) use ($h): string {
+  <?php elseif ($view === 'users'):
+      $newLink = $_SESSION['user_link'] ?? null;
+      unset($_SESSION['user_link']);
+      $users = db_query('SELECT * FROM admin_users ORDER BY disabled_at IS NOT NULL, name')->fetchAll();
+      $nowDb = db_time(now_utc());
+      $roleChecks = static function (array $selected) use ($h): string {
           $out = '';
-          foreach (runs() as $run) {
-              $out .= '<label class="check"><input type="checkbox" name="runs[]" value="' . (int) $run['id'] . '"'
-                  . (in_array($run['id'], $selected, true) ? ' checked' : '') . '> ' . $h(run_label($run)) . '</label>';
+          foreach (USER_ROLES as $role => $label) {
+              $out .= '<label class="check"><input type="checkbox" name="roles[]" value="' . $h($role) . '"'
+                  . (in_array($role, $selected, true) ? ' checked' : '') . '> ' . $h($label) . '</label>';
           }
           return $out;
       };
   ?>
-  <p class="hint settings-intro">Pořadatel u vchodu dostane odkaz (nebo QR kód) na odbavení. Odkaz otevře scanner na jeho
-    mobilu a povolí odbavení jen vybraných termínů. Při prvním otevření si pořadatel vytvoří heslo – potom odkaz bez
-    hesla nefunguje, takže přeposlaný odkaz nikomu nestačí. Odkaz se zobrazí jen jednou; při ztrátě nebo zapomenutém
-    hesle vytvořte nový. Zrušením přístupu se zařízení okamžitě odhlásí.</p>
+  <p class="hint settings-intro">Uživatele zve správce zadáním e-mailu a rolí. Pozvaný dostane e-mail s odkazem
+    (platí <?= ADMIN_INVITE_DAYS ?> dní); účet vznikne, až si na něm vytvoří heslo. Přihlašovací jméno je e-mail.
+    <strong>Správce</strong> může vše, <strong>Účetní</strong> vidí jen rezervace a platby, <strong>Odbavovatel</strong>
+    jen odbavuje (scanner). Kdo má víc rolí, vidí všechny jejich možnosti v menu. Zapomenuté heslo si každý obnoví
+    sám na přihlašovací stránce.</p>
 
-  <?php if ($newInvite): ?>
+  <?php if ($newLink): ?>
     <div class="card invite-new">
-      <img src="data:image/png;base64,<?= base64_encode(qr_png($newInvite['link'], 6)) ?>" alt="QR kód pozvánky" width="180" height="180">
       <div>
-        <h2>Pozvánka – <?= $h($newInvite['name']) ?></h2>
-        <p class="hint">Pošlete odkaz pořadateli, nebo ať si QR kód naskenuje fotoaparátem mobilu.</p>
-        <input class="invite-link" readonly value="<?= $h($newInvite['link']) ?>" onclick="this.select()">
+        <h2>Odkaz pro <?= $h($newLink['email']) ?></h2>
+        <p class="hint">Zobrazí se jen teď. Pokud e-mail nedorazí, pošlete odkaz sami.</p>
+        <input class="invite-link" readonly value="<?= $h($newLink['link']) ?>" onclick="this.select()">
         <button type="button" class="secondary" onclick="navigator.clipboard.writeText(this.previousElementSibling.value).then(() => this.textContent = 'Zkopírováno')">Kopírovat odkaz</button>
       </div>
     </div>
@@ -679,51 +744,73 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <form class="card settings" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-    <input type="hidden" name="id" value="0">
-    <h2>Nová pozvánka</h2>
-    <label>Jméno pořadatele / vchodu<input name="name" required maxlength="100" placeholder="např. Vchod A – Petr"></label>
-    <div class="checks"><?= $runChecks([]) ?></div>
-    <button name="action" value="invite-save">Vytvořit pozvánku</button>
+    <h2>Pozvat uživatele</h2>
+    <label>Jméno<input name="name" required maxlength="100" placeholder="např. Jana Nováková"></label>
+    <label>E-mail (bude přihlašovací jméno)<input type="email" name="email" required maxlength="190" placeholder="jana@example.cz"></label>
+    <div class="checks"><?= $roleChecks([]) ?></div>
+    <button name="action" value="user-invite">Poslat pozvánku</button>
   </form>
 
   <div class="card table">
     <table>
-      <thead><tr><th>Pořadatel</th><th>Termíny</th><th>Vytvořeno</th><th>Naposledy použito</th><th>Stav</th><th></th></tr></thead>
+      <thead><tr><th>Jméno</th><th>E-mail (login)</th><th>Role</th><th>Pozvánka</th><th>Pozval(a)</th><th>Naposledy přihlášen(a)</th><th></th></tr></thead>
       <tbody>
-      <?php foreach ($invites as $inv):
-          $invRuns = invite_run_ids((int) $inv['id']);
-          $revoked = $inv['revoked_at'] !== null;
+      <?php foreach ($users as $u):
+          $pending = $u['password_hash'] === null;
+          $openLink = $u['invite_hash'] !== null && $u['invite_expires_at'] > $nowDb;
+          [$badge, $label] = match (true) {
+              $u['disabled_at'] !== null => ['s-cancelled', 'Účet vypnut'],
+              $pending && $openLink => ['s-pending', 'Nepřijata (platí do ' . $fmt($u['invite_expires_at']) . ')'],
+              $pending => ['s-expired', 'Nepřijata – vypršela'],
+              default => ['s-paid', 'Přijata ' . $fmt($u['accepted_at'])],
+          };
+          $self = (int) $u['id'] === $me['id'];
       ?>
         <tr>
-          <td><strong><?= $h($inv['name']) ?></strong></td>
-          <td class="seats"><?= $h(implode(', ', array_map(static fn ($id) => ($r = run_by_id($id)) ? run_label($r) : '–', $invRuns))) ?></td>
-          <td><?= $h($fmt($inv['created_at'])) ?></td>
-          <td><?= $h($fmt($inv['last_used_at'])) ?: '–' ?></td>
-          <td><span class="badge <?= $revoked ? 's-cancelled' : ($inv['password_hash'] === null ? 's-pending' : 's-paid') ?>"><?= $revoked ? 'Zrušeno' : ($inv['password_hash'] === null ? 'Čeká na heslo' : 'Aktivní') ?></span></td>
+          <td><strong><?= $h($u['name']) ?></strong><?= $self ? ' <small>(vy)</small>' : '' ?></td>
+          <td><?= $h($u['email']) ?></td>
+          <td>
+            <?= $h(implode(', ', array_map(static fn ($r) => USER_ROLES[$r], user_roles($u)))) ?>
+            <details class="edit-email"><summary>změnit</summary>
+              <form method="post" class="invite-edit">
+                <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
+                <div class="checks"><?= $roleChecks(user_roles($u)) ?></div>
+                <button name="action" value="user-roles">Uložit role</button>
+              </form>
+            </details>
+          </td>
+          <td><span class="badge <?= $badge ?>"><?= $h($label) ?></span></td>
+          <td><?= $h($u['invited_by']) ?><br><small><?= $h($fmt($u['created_at'])) ?></small></td>
+          <td><?= $h($fmt($u['last_login_at'])) ?: '–' ?></td>
           <td>
             <div class="actions">
-              <details class="edit-email"><summary>upravit</summary>
-                <form method="post" class="invite-edit">
+              <?php if ($u['disabled_at'] === null): ?>
+                <?php if ($pending): ?>
+                  <form method="post" onsubmit="return confirm('Poslat novou pozvánku? Původní odkaz přestane platit.')">
+                    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                    <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
+                    <button class="secondary" name="action" value="user-link">Poslat znovu</button>
+                  </form>
+                <?php endif ?>
+                <?php if (!$self): ?>
+                  <form method="post" onsubmit="return confirm('Vypnout účet? Dotyčný se už nepřihlásí a je ihned odhlášen.')">
+                    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+                    <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
+                    <button class="danger" name="action" value="user-disable">Vypnout</button>
+                  </form>
+                <?php endif ?>
+              <?php else: ?>
+                <form method="post">
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-                  <input type="hidden" name="id" value="<?= (int) $inv['id'] ?>">
-                  <input name="name" required maxlength="100" value="<?= $h($inv['name']) ?>">
-                  <div class="checks"><?= $runChecks($invRuns) ?></div>
-                  <label class="check"><input type="checkbox" name="new_link" value="1" <?= $revoked ? 'checked' : '' ?>> vytvořit nový odkaz (původní přestane platit, pořadatel si vytvoří nové heslo<?= $revoked ? ', obnoví přístup' : '' ?>)</label>
-                  <button name="action" value="invite-save">Uložit</button>
-                </form>
-              </details>
-              <?php if (!$revoked): ?>
-                <form method="post" onsubmit="return confirm('Zrušit přístup? Zařízení se okamžitě odhlásí.')">
-                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-                  <input type="hidden" name="id" value="<?= (int) $inv['id'] ?>">
-                  <button class="danger" name="action" value="invite-revoke">Zrušit přístup</button>
+                  <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
+                  <button class="secondary" name="action" value="user-enable">Zapnout</button>
                 </form>
               <?php endif ?>
             </div>
           </td>
         </tr>
       <?php endforeach ?>
-      <?php if (!$invites): ?><tr><td colspan="6">Zatím žádné pozvánky.</td></tr><?php endif ?>
       </tbody>
     </table>
   </div>
@@ -748,87 +835,6 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         </tr>
       <?php endforeach ?>
       <?php if (!$conflicts): ?><tr><td colspan="6">Žádné konflikty.</td></tr><?php endif ?>
-      </tbody>
-    </table>
-  </div>
-
-  <?php elseif ($view === 'users'):
-      $newLink = $_SESSION['user_link'] ?? null;
-      unset($_SESSION['user_link']);
-      $users = db_query('SELECT * FROM admin_users ORDER BY disabled_at IS NOT NULL, name')->fetchAll();
-      $nowDb = db_time(now_utc());
-  ?>
-  <p class="hint settings-intro">Účetní a další správci se přihlašují svým e-mailem a heslem. Pozvaný dostane e-mail
-    s odkazem (platí <?= ADMIN_INVITE_DAYS ?> dní), na kterém si heslo vytvoří. Kdo heslo zapomene, pošlete mu nový odkaz.
-    Všichni správci mají stejná práva.<?= admin_master_enabled() ? ' Hlavní heslo z konfigurace (ADMIN_PASSWORD) dál funguje s prázdným e-mailem – po pozvání účetních ho můžete v konfiguraci smazat.' : '' ?></p>
-
-  <?php if ($newLink): ?>
-    <div class="card invite-new">
-      <div>
-        <h2>Odkaz pro <?= $h($newLink['email']) ?></h2>
-        <p class="hint">Zobrazí se jen teď. Pokud e-mail nedorazí, pošlete odkaz sami.</p>
-        <input class="invite-link" readonly value="<?= $h($newLink['link']) ?>" onclick="this.select()">
-        <button type="button" class="secondary" onclick="navigator.clipboard.writeText(this.previousElementSibling.value).then(() => this.textContent = 'Zkopírováno')">Kopírovat odkaz</button>
-      </div>
-    </div>
-  <?php endif ?>
-
-  <form class="card settings" method="post">
-    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-    <h2>Pozvat účetní</h2>
-    <label>Jméno<input name="name" required maxlength="100" placeholder="např. Jana Nováková"></label>
-    <label>E-mail (bude přihlašovací jméno)<input type="email" name="email" required maxlength="190" placeholder="jana@example.cz"></label>
-    <button name="action" value="user-invite">Poslat pozvánku</button>
-  </form>
-
-  <div class="card table">
-    <table>
-      <thead><tr><th>Jméno</th><th>E-mail (login)</th><th>Stav</th><th>Pozval(a)</th><th>Naposledy přihlášen(a)</th><th></th></tr></thead>
-      <tbody>
-      <?php foreach ($users as $u):
-          $pending = $u['password_hash'] === null;
-          $openLink = $u['invite_hash'] !== null && $u['invite_expires_at'] > $nowDb;
-          [$badge, $label] = match (true) {
-              $u['disabled_at'] !== null => ['s-cancelled', 'Vypnuto'],
-              $pending && $openLink => ['s-pending', 'Čeká na heslo (do ' . $fmt($u['invite_expires_at']) . ')'],
-              $pending => ['s-expired', 'Pozvánka vypršela'],
-              default => ['s-paid', 'Aktivní'],
-          };
-      ?>
-        <tr>
-          <td><strong><?= $h($u['name']) ?></strong><?= (int) $u['id'] === $me['id'] ? ' <small>(vy)</small>' : '' ?></td>
-          <td><?= $h($u['email']) ?></td>
-          <td><span class="badge <?= $badge ?>"><?= $h($label) ?></span>
-            <?php if (!$pending && $openLink): ?><br><small>odkaz na nové heslo platí do <?= $h($fmt($u['invite_expires_at'])) ?></small><?php endif ?></td>
-          <td><?= $h($u['invited_by']) ?><br><small><?= $h($fmt($u['created_at'])) ?></small></td>
-          <td><?= $h($fmt($u['last_login_at'])) ?: '–' ?></td>
-          <td>
-            <div class="actions">
-              <?php if ($u['disabled_at'] === null): ?>
-                <form method="post" onsubmit="return confirm('<?= $pending ? 'Poslat novou pozvánku? Původní odkaz přestane platit.' : 'Poslat odkaz na nové heslo? Dosavadní heslo platí, dokud si nové nenastaví.' ?>')">
-                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-                  <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
-                  <button class="secondary" name="action" value="user-link"><?= $pending ? 'Poslat znovu' : 'Nové heslo' ?></button>
-                </form>
-                <?php if ((int) $u['id'] !== $me['id']): ?>
-                  <form method="post" onsubmit="return confirm('Vypnout účet? Dotyčný se už nepřihlásí a je ihned odhlášen.')">
-                    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-                    <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
-                    <button class="danger" name="action" value="user-disable">Vypnout</button>
-                  </form>
-                <?php endif ?>
-              <?php else: ?>
-                <form method="post">
-                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-                  <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
-                  <button class="secondary" name="action" value="user-enable">Zapnout</button>
-                </form>
-              <?php endif ?>
-            </div>
-          </td>
-        </tr>
-      <?php endforeach ?>
-      <?php if (!$users): ?><tr><td colspan="6">Zatím žádní účetní – pozvěte je formulářem výše.</td></tr><?php endif ?>
       </tbody>
     </table>
   </div>

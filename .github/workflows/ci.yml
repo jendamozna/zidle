@@ -37,7 +37,7 @@ jobs:
       DB_NAME: zidle_test
       MAIL_ENABLED: '0'
       TICKET_SECRET: ci-ticket-secret-0123456789-abcdefghij
-      ADMIN_PASSWORD: ci-admin-master
+      DEPLOY_TOKEN: ci-deploy-token-0123456789-abcdefghij
       BANK_IBAN: CZ6508000000192000145399
     steps:
       - uses: actions/checkout@v5

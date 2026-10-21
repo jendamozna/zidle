@@ -30,11 +30,11 @@ async function call(body) {
   return data;
 }
 
-/** { loggedIn, name, passwordLogin, runs: [... , scanFrom, scanTo] } */
+/** { loggedIn, name, admin, runs: [... , scanFrom, scanTo], layout } */
 export const getSession = () => call();
-/** Without a password: { password: 'create' | 'enter', name } or { loggedIn }; with it: { loggedIn }. */
-export const acceptInvite = (token, password, passwordAgain) => call({ action: 'invite', token, password, passwordAgain });
-export const login = (password) => call({ action: 'login', password });
+export const login = (email, password) => call({ action: 'login', email, password });
+/** Admin pages (forgotten password, Správa) next to the API. */
+export const adminUrl = (query = '') => `${API_URL}/admin.php${query}`;
 export const logout = () => call({ action: 'logout' });
 export const verifyTicket = (code, runId, confirmOutside) => call({ action: 'verify', code, runId, confirmOutside });
 /** Tickets of the run for checking offline. */

@@ -465,25 +465,6 @@ test('names lose line breaks, control and invisible characters', function (): vo
     same('', clean_name(['pole']), 'not a string');
 });
 
-test('master passwords from the configuration need 12 characters and no placeholder', function (): void {
-    same([false, false, false, true], array_map('master_password_strong', ['krátké', 'change-me', 'CHANGE-ME', 'dlouhé-heslo-12']), 'strength');
-});
-
-test('a scanner invite link works only with the password the organizer created on its first opening', function (): void {
-    $token = (string) save_invite(0, 'Vchod T', [1], true);
-    same(['password' => 'create', 'name' => 'Vchod T'], accept_invite($token), 'first opening');
-    same(422, accept_invite($token, 'krátké', 'krátké')['status'] ?? null, 'too short');
-    same('Hesla se neshodují.', accept_invite($token, 'heslo-vchod', 'jiné-heslo')['error'] ?? null, 'mismatch');
-    same(['loggedIn' => true], accept_invite($token, 'heslo-vchod', 'heslo-vchod'), 'created');
-    same(['password' => 'enter', 'name' => 'Vchod T'], accept_invite($token), 'forwarded link asks for it');
-    same(401, accept_invite($token, 'hádám-heslo')['status'] ?? null, 'wrong password');
-    same(['loggedIn' => true], accept_invite($token, 'heslo-vchod'), 'right password');
-    $id = (int) db_query("SELECT id FROM scanner_invites WHERE name = 'Vchod T'")->fetchColumn();
-    $new = (string) save_invite($id, 'Vchod T', [1], true);
-    same(401, accept_invite($token, 'heslo-vchod')['status'] ?? null, 'old link');
-    same('create', accept_invite($new)['password'] ?? null, 'a new link clears the password');
-});
-
 test('the layout matches the plan: seats per row, capacities, reserve balcony seats', function (): void {
     $layout = layout_public();
     same(array_keys(SECTIONS), array_column($layout['sections'], 'id'), 'order');
@@ -536,59 +517,116 @@ test('"Záložní" seats: the reserve rows by default, any seat switchable per r
     same(34, count(run_by_id(1)['reserve_seats'] ?? []), 'back to the default');
 });
 
-// ----------------------------------------------------------- admin accounts
+// ----------------------------------------------------------- user accounts
 
-test('an invited accountant sets a password and signs in with the e-mail', function (): void {
-    $invite = admin_invite(' Jana@Example.cz ', 'Jana  Nováková', 'hlavní heslo');
+/** Invites and accepts an account; returns the signed-in user. */
+function account(string $email, array $roles, string $password = 'dlouhe-heslo-1'): array
+{
+    $invite = admin_invite($email, 'Uživatel ' . $email, $roles, 'test');
+    if (!is_array($invite)) {
+        throw new TestFailure("invite {$email}: {$invite}");
+    }
+    $me = admin_accept_invite($invite['token'], $password, $password);
+    if (!is_array($me)) {
+        throw new TestFailure("accept {$email}: {$me}");
+    }
+    return $me;
+}
+
+test('deploy creates the first Správce once; it needs DEPLOY_TOKEN', function (): void {
+    same(false, admin_exists(), 'no Správce yet');
+    same(false, deploy_token_ok(''), 'empty token');
+    $configured = (string) config('DEPLOY_TOKEN');
+    if ($configured !== '') {
+        same([true, false], [deploy_token_ok($configured), deploy_token_ok($configured . 'x')], 'configured token');
+    }
+    same('Heslo musí mít alespoň 10 znaků.', create_first_admin('spravce@example.cz', 'Správce', 'kratke'), 'short password');
+    $admin = create_first_admin(' Spravce@Example.cz ', '', 'spravcovo-heslo');
+    same(['spravce@example.cz', 'Správce', 'admin'], is_array($admin) ? [$admin['email'], $admin['name'], $admin['roles']] : $admin, 'created');
+    same('Správce už existuje – deploy lze použít jen jednou.', create_first_admin('druhy@example.cz', 'Druhý', 'druhe-heslo-22'), 'only once');
+    same(['admin'], admin_login('spravce@example.cz', 'spravcovo-heslo')['roles'] ?? null, 'signs in');
+});
+
+test('an invited user gets an account with the roles once they set a password', function (): void {
+    $invite = admin_invite(' Jana@Example.cz ', 'Jana  Nováková', ['accountant', 'neznámá'], 'Správce');
     same(true, is_array($invite), 'invited');
     $token = is_array($invite) ? $invite['token'] : '';
-    same(['jana@example.cz', 'Jana Nováková', null], [$invite['user']['email'] ?? null, $invite['user']['name'] ?? null, $invite['user']['password_hash'] ?? null], 'account');
+    same(['jana@example.cz', 'Jana Nováková', 'accountant', null], [$invite['user']['email'] ?? null, $invite['user']['name'] ?? null, $invite['user']['roles'] ?? null, $invite['user']['password_hash'] ?? null], 'invitation (not accepted yet)');
     same(null, admin_login('jana@example.cz', 'cokoliv-dlouheho'), 'no login before accepting');
     same('Heslo musí mít alespoň 10 znaků.', admin_accept_invite($token, 'kratke', 'kratke'), 'too short');
     same('Hesla se neshodují.', admin_accept_invite($token, 'dlouhe-heslo-1', 'dlouhe-heslo-2'), 'mismatch');
     $me = admin_accept_invite($token, 'dlouhe-heslo-1', 'dlouhe-heslo-1');
-    same('Jana Nováková', is_array($me) ? $me['name'] : $me, 'accepted');
+    same(['Jana Nováková', ['accountant']], is_array($me) ? [$me['name'], $me['roles']] : $me, 'accepted');
     same(null, admin_invited_user($token), 'link used up');
     same('Jana Nováková', admin_login('JANA@example.cz', 'dlouhe-heslo-1')['name'] ?? null, 'login (e-mail case-insensitive)');
     same(null, admin_login('jana@example.cz', 'spatne-heslo'), 'wrong password');
-    same('Účet s tímto e-mailem už existuje. Pošlete mu nový odkaz v seznamu.', admin_invite('jana@example.cz', 'Jana', 'x'), 'duplicate');
-    same('Neplatný e-mail.', admin_invite('neni-email', 'Jana', 'x'), 'invalid e-mail');
+    same('Účet s tímto e-mailem už existuje.', admin_invite('jana@example.cz', 'Jana', ['scanner'], 'x'), 'duplicate');
+    same('Neplatný e-mail.', admin_invite('neni-email', 'Jana', ['scanner'], 'x'), 'invalid e-mail');
+    same('Vyberte alespoň jednu roli.', admin_invite('bez@example.cz', 'Bez role', [], 'x'), 'no role');
+    $expired = admin_invite('pozde@example.cz', 'Pozdě', ['scanner'], 'x');
+    db()->prepare('UPDATE admin_users SET invite_expires_at = ? WHERE email = ?')->execute([db_time(now_utc()->modify('-1 minute')), 'pozde@example.cz']);
+    same('Pozvánka neplatí nebo vypršela. Požádejte o novou.', admin_accept_invite(is_array($expired) ? $expired['token'] : '', 'pozde-heslo-1', 'pozde-heslo-1'), 'expired');
 });
 
-test('a new link lets the owner set a new password; expired links do not work', function (): void {
-    $invite = admin_invite('petr@example.cz', 'Petr', 'x');
-    $id = is_array($invite) ? (int) $invite['user']['id'] : 0;
-    admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'prvni-heslo-1', 'prvni-heslo-1');
-    $token = admin_new_invite($id);
-    same('Petr', admin_login('petr@example.cz', 'prvni-heslo-1')['name'] ?? null, 'old password works until changed');
-    admin_accept_invite($token, 'druhe-heslo-2', 'druhe-heslo-2');
-    same([null, 'Petr'], [admin_login('petr@example.cz', 'prvni-heslo-1'), admin_login('petr@example.cz', 'druhe-heslo-2')['name'] ?? null], 'new password');
-    $expired = admin_new_invite($id);
-    db()->prepare('UPDATE admin_users SET invite_expires_at = ? WHERE id = ?')->execute([db_time(now_utc()->modify('-1 minute')), $id]);
-    same('Pozvánka neplatí nebo vypršela. Požádejte o novou.', admin_accept_invite($expired, 'treti-heslo-3', 'treti-heslo-3'), 'expired');
+test('roles: Správce everything, Účetní reservations, Odbavovatel the scanner; several roles add up', function (): void {
+    $can = fn (array $roles) => array_map(fn ($what) => user_can(['roles' => $roles], $what), ['manage', 'reservations', 'scan']);
+    same([true, true, true], $can(['admin']), 'Správce');
+    same([false, true, false], $can(['accountant']), 'Účetní');
+    same([false, false, true], $can(['scanner']), 'Odbavovatel');
+    same([false, true, true], $can(['accountant', 'scanner']), 'Účetní + Odbavovatel');
+    $me = account('role@example.cz', ['scanner']);
+    same('Role účtu role@example.cz uloženy.', admin_set_roles($me['id'], ['accountant', 'scanner'], 999), 'changed');
+    same(['accountant', 'scanner'], admin_login('role@example.cz', 'dlouhe-heslo-1')['roles'] ?? null, 'new roles');
+    $admin = account('admin2@example.cz', ['admin']);
+    same('Svou vlastní roli Správce nelze odebrat.', admin_set_roles($admin['id'], ['accountant'], $admin['id']), 'not your own Správce role');
+});
+
+test('forgotten password: an e-mailed link sets a new one and signs out the old sessions', function (): void {
+    $me = account('zapomnel@example.cz', ['accountant'], 'stare-heslo-1');
+    same($me['name'], admin_from_session($me['id'], $me['pw'])['name'] ?? null, 'session');
+    same(null, request_password_reset('nikdo@example.cz'), 'unknown e-mail: nothing (same answer for the visitor)');
+    $token = (string) request_password_reset('Zapomnel@example.cz');
+    same($me['email'], password_reset_user($token)['email'] ?? null, 'link valid');
+    same($me['name'], admin_login('zapomnel@example.cz', 'stare-heslo-1')['name'] ?? null, 'old password works until changed');
+    same('Hesla se neshodují.', reset_password($token, 'nove-heslo-11', 'jine-heslo-11'), 'mismatch');
+    $new = reset_password($token, 'nove-heslo-11', 'nove-heslo-11');
+    same($me['name'], is_array($new) ? $new['name'] : $new, 'changed');
+    same([null, $me['name']], [admin_login('zapomnel@example.cz', 'stare-heslo-1'), admin_login('zapomnel@example.cz', 'nove-heslo-11')['name'] ?? null], 'new password');
+    same(null, admin_from_session($me['id'], $me['pw']), 'old session signed out');
+    same('Odkaz neplatí nebo vypršel. Požádejte o nový.', reset_password($token, 'treti-heslo-11', 'treti-heslo-11'), 'link used up');
+    $late = (string) request_password_reset('zapomnel@example.cz');
+    db()->prepare('UPDATE admin_users SET reset_expires_at = ? WHERE id = ?')->execute([db_time(now_utc()->modify('-1 minute')), $me['id']]);
+    same(null, password_reset_user($late), 'expired');
+    request_password_reset('zapomnel@example.cz');
+    same(null, request_password_reset('zapomnel@example.cz'), 'at most 3 e-mails an hour');
 });
 
 test('disabled accounts cannot sign in and lose their session; nobody disables themselves', function (): void {
-    $invite = admin_invite('eva@example.cz', 'Eva', 'x');
-    $id = is_array($invite) ? (int) $invite['user']['id'] : 0;
-    admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'evino-heslo-1', 'evino-heslo-1');
-    same('Eva', admin_from_session($id)['name'] ?? null, 'session valid');
-    same('Svůj vlastní účet nelze vypnout.', admin_set_disabled($id, true, $id), 'not yourself');
-    admin_set_disabled($id, true, null);
-    same([null, null], [admin_login('eva@example.cz', 'evino-heslo-1'), admin_from_session($id)], 'disabled');
-    admin_set_disabled($id, false, null);
-    same('Eva', admin_login('eva@example.cz', 'evino-heslo-1')['name'] ?? null, 'enabled again');
+    $me = account('eva@example.cz', ['accountant'], 'evino-heslo-1');
+    same('Svůj vlastní účet nelze vypnout.', admin_set_disabled($me['id'], true, $me['id']), 'not yourself');
+    admin_set_disabled($me['id'], true, 999);
+    same([null, null], [admin_login('eva@example.cz', 'evino-heslo-1'), admin_from_session($me['id'], $me['pw'])], 'disabled');
+    admin_set_disabled($me['id'], false, 999);
+    same('Uživatel eva@example.cz', admin_login('eva@example.cz', 'evino-heslo-1')['name'] ?? null, 'enabled again');
 });
 
-test('the master password signs in with an empty e-mail', function (): void {
-    $master = (string) config('ADMIN_PASSWORD');
-    if ($master === '') {
-        same(null, admin_login('', 'cokoliv'), 'no master password configured');
-        return;
-    }
-    same(['id' => null, 'name' => ADMIN_MASTER_NAME, 'email' => null], admin_login('', $master), 'master');
-    same(null, admin_login('', $master . 'x'), 'wrong master password');
-    same(ADMIN_MASTER_NAME, admin_from_session(0)['name'] ?? null, 'master session');
+test('the scanner signs in Odbavovatel and Správce accounts; a new password, a removed role or a disabled account lock the device out', function (): void {
+    $scanner = account('vchod@example.cz', ['scanner'], 'vchodove-heslo');
+    account('ucetni-jen@example.cz', ['accountant'], 'ucetni-heslo-1');
+    same('Nesprávný e-mail nebo heslo.', scanner_login('vchod@example.cz', 'spatne-heslo'), 'wrong password');
+    same('Tento účet nemá roli Odbavovatel. Požádejte správce o přidání role.', scanner_login('ucetni-jen@example.cz', 'ucetni-heslo-1'), 'Účet without the role');
+    same(['name' => 'Uživatel vchod@example.cz', 'runIds' => null], array_intersect_key((array) scanner_login('vchod@example.cz', 'vchodove-heslo'), ['name' => 1, 'runIds' => 1]), 'signed in, all runs');
+    same(true, is_array(scanner_login('spravce@example.cz', 'spravcovo-heslo')), 'Správce may scan');
+    $cookie = scanner_cookie_for($scanner);
+    same($scanner['name'], scanner_access_from_cookie($cookie)['name'] ?? null, 'cookie');
+    same(null, scanner_access_from_cookie(substr($cookie, 0, -1) . (str_ends_with($cookie, 'a') ? 'b' : 'a')), 'forged');
+    admin_set_roles($scanner['id'], ['accountant'], 999);
+    same(null, scanner_access_from_cookie($cookie), 'role removed');
+    admin_set_roles($scanner['id'], ['scanner'], 999);
+    same($scanner['name'], scanner_access_from_cookie($cookie)['name'] ?? null, 'role back');
+    $token = (string) request_password_reset('vchod@example.cz');
+    reset_password($token, 'nove-vchodove-1', 'nove-vchodove-1');
+    same(null, scanner_access_from_cookie($cookie), 'new password');
 });
 
 // ------------------------------------------------------------------ offline
@@ -596,7 +634,7 @@ test('the master password signs in with an empty e-mail', function (): void {
 /** Scanner access as scanner_access() returns it. */
 function device(string $name): array
 {
-    return ['type' => 'invite', 'id' => 1, 'name' => $name, 'runIds' => null];
+    return ['id' => 1, 'name' => $name, 'roles' => ['scanner'], 'runIds' => null];
 }
 
 function conflicts(): array

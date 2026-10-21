@@ -19,7 +19,7 @@ https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV.
 9. [Payments](#9-payments)
 10. [Cancellation and refunds](#10-cancellation-and-refunds)
 11. [Tickets and check-in](#11-tickets-and-check-in)
-12. [Scanner access (invites)](#12-scanner-access-invites)
+12. [Accounts, roles and sign-in](#12-accounts-roles-and-sign-in)
 13. [Discount codes](#13-discount-codes)
 14. [Admin](#14-admin)
 15. [E-mails](#15-e-mails)
@@ -38,8 +38,8 @@ https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV.
 | --- | --- | --- | --- | --- |
 | Customer app | `index.html` → `src/main.jsx` → `src/App.jsx` | public | mobile-first | React 19, Vite |
 | Reservation page | same app, `/?r=<token>` | customer | mobile-first | React |
-| Scanner | `scanner.html` → `src/scanner/main.jsx` | organizers | mobile only | React, `jsqr` |
-| Admin | `api/admin.php` | accountant / admin | desktop-first | server-rendered PHP |
+| Scanner | `scanner.html` → `src/scanner/main.jsx` | Odbavovatel, Správce | mobile only | React, `jsqr` |
+| Admin | `api/admin.php` | Správce, Účetní | desktop-first | server-rendered PHP |
 | API | `api/*.php` | apps above | – | PHP 8.1+, PDO MySQL |
 | Jobs | `api/cron.php` (CLI) | cron, every 10 min | – | PHP |
 | Database | `db/schema.sql` | – | – | MariaDB 10.5+ |
@@ -51,7 +51,8 @@ is used only for admin input and for display.
 
 ```
 api/
-  admin.php            admin UI (login, invitation page, reservations, discount codes, scanner invites, accountants, settings)
+  admin.php            admin UI (login, forgotten password, invitation page, reservations, plan, discount codes, users, settings)
+  deploy.php           one-time creation of the first Správce (DEPLOY_TOKEN)
   seats.php            GET runs + taken seats of a run + seating layout
   tickets.php          GET printable tickets (PDF) of a paid reservation
   altcha.php           GET invisible ALTCHA challenge
@@ -75,13 +76,13 @@ api/
   lib/cancellation.php cancellation_terms(), cancel_seats(), notices, reminders, GDPR purge
   lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
   lib/offline.php      scanning without a connection: scanner_snapshot(), apply_offline_scans(), conflicts
-  lib/admin_users.php  admin accounts: admin_login(), admin_invite(), admin_accept_invite(), admin_set_disabled()
+  lib/admin_users.php  accounts and roles: user_can(), admin_login(), create_first_admin(), admin_invite(), admin_accept_invite(), request_password_reset(), reset_password()
   lib/ticket.php       seat ticket QR code (sign/parse), qr_png(), ticket e-mail + calendar event (ticket_ics()), seat_label(s)()
   lib/ticket_pdf.php   printable tickets vstupenky.pdf (dompdf)
   lib/antispam.php     form token, rate limits, login limits
   lib/altcha.php       invisible ALTCHA: challenge, verification, replay protection
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
-  lib/scanner_access.php  scanner invites, device cookie, app_base_url()
+  lib/scanner_access.php  scanner sign-in (accounts), device cookie, app_base_url()
 db/schema.sql          full schema for a new database
 db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–017)
 src/                   customer app
@@ -116,7 +117,7 @@ mariadb -e "CREATE DATABASE zidle CHARACTER SET utf8mb4"
 mariadb -e "CREATE USER 'zidle'@'localhost' IDENTIFIED BY '…'; GRANT ALL ON zidle.* TO 'zidle'@'localhost'"
 mariadb zidle < db/schema.sql
 (cd api && composer install --no-dev)   # chillerlan/php-qrcode (needs GD), phpmailer/phpmailer, altcha-org/altcha, dompdf/dompdf
-cp api/config.local.example.php api/config.local.php
+cp api/config.local.example.php api/config.local.php   # fill in TICKET_SECRET, DEPLOY_TOKEN, …
 
 npm install
 php -S 127.0.0.1:8000 -t .   # API (dev)
@@ -129,6 +130,16 @@ so the apps reach the API at `./api/`. HTTPS is required (camera access).
 `.htaccess` files deny `config*.php`, `cron*.php`, `composer.*`, `api/lib/`,
 `api/vendor/`. Behind a proxy/CDN the real client IP must reach
 `REMOTE_ADDR` (e.g. Apache `mod_remoteip`), otherwise rate limits are shared.
+
+First Správce (once, while no account has the Správce role; §12):
+
+```bash
+curl -X POST https://example.com/zidle/api/deploy.php -H 'Content-Type: application/json' \
+  -d '{"token":"<DEPLOY_TOKEN>","email":"spravce@example.com","password":"…","name":"Jan Správce"}'
+```
+
+Then sign in at `api/admin.php` and invite everybody else (tab *Uživatelé*).
+`DEPLOY_TOKEN` may be removed from the configuration afterwards.
 
 Cron: `*/10 * * * * php /path/to/api/cron.php`.
 
@@ -143,7 +154,9 @@ first run whose start is converted from the former event date with
 has no time-zone tables – check that run's time in admin. Migration 013
 adds seat kinds, discount codes, per-seat check-ins and on-site sales.
 Migration 014 removes VIP guests: their held seats are released and the
-table dropped (free seats are given with discount codes, §13). Migration 015
+table dropped (free seats are given with discount codes, §13). Migration 017 gives
+accounts roles (existing accounts become Správce) and drops the scanner invite
+tables – organizers then need accounts with the role Odbavovatel. Migration 015
 adds `runs.reserve_seats` for the new layout (§5); seat ids of the former
 layout that no longer exist (e.g. `ML-10-1`) stay in old reservations but
 are not valid for new ones.
@@ -174,7 +187,7 @@ name override them (local file wins).
 | `SEATS_PER_IP_PER_DAY` | 80 | the same per 24 hours |
 | `ALTCHA_CHALLENGES_PER_IP_PER_HOUR` | 300 | challenges issued by `altcha.php` per IP |
 | `PENDING_RESERVATIONS_PER_EMAIL` | 2 | unpaid reservations per e-mail **in one run** |
-| `LOGIN_ATTEMPTS_PER_15_MIN` | 10 | admin login, admin invitation (password set), scanner password and invite attempts, per IP and area |
+| `LOGIN_ATTEMPTS_PER_15_MIN` | 10 | admin login, invitation (password set), forgotten password (request and new password), scanner login, per IP and area |
 | `FORM_MIN_SECONDS` | 3 | minimal age of the form token |
 | `ALTCHA_ENABLED` | `true` | invisible ALTCHA on the reservation form |
 | `ALTCHA_COST` | 1000 | PBKDF2 iterations per attempt |
@@ -185,8 +198,7 @@ name override them (local file wins).
 | `PAYMENT_RECIPIENT` | `Farnost` | SPD `RN` |
 | `PAYMENT_MESSAGE` | `Vstupenky TZG 2026` | SPD `MSG` prefix (+ last name) |
 | `PAYMENT_SPECIFIC_SYMBOL` | `''` | SPD `X-SS`, digits only, max 10 |
-| `ADMIN_PASSWORD` | `''` | master admin login (empty e-mail); needed for the first sign-in – admin.php returns 503 *„Nastavte ADMIN_PASSWORD v config.local.php (alespoň 12 znaků, ne „change-me“).“* while it is unusable and no active account has a password; can be removed once accountants are invited. Like `ORGANIZER_PASSWORD` it works only with ≥ 12 characters and not a placeholder (`change-me`, `changeme`, `password`, `heslo`; `master_password_usable()`), otherwise it is ignored and logged |
-| `ORGANIZER_PASSWORD` | `''` | optional scanner master password (all runs), ≥ 12 characters; `''` or weak = disabled |
+| `DEPLOY_TOKEN` | `''` | token for `POST api/deploy.php` that creates the first Správce (§12); ≥ 32 characters, `''` = disabled; may be removed afterwards |
 | `SCAN_WINDOW_BEFORE_MINUTES` / `SCAN_WINDOW_AFTER_MINUTES` | 60 / 60 | check-in window around the run start |
 | `TICKET_SECRET` | **required** | ≥ 32 chars without spaces (`ticket_secret()` throws otherwise, so the placeholder can't be left in); HMAC key for tickets, form tokens, master cookie; never change after tickets are sent |
 | `MAIL_ENABLED` | `false` | all e-mails off when false |
@@ -199,15 +211,14 @@ name override them (local file wins).
 | `SMTP_PASSWORD` | `''` | SMTP password |
 | `CONTACT_EMAIL` | `''` | organizers' contact: website footer, last line of every e-mail, `Reply-To` of e-mails |
 | `CONTACT_PHONE` | `''` | organizers' phone: website footer and e-mails |
-| `PUBLIC_URL` | `''` | base URL for links in e-mails and invite links (else derived from the request) |
+| `PUBLIC_URL` | `''` | base URL for links in e-mails, invitations and the admin's *Odbavení* link (else derived from the request) |
 | `CORS_ORIGIN` | `''` | allowed origin when the apps run elsewhere |
 
 ## 5. Domain model
 
 - **Run** (`runs`) – one performance. `starts_at`, optional `label`, optional
   `booking_closes_at`, `storno_rules` (JSON), `reserve_seats` (seats that are
-  „Záložní“ in this run). Seats, reservations, check-in and scanner
-  invites are per run.
+  „Záložní“ in this run). Seats, reservations and check-in are per run.
 - **Section / seat** – fixed layout, defined only in `api/lib/layout.php`
   after the hand-drawn plan of the church: `LEVELS` (main *Hlavní sál* /
   balcony *Balkon*), `PLAN` (per level a map 100 units wide, `height` units
@@ -276,7 +287,8 @@ name override them (local file wins).
   `refund_amount` = everything to send back, `refunded_amount` = already sent
   back; kept = `paid_amount − refund_amount`; still to pay
   (`amount_due()`) = `amount − kept` (≥ 0).
-- **Scanner invite** – named access for chosen runs.
+- **Account** (`admin_users`) – a person with one or more roles: Správce,
+  Účetní, Odbavovatel (§12).
 
 ## 6. Database
 
@@ -289,12 +301,10 @@ All `DATETIME` columns and JSON dates are UTC.
 | `ticket_checkins` | PK (`reservation_id`, `seat_id`), `checked_in_at`, `checked_in_by`; FK cascade. One row per checked-in seat ticket (migration 013 adds all seats of reservations checked in before). |
 | `discount_codes` | `code` (8 chars, unique, shown `XXXX-XXXX`), `email`, `created_at`, `created_by`, `emailed_at`, `used_at`, `reservation_id`, `seat_id` (the seat made free), `revoked_at` |
 | `reservation_seats` | PK (`run_id`, `seat_id`), `reservation_id` (FK cascade). Prevents double booking per run. |
-| `scanner_invites` | `name`, `token_hash` (sha256, unique), `password_hash` (organizer's password created on the first opening of the link, NULL = not yet; migration 017), `created_at`, `last_used_at`, `revoked_at` |
-| `scanner_invite_runs` | PK (`invite_id`, `run_id`) |
 | `scan_conflicts` | offline check-ins that could not be applied (§11): `run_id`, `reservation_id` (NULL when unknown), `label` (VS + name + seat), `reason` (`already_checked_in` / `not_paid` / `unknown`), `scanned_at` (device time), `scanned_by`, `other_at` / `other_by` (the check-in that won), `created_at` |
 | `rate_limits` | `bucket` (sha256 of key), `hits`, `window_start` |
 | `settings` | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8) |
-| `admin_users` | admin accounts (§14): `email` (unique, lower case, login), `name`, `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open link token, unique), `invite_expires_at`, `invited_by` (name), `created_at`, `accepted_at`, `last_login_at`, `disabled_at` |
+| `admin_users` | accounts (§12): `email` (unique, lower case, login), `name`, `roles` (CSV of `admin` / `accountant` / `scanner`, migration 017), `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open invitation token, unique), `invite_expires_at`, `reset_hash` (sha256 of the open forgotten-password token, unique), `reset_expires_at`, `invited_by` (name, `deploy` for the first Správce), `created_at`, `accepted_at`, `last_login_at`, `disabled_at` |
 
 `runs()` rewrites legacy storno rule dates (Prague local `YYYY-MM-DD HH:MM`)
 to UTC on load. Schema changes: update `db/schema.sql` and add a new
@@ -699,36 +709,99 @@ and the tickets handed out; each seat is checked in separately.
   check-ins; the same seat ticket shown at two such entrances passes both and
   appears as a conflict after sending. On-site sales need a connection.
 
-## 12. Scanner access (invites)
+## 12. Accounts, roles and sign-in
 
-- Admin creates an invite (name + runs) → `save_invite()` returns a
-  48-hex token, only `sha256` is stored; link
-  `app_base_url()/scanner.html?pozvanka=<token>` and QR are shown once.
-- The link alone signs nobody in (a forwarded or leaked link is useless):
-  `invite {token}` (`accept_invite()`) → `{password: "create"|"enter", name}`
-  (or `{loggedIn: true}` when this device is already signed in with it). The
-  scanner removes `pozvanka` from the URL at once and shows *Pozvánka – <name>*:
-  first opening *„Vytvořte si heslo k pozvánce…“* with **Nové heslo (alespoň 8
-  znaků)** + **Heslo znovu** → **Vytvořit heslo a přihlásit**; later *„Zadejte
-  heslo, které jste si vytvořili při prvním otevření pozvánky.“* → **Přihlásit**
-  (*„Zapomenuté heslo: požádejte správce o nový odkaz.“*). `invite {token,
-  password, passwordAgain?}`: creates the bcrypt `password_hash` (≥ 8
-  characters, 422 *„Heslo musí mít alespoň 8 znaků.“* / *„Hesla se
-  neshodují.“*, 409 *„Heslo k této pozvánce už někdo vytvořil…“* when another
-  device was first – the scanner then asks to enter it) or checks it (401
-  *„Nesprávné heslo. Zapomenuté heslo: požádejte správce o nový odkaz.“* after
-  1 s); then cookie `zidle_scanner = "i:<token>"` (HttpOnly, SameSite=Strict,
-  Secure on HTTPS, path = API dir, 30 days). All `invite` requests count in the
-  `organizer` login rate limit. A new link clears the password.
-- Every request: `scanner_access()` looks up the token hash (not revoked),
-  updates `last_used_at`, loads allowed runs. Revocation or a new link
-  takes effect immediately (401 `Přihlaste se pozvánkou od správce.`).
-- Master password (if `ORGANIZER_PASSWORD`): cookie
-  `"m:<expiry>:<hmac>"`, all runs, name `hlavní heslo`.
-- Errors: invalid invite 401 `Pozvánka neplatí – je zrušená nebo nahrazená
-  novou. Požádejte správce o nový odkaz.`; password disabled 403.
+Everybody signs in with an own account (`admin_users`, `lib/admin_users.php`);
+the e-mail (case insensitive) is the login. Roles (`USER_ROLES`, an account may
+have several; `user_can(me, what)`):
 
-## 13. Discount codes
+| Role | `roles` | May | `user_can` |
+| --- | --- | --- | --- |
+| Správce | `admin` | everything: all admin tabs and the scanner | `manage`, `reservations`, `scan` |
+| Účetní | `accountant` | admin tab *Rezervace* (reservations and payments, all its actions) | `reservations` |
+| Odbavovatel | `scanner` | only the scanner (check-in, on-site sale), all runs | `scan` |
+
+- **Deploy** (`POST api/deploy.php {token, email, password, name?}`, JSON or
+  form fields; rate limit 10/h per IP): `deploy_token_ok()` – `DEPLOY_TOKEN`
+  ≥ `DEPLOY_TOKEN_MIN` = 32 characters and equal (`hash_equals`), else 1 s
+  delay and 403 *„Neplatný token (DEPLOY_TOKEN v config.local.php, alespoň 32
+  znaků).“*; while any account has the Správce role (`admin_exists()`, any
+  state) 409 *„Správce už existuje – deploy lze použít jen jednou. Další
+  uživatele pozve správce.“*; `create_first_admin()` (under `GET_LOCK`): valid
+  e-mail (422 *„Neplatný e-mail.“*), password ≥ `ADMIN_PASSWORD_MIN` = 10
+  (422 *„Heslo musí mít alespoň 10 znaků.“*), name default *Správce* → account
+  with role `admin`, `invited_by = deploy` → 201 `{message: "Správce <email>
+  vytvořen. Přihlaste se na <app_base_url()>/api/admin.php"}`. Until then
+  admin.php answers 503 *„Aplikace zatím nemá správce. Vytvořte ho jednorázově
+  voláním POST api/deploy.php s tokenem DEPLOY_TOKEN z config.local.php (viz
+  docs/DEVELOPER.md).“*
+- **Invitation** (Správce, tab *Uživatelé*, `user-invite {name, email,
+  roles[]}` → `admin_invite()`): name 1–100 chars after `clean_name()`
+  (*„Vyplňte jméno.“*), valid e-mail ≤ 190 (*„Neplatný e-mail.“*), at least one
+  role (*„Vyberte alespoň jednu roli.“*), e-mail not used yet (*„Účet s tímto
+  e-mailem už existuje.“*); creates the account without a password and a
+  48-hex token (only its sha256 stored) valid `ADMIN_INVITE_DAYS` = 7 days.
+  E-mail *Pozvánka* (§15) with `admin_invite_link()` =
+  `app_base_url()/api/admin.php?pozvanka=<token>`; the link is also shown once
+  in the tab (*Kopírovat odkaz*). Flash *„Pozvánka pro X vytvořena. E-mail
+  odeslán.“* / *„… E-mail se neodeslal – předejte odkaz sami.“*
+- **Accepting** (`admin.php?pozvanka=<token>`, also when signed in): valid
+  link (`admin_invited_user()`: hash, not expired, account not disabled) →
+  *„Dobrý den, <name>. Vytvořte si heslo – tím vznikne Váš účet (role: …).
+  Přihlašovací jméno je Váš e-mail <email>.“*, *Nové heslo* + *Heslo znovu*,
+  **Uložit heslo a přihlásit** (`accept-invite`, rate limit area
+  `admin-invite`); `admin_accept_invite()`: `new_password_problem()` – ≥ 10
+  chars (*„Heslo musí mít alespoň 10 znaků.“*), equal (*„Hesla se
+  neshodují.“*) → password stored, link cleared, `accepted_at`, signed in with
+  *„Vítejte, <name>. Heslo je nastavené, příště se přihlásíte e-mailem
+  <email>.“* Invalid/used/expired link: *„Pozvánka neplatí nebo vypršela.
+  Požádejte o novou.“* + link to sign-in.
+- **Sign-in** (admin.php form *E-mail* + *Heslo* + link **Zapomněl jsem
+  heslo**): `admin_login()` – active account with a password,
+  `password_verify()` (a dummy hash is verified for unknown e-mails; rehash
+  when needed), `last_login_at`. Wrong → 1 s delay, *„Nesprávný e-mail nebo
+  heslo.“*; rate limit area `admin` → *„Příliš mnoho pokusů. Zkuste to za 15
+  minut.“* The session keeps `admin_id` and `admin_pw` =
+  `password_fingerprint()` of the password hash; `admin_from_session()`
+  re-checks the account on every request (exists, has a password, not
+  disabled, same fingerprint), so a disabled account or a new password signs
+  the old sessions out at once; roles are read fresh every request. An
+  account without `reservations` (Odbavovatel only) is redirected from
+  admin.php to `app_base_url()/scanner.html`.
+- **Forgotten password**: `admin.php?zapomenute` – *„Zadejte e-mail, kterým se
+  přihlašujete. Pošleme na něj odkaz na nové heslo.“* → **Poslat odkaz**
+  (`forgot`, rate limit area `reset`) → always *„Pokud e-mail u nás má účet,
+  poslali jsme na něj odkaz na nové heslo. Platí 60 minut.“*;
+  `request_password_reset()` only for an active account with a password (at
+  most 3 per account and hour): 48-hex token (sha256 in `reset_hash`), valid
+  `PASSWORD_RESET_MINUTES` = 60, e-mail *Nové heslo* (§15) with
+  `admin.php?heslo=<token>`; the old password works until the new one is set.
+  The link page *Nové heslo* (*„Účet <email>. Zadejte nové heslo.“*, two
+  inputs, **Uložit heslo a přihlásit**, `reset-password`) → `reset_password()`
+  (same rules) → stored, token cleared, signed in with *„Heslo změněno.“*;
+  invalid/used/expired: *„Odkaz neplatí nebo vypršel. Požádejte o nový.“* +
+  link *Zapomněl jsem heslo*. A pending invitation is not reset this way – the
+  Správce sends it again.
+- **Scanner sign-in**: the scanner login screen (*E-mail*, *Heslo*,
+  **Přihlásit**, *„Účet Vám založí správce pozvánkou na e-mail. Zapomněl jsem
+  heslo“* linking `api/admin.php?zapomenute`) → `organizer.php login {email,
+  password}` → `scanner_login()`: wrong → 1 s, 401 *„Nesprávný e-mail nebo
+  heslo.“*; without `scan` 401 *„Tento účet nemá roli Odbavovatel. Požádejte
+  správce o přidání role.“*; rate limit area `organizer`. A Správce signed in
+  to the admin opens the scanner from the menu (*Odbavení*) without signing in
+  again: `GET organizer.php` reads the admin session (read only,
+  `scanner_access_from_admin_session()`) – also an invited Odbavovatel lands
+  in the scanner signed in. Cookie `zidle_scanner = "u:<id>:<expiry>:<hmac>"`
+  (HttpOnly, SameSite=Strict, Secure on HTTPS, path = API dir, 30 days; hmac
+  over id, expiry and the password fingerprint with a key derived from
+  `TICKET_SECRET`). Every request `scanner_access()` re-checks the account
+  (active, role, same password) – a disabled account, removed role or new
+  password gets 401 *„Přihlaste se svým e-mailem a heslem.“* and the scanner
+  drops its offline data. The scanner header shows **Správa** (link to the
+  admin) when the account also has Správce or Účetní. Check-ins and on-site
+  sales are recorded with the account name.
+
+## 13. Discount codes## 13. Discount codes
 
 Free seats are given with discount codes (`lib/discounts.php`; VIP guests
 were removed by migration 014). The admin enters e-mail addresses (tab
@@ -743,49 +816,13 @@ used; the code also stays used when the reservation expires or is cancelled.
 
 ## 14. Admin
 
-`api/admin.php` (CSRF token on every POST). **Sign-in** form: *E-mail* +
-*Heslo* (+ hint *„Hlavní heslo: e-mail nechte prázdný.“* when
-`ADMIN_PASSWORD` is set). `admin_login()`: empty e-mail → master password
-(`hash_equals`), name *hlavní heslo*; otherwise the account by e-mail (case
-insensitive) with a password, not disabled, `password_verify()` (a dummy
-hash is verified for unknown e-mails; rehash when needed), `last_login_at`
-set. Wrong → 1 s delay, *„Nesprávný e-mail nebo heslo.“*; rate limit area
-`admin` → *„Příliš mnoho pokusů. Zkuste to za 15 minut.“* The session keeps
-`admin_id` (account id, 0 = master); `admin_from_session()` re-checks the
-account on every request, so a disabled account is signed out at once. The
-header shows *Přihlášen: <name>*.
-
-**Accountants** (`admin_users`, all admins have the same rights):
-- **Invite** (tab *Účetní*, `user-invite {name, email}` → `admin_invite()`):
-  name 1–100 chars (*„Vyplňte jméno.“*), valid e-mail ≤ 190 (*„Neplatný
-  e-mail.“*), not existing yet (*„Účet s tímto e-mailem už existuje. Pošlete
-  mu nový odkaz v seznamu.“*); creates the account and a 48-hex token (only
-  its sha256 stored) valid `ADMIN_INVITE_DAYS` = 7 days. E-mail *Pozvánka do
-  správy rezervací* (§15) with `admin_invite_link()` =
-  `app_base_url()/api/admin.php?pozvanka=<token>`; the link is also shown
-  once in the tab (*Kopírovat odkaz*). Flash *„Pozvánka pro X vytvořena.
-  E-mail odeslán.“* / *„… E-mail se neodeslal – předejte odkaz sami.“*
-- **Invitation page** (`admin.php?pozvanka=<token>`, also when signed in):
-  valid link (`admin_invited_user()`: hash, not expired, account not
-  disabled) → *„Dobrý den, <name>. Vytvořte si heslo do správy rezervací.
-  Přihlašovací jméno je Váš e-mail <email>.“*, *Nové heslo* + *Heslo znovu*,
-  **Uložit heslo a přihlásit** (`accept-invite`, rate limit area
-  `admin-invite`); `admin_accept_invite()`: ≥ `ADMIN_PASSWORD_MIN` = 10
-  chars (*„Heslo musí mít alespoň 10 znaků.“*), equal (*„Hesla se
-  neshodují.“*) → password stored, link cleared, `accepted_at` (first time),
-  signed in, redirect with *„Vítejte, <name>. Heslo je nastavené, příště se
-  přihlásíte e-mailem <email>.“* Invalid/used/expired link: *„Pozvánka
-  neplatí nebo vypršela. Požádejte o novou.“* + link to sign-in.
-- **Tab Účetní** list (active first, by name): name (*(vy)* for yourself),
-  e-mail, status *Aktivní* / *Čeká na heslo (do …)* / *Pozvánka vypršela* /
-  *Vypnuto* (+ *odkaz na nové heslo platí do …*), invited by + created,
-  last sign-in. Actions: `user-link` – **Poslat znovu** (pending) / **Nové
-  heslo** (active; forgotten password – the old password works until the new
-  one is set): new token + e-mail, the previous link stops working;
-  `user-disable` **Vypnout** (not for yourself: *„Svůj vlastní účet nelze
-  vypnout.“*; also clears an open link) → *„Účet X vypnut – už se
-  nepřihlásí.“*; `user-enable` **Zapnout**. The intro mentions that the
-  master password still works and can be removed from the configuration.
+`api/admin.php` (CSRF token on every POST). Sign-in, invitations and the
+forgotten password: §12. The header shows *Přihlášen: <name>* (tooltip e-mail
+and roles) and the menu by role: Správce *Rezervace*, *Plánek*, *Slevové kódy*,
+*Uživatelé*, *Nastavení*, *Odbavení*; Účetní only *Rezervace* (other `view=`
+values show Rezervace, other actions are ignored); *Odbavení* (link to
+`app_base_url()/scanner.html`) for accounts with `scan`. Actions are checked
+by role: reservation actions need `reservations`, everything else `manage`.
 
 Tabs:
 
@@ -833,22 +870,30 @@ Tabs:
   e-mail, created (+ by), sent, state *Nepoužitý* / *Použitý* (time, VS link,
   run, seat) / *Zrušený*; for unused: **Poslat znovu** (`code-resend`) and
   **Zrušit** (`code-revoke`, *„Kód zrušen – už ho nelze použít.“*).
-- **Účetní** – see above.
-- **Pořadatelé** – intro also says the organizer creates a password on the
-  first opening and a forwarded link alone is not enough; `invite-save` (create
-  / edit name+runs / new link – *„vytvořit nový odkaz (původní přestane platit,
-  pořadatel si vytvoří nové heslo…)“*), `invite-revoke`; state *Zrušeno* /
-  *Čeká na heslo* / *Aktivní*; below the invites *Odbavení bez spojení – konflikty*
-  (last 500 `scan_conflicts`: time, run, label, reason *už odbaveno jinde* /
-  *vstupenka neplatila (nezaplaceno / zrušeno / místo zrušeno)* / *neznámá vstupenka*
-  (`CONFLICT_REASONS`), device, earlier check-in). The tab shows the number
-  of conflicts in a red badge.
+- **Uživatelé** (Správce) – intro: *„Uživatele zve správce zadáním e-mailu a
+  rolí. … Správce může vše, Účetní vidí jen rezervace a platby, Odbavovatel jen
+  odbavuje (scanner). Kdo má víc rolí, vidí všechny jejich možnosti v menu.
+  Zapomenuté heslo si každý obnoví sám na přihlašovací stránce.“*; form *Pozvat
+  uživatele* (name, e-mail, role checkboxes, `user-invite`, §12); list (active
+  first, by name): name (*(vy)*), e-mail, roles with *změnit* → checkboxes +
+  **Uložit role** (`user-roles` → `admin_set_roles()`: at least one role,
+  *„Svou vlastní roli Správce nelze odebrat.“*, *„Role účtu X uloženy.“*),
+  invitation state *Přijata <time>* / *Nepřijata (platí do …)* / *Nepřijata –
+  vypršela* / *Účet vypnut*, invited by + created, last sign-in. Actions:
+  **Poslat znovu** (`user-link`, only not accepted: new token + e-mail, the
+  previous link stops working), **Vypnout** (`user-disable`, not yourself:
+  *„Svůj vlastní účet nelze vypnout.“*; also clears open links; *„Účet X
+  vypnut – už se nepřihlásí.“*), **Zapnout** (`user-enable`). Below *Odbavení
+  bez spojení – konflikty* (last 500 `scan_conflicts`: time, run, label, reason
+  *už odbaveno jinde* / *vstupenka neplatila (nezaplaceno / zrušeno / místo
+  zrušeno)* / *neznámá vstupenka* (`CONFLICT_REASONS`), device, earlier
+  check-in); the tab shows the number of conflicts in a red badge.
 - **Nastavení** – *Splatnost plateb* (`deadline-save`, §8; errors
   *„Splatnost N: zadejte datum a počet hodin 1–720.“*, success *„Splatnost
   uložena. Platí pro nové rezervace, už vytvořené si splatnost ponechají.“*;
   shows *„Nyní platí: N hodin“*); runs: `run-save` (start required, label, booking cut-off
   before start, storno rows), `run-delete` (only without reservations, else *„Termín má rezervace, nelze ho smazat.“*;
-  removes invite links and offline scan conflicts of the run). Shows the GDPR deletion date.
+  removes offline scan conflicts of the run). Shows the GDPR deletion date.
   **Lock:** once a run has any reservation (`run_has_reservations()`, any
   status), its start and storno rules can no longer be changed – the form
   shows them disabled with *„Představení už má rezervace – začátek a storno
@@ -881,7 +926,8 @@ Subjects are `mail_subject()` = *„TZG 2026: <subject>“* (the sender name alr
 | Subject | Trigger |
 | --- | --- |
 | Rezervace míst | reservation created (payment details, link if `PUBLIC_URL`) |
-| Pozvánka do správy rezervací | accountant invited or new link (`send_admin_invite_email()`: *„<inviter or Správce rezervací> Vás zve ke správě vstupenek na TZG 2026 (potvrzování plateb, vracení peněz, slevové kódy).“*, link valid 7 days, *„Přihlašovací jméno je Váš e-mail: …“*) |
+| Pozvánka | user invited or invitation sent again (`send_admin_invite_email()`: *„<inviter> Vás zve do systému Vstupenky na TZG 2026 – role: <roles>.“*, *„Účet vznikne, až si na tomto odkazu vytvoříte heslo (platí 7 dní):“* + link, *„Přihlašovací jméno je Váš e-mail: …“*) |
+| Nové heslo | forgotten password requested for an active account (`request_password_reset()`: *„někdo (nejspíš Vy) požádal o nové heslo…“*, link valid 60 minut, *„Pokud jste o nové heslo nežádali, e-mail ignorujte – dosavadní heslo platí dál.“*) |
 | Připomínka platby | cron: pending, due within 24 h, created ≥ 24 h before due, once |
 | Rezervace zrušena | cron: expired within the last 3 days, once (refund line for money that already arrived; *„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“*) |
 | Platba přijata – Vaše vstupenky | recorded payment completes the price / expired restored / pending partial cancellation now covered |
@@ -920,9 +966,10 @@ amounts, seats and statuses stay.
 - Form token from `seats.php`: `<unix time>.<hmac>` (secret derived from
   `TICKET_SECRET`), valid from `FORM_MIN_SECONDS` to 12 h.
 - `rate_limit(key, max, window)` fixed windows in `rate_limits` (keys
-  hashed): reservations per IP (counted after validation; higher limit with
-  ALTCHA), cancellations
-  20/h per IP, logins/invites per IP.
+  hashed): cancellations 20/h per IP, ticket names 60/h, logins, invitations
+  and forgotten passwords per IP and area (+ 3 reset e-mails per account and
+  hour), deploy 10/h; `rate_limit_add()` counts reserved seats per IP
+  (`seat_quota_take()`, §8).
 - Pending reservations per e-mail and run.
 - Discount codes are guessed only through reservations (IP limit + ALTCHA);
   the code space is 32⁸.
@@ -938,8 +985,9 @@ amounts, seats and statuses stay.
 | GET | `tickets.php?token=` | – | PDF of a paid reservation's tickets (§11), else 404 |
 | POST | `cancel.php` | `token, seats?` | reservation payload |
 | POST | `ticket-names.php` | `token, names {seat: name}` ('' = reservation name) | reservation payload; 422 *„Jména na vstupenkách už nelze měnit.“* / *„Vyberte místa z této rezervace.“* / *„Jméno na vstupence může mít nejvýše 100 znaků.“*; 60 requests/h per IP |
-| GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`), `layout` |
-| POST | `organizer.php` | `action`: `invite {token, password?, passwordAgain?}` (§12), `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `snapshot {runId}`, `sync {runId, events}`, `sale-seats {runId}` → `{taken, reserveSeats, price, childPrice, maxSeats}`, `sale-create {runId, seats, children}` → 201 `{sale: {id, status, variableSymbol, amount, seats, tickets, spd, account, iban}}` (errors 422 *„Vyberte 1 až 20 volných míst.“* / *„Dětských vstupenek může být nejvýše tolik, kolik je míst.“*, 409 seats taken, 503 no IBAN), `sale-paid {runId, id}` → `{message}`, `sale-cancel {runId, id}` → `{message}` | see §9, §11, §12 |
+| GET | `organizer.php` | – | `loggedIn, name, admin` (account may use the admin), `runs[]` (+ `scanFrom`, `scanTo`), `layout`; a signed-in admin session with `scan` signs the scanner in (§12) |
+| POST | `deploy.php` | `token, email, password, name?` | 201 `{message}`; 403 / 409 / 422 (§12) |
+| POST | `organizer.php` | `action`: `login {email, password}` (§12), `logout`, `verify {code, runId, confirmOutside?}`, `snapshot {runId}`, `sync {runId, events}`, `sale-seats {runId}` → `{taken, reserveSeats, price, childPrice, maxSeats}`, `sale-create {runId, seats, children}` → 201 `{sale: {id, status, variableSymbol, amount, seats, tickets, spd, account, iban}}` (errors 422 *„Vyberte 1 až 20 volných míst.“* / *„Dětských vstupenek může být nejvýše tolik, kolik je míst.“*, 409 seats taken, 503 no IBAN), `sale-paid {runId, id}` → `{message}`, `sale-cancel {runId, id}` → `{message}` | see §9, §11, §12 |
 
 Errors: `{"error": "<Czech message>", …}` with HTTP status; uncaught
 exceptions are logged (`[zidle]`) and return 500 `Chyba serveru. Zkuste to
@@ -947,12 +995,12 @@ prosím znovu.`
 
 ## 19. Formats
 
-- Seat id: `^[A-Z]{2}-\d{1,2}-\d{1,2}$`, validated against `SECTIONS`.
+- Seat id: `^[A-Z]{2}-[1-9]\d?-[1-9]\d?\z` (exact form), validated against `SECTIONS`.
 - VS: random 10 digits (first digit non-zero), unique.
 - Ticket: §11 (one per seat). Payment: §9.
 - Discount code: 8 chars `[A-HJ-NP-Z2-9]`, shown `XXXX-XXXX`; input is
   normalized (upper case, anything but letters/digits removed).
-- Invite token: 48 hex; device cookie values §12.
+- Invitation and password reset tokens: 48 hex (sha256 stored); scanner cookie §12.
 - Times in API responses: ISO 8601 UTC with `Z`.
 
 ## 20. Conventions
@@ -965,7 +1013,7 @@ ticket format kept identical, schema + migration for DB changes, Czech UI.
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`
 (older runs of the same ref are cancelled). PHP 8.3, Node 22, MariaDB 10.11
-service (`root`/`root`, database `zidle_test`); the php job sets `ADMIN_PASSWORD=ci-admin-master` for the master login test and `BANK_IBAN` for the on-site sale test.
+service (`root`/`root`, database `zidle_test`); the php job sets `DEPLOY_TOKEN` for the deploy test and `BANK_IBAN` for the on-site sale test.
 
 | Job | Steps |
 | --- | --- |
@@ -1011,18 +1059,21 @@ online check-in per seat (outside window, used, child kind, cancelled seat,
 other run, old format); offline check-in of separate seats; on-site sale
 (QR amount, seat held, paid → all seats checked in, only once, cancel frees
 the seat); ticket calendar event (run start/end,
-UID, SEQUENCE, escaping, line folding, missing run); admin accounts (invite, short/mismatched
-password, accept, used link, case-insensitive login, wrong password,
-duplicate and invalid e-mail, new link = new password while the old one
-works until then, expired link, disabled account cannot sign in and loses
-its session, nobody disables themselves, master password with an empty
-e-mail, master passwords need 12 characters and no placeholder); security:
+UID, SEQUENCE, escaping, line folding, missing run); accounts (deploy creates the first Správce once,
+needs the token, short password; invitation with roles, unknown role dropped,
+no role / duplicate / invalid e-mail refused, no login before accepting,
+short/mismatched password, used and expired links, case-insensitive login;
+roles and what they may, several roles add up, changing roles, nobody
+removes their own Správce role; forgotten password: unknown e-mail does
+nothing, the old password works until changed, new password signs old
+sessions out, used and expired links, 3 e-mails an hour; disabled account
+cannot sign in and loses its session, nobody disables themselves; scanner
+sign-in for Odbavovatel and Správce only, the cookie stops working after a
+removed role or a new password, forged cookie refused); security:
 a seat has one id (leading zeros / trailing new line refused, the same chair
 written differently not bookable), seats per IP per hour and day (refused
 requests and released seats not counted), names cleaned of line breaks and
-invisible characters, the same payment submitted twice recorded once, a
-scanner invite link works only with the password created on its first
-opening (too short, mismatch, wrong password, a new link clears it); layout (order, seats per row of the
+invisible characters, the same payment submitted twice recorded once; layout (order, seats per row of the
 wings, main sections and balcony, the benches split 5 | 7 and 6 | 5, the
 left reserve rows 5 | 6, 195 + 106 = 301
 seats, reserve rows, a plan per level, last seat of each section valid, one more
@@ -1043,14 +1094,16 @@ by `src/scanner/ticket.js` (id, VS, seat, kind, name).
 **Playwright** (`playwright.config.js`, `tests/e2e/`): one worker, project
 *mobile* (Pixel 7, `cs-CZ`, Europe/Prague); admin tests use a 1360 × 900
 desktop viewport. Web servers: `php -S 127.0.0.1:8000 -t .` with `ENV`
-(`DB_NAME=zidle_test`, `ADMIN_PASSWORD=e2e-admin-master`,
-`ORGANIZER_PASSWORD=e2e-organizer`, test IBAN and ticket secret,
+(`DB_NAME=zidle_test`, `PUBLIC_URL=http://127.0.0.1:4173` (admin links lead to
+the built apps), test IBAN and ticket secret,
 `MAIL_ENABLED=0`; the process environment overrides them) and `npm run build
 && vite preview` on 127.0.0.1:4173 (proxies `/api`). `global-setup.js` runs
 `tests/e2e/seed.php` (fresh database: run 1 *Premiéra* in 30 days with a
 pending reservation, run 2 *Dnes* in 20 minutes with a paid reservation
 (BC-1-1 adult, BC-1-2 child) and a second one for the offline test, three discount codes
-for *zakaznik@example.com*) and stores its JSON output (`ticket` /
+for *zakaznik@example.com*, the Správce *spravce@example.cz* created by
+`create_first_admin()` and the Odbavovatel *vchod@example.cz*; passwords in
+`helpers.js`) and stores its JSON output (`ticket` /
 `offlineTicket` = seat ticket codes, `codes`) in `tests/e2e/.seed.json`.
 Tests:
 
@@ -1070,12 +1123,14 @@ Tests:
   `reserveSeats`), then *Výchozí rozložení*; discount codes (invalid e-mail →
   nothing created, the same e-mail twice → two codes, revoke one); payment
   deadline rule (*Nyní platí: 24 hodin*, `seats.php` `deadlineHours`, removed
-  again); invite an accountant (link shown
-  in the tab, status *Čeká na heslo*), in another browser context the link →
-  mismatched passwords error → password set and signed in (*Vítejte*,
-  *Přihlášen*), sign out and in with e-mail + password, the used link is
-  invalid, the admin disables the account → signed out on the next load.
-- `scanner.spec.js` – password login; the camera is replaced by a canvas
+  again); invite an Účetní (role checkbox, link shown in the tab, *Nepřijata*),
+  in another browser context the link → mismatched passwords error → password
+  set and signed in (*Vítejte*, *Přihlášen*), the menu shows only *Rezervace*
+  (also for `view=users`), the admin sees *Přijata*, sign out and in with
+  e-mail + password, the used link is invalid, the admin disables the account
+  → signed out on the next load; *Zapomněl jsem heslo* → the same answer for
+  an unknown e-mail, an invalid reset link refused.
+- `scanner.spec.js` – sign-in with the Odbavovatel's e-mail and password; the camera is replaced by a canvas
   stream showing the seeded seat ticket QR (`getUserMedia` stub) → *Platná
   vstupenka* with the seat, *Dospělý* and *rezervace 2 místa · odbaveno 1 z
   2*, next scan *Už odbaveno*; offline (`context.setOffline`, after the snapshot was
@@ -1086,10 +1141,10 @@ Tests:
   (service worker) with the cached session and the offline strip; tab
   *Prodej*: two seats of the left wing with one child → QR payment 450 Kč → **Zaplaceno –
   vpustit** → *„Zaplaceno 450 Kč – 2 místa odbavena.“* and the seats taken;
-  invite: the admin creates *Vchod E2E* (*Čeká na heslo*), the phone opens the
-  link and creates a password (signed in, `pozvanka` gone from the URL), another
-  browser with the same link must enter it (wrong → *Nesprávné heslo.*, right →
-  signed in), the admin then sees *Aktivní*.
+  the admin invites an Odbavovatel, the phone opens the link and sets a password
+  → lands in the scanner signed in (no *Správa* link), the admin sees
+  *Přijata*; a Správce signed in to the admin opens *Odbavení* and is signed in
+  to the scanner (with *Správa*).
 
 Locally `npm run test:e2e` needs PHP, MariaDB with a `zidle_test` database
 and the `DB_*` variables; move `api/config.local.php` aside or make sure it

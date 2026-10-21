@@ -29,7 +29,7 @@ return (static function (): array {
         'SEATS_PER_IP_PER_DAY' => 80,
         'ALTCHA_CHALLENGES_PER_IP_PER_HOUR' => 300,
         'PENDING_RESERVATIONS_PER_EMAIL' => 2, // unpaid reservations one e-mail may hold at once in one run
-        'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and organizer login, per IP
+        'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and scanner login, invitation, forgotten password, per IP
         'FORM_MIN_SECONDS' => 3,               // reservation sent sooner after loading the page = bot
         // Invisible ALTCHA proof-of-work on the reservation form
         'ALTCHA_ENABLED' => true,
@@ -44,13 +44,9 @@ return (static function (): array {
         'PAYMENT_MESSAGE' => 'Vstupenky TZG 2026',
         'PAYMENT_SPECIFIC_SYMBOL' => '', // specific symbol (SS) used for all payments, max 10 digits
 
-        // Admin page (admin.php): accountants sign in with their e-mail and password
-        // (invited in the "Účetní" tab). Master password = sign-in with an empty
-        // e-mail; required until the first account exists, may be removed afterwards.
-        'ADMIN_PASSWORD' => '',
-        // Ticket scanner (scanner.html): organizers sign in with invite links from admin.
-        // Optional master password for all runs ('' = disabled).
-        'ORGANIZER_PASSWORD' => '',
+        // One-time token for api/deploy.php, which creates the first Správce (admin account) while
+        // none exists; at least 32 characters, '' = deploy disabled. Everybody else is invited in the admin.
+        'DEPLOY_TOKEN' => '',
         // Check-in window around the start of a run; outside it the scanner warns
         // and checks in only after an explicit confirmation.
         'SCAN_WINDOW_BEFORE_MINUTES' => 60,

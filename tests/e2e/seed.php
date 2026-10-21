@@ -4,6 +4,7 @@
 //   three unused discount codes for the customer tests
 //   run 2 "Dnes" starting in 20 minutes – inside the scan window: two paid reservations
 //   (one for the online and one for the offline scanner test)
+//   accounts: Správce spravce@example.cz (created like deploy.php does), Odbavovatel vchod@example.cz
 declare(strict_types=1);
 
 require __DIR__ . '/../php/fixtures.php';
@@ -18,6 +19,9 @@ $pending = reservation(['MR-5-1', 'MR-5-2'], 'pending', 1, 'Platící');
 $paid = reservation(['BC-1-1', 'BC-1-2'], 'paid', 2, 'Vstupenka', ['BC-1-2']);
 $offline = reservation(['BC-2-1', 'BC-2-2'], 'paid', 2, 'Offline');
 create_discount_codes("zakaznik@example.com\nzakaznik@example.com\nzakaznik@example.com", 'seed');
+create_first_admin('spravce@example.cz', 'Správce E2E', 'e2e-spravce-heslo');
+$invite = admin_invite('vchod@example.cz', 'Vchod A', ['scanner'], 'seed');
+admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'e2e-vchod-heslo', 'e2e-vchod-heslo');
 
 $row = static function (int $id): array {
     $stmt = db()->prepare('SELECT * FROM reservations WHERE id = ?');

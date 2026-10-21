@@ -19,15 +19,16 @@ test('accountant records a partial payment and then the rest', async ({ page }) 
   await expect(row.locator('.badge')).toHaveText('Zaplaceno');
 });
 
-test('admin invites an accountant, who sets a password and signs in with the e-mail', async ({ page, browser }) => {
+test('admin invites an accountant, who sets a password, sees only reservations and signs in with the e-mail', async ({ page, browser }) => {
   await adminLogin(page);
   await page.goto('http://127.0.0.1:8000/api/admin.php?view=users');
   await page.fill('input[name=name]', 'Jana Účetní');
   await page.fill('input[name=email]', 'jana.ucetni@example.cz');
+  await page.locator('form', { hasText: 'Pozvat uživatele' }).getByLabel('Účetní').check();
   await page.getByRole('button', { name: 'Poslat pozvánku' }).click();
   await expect(page.locator('.flash')).toContainText('Pozvánka pro jana.ucetni@example.cz vytvořena.');
   const link = await page.locator('.invite-link').inputValue();
-  await expect(page.locator('tr', { hasText: 'jana.ucetni@example.cz' })).toContainText('Čeká na heslo');
+  await expect(page.locator('tr', { hasText: 'jana.ucetni@example.cz' })).toContainText('Nepřijata');
 
   // The invitee, on another computer.
   const other = await browser.newContext({ viewport: { width: 1360, height: 900 } });
@@ -43,6 +44,11 @@ test('admin invites an accountant, who sets a password and signs in with the e-m
   await jana.getByRole('button', { name: 'Uložit heslo a přihlásit' }).click();
   await expect(jana.locator('.flash')).toContainText('Vítejte, Jana Účetní.');
   await expect(jana.locator('.me')).toContainText('Jana Účetní');
+  await expect(jana.locator('.tabs a')).toHaveText(['Rezervace']);
+  await jana.goto('http://127.0.0.1:8000/api/admin.php?view=users');
+  await expect(jana.locator('.tabs a.active')).toHaveText('Rezervace');
+  await page.reload();
+  await expect(page.locator('tr', { hasText: 'jana.ucetni@example.cz' })).toContainText('Přijata');
 
   await jana.getByRole('button', { name: 'Odhlásit' }).click();
   await jana.fill('input[name=email]', 'jana.ucetni@example.cz');
@@ -119,4 +125,14 @@ test('admin switches seats of a run between for sale and "Záložní" on the pla
   await expect(page.locator('.flash')).toContainText('Obnoveno výchozí rozložení. V prodeji 267 míst, záložních 34.');
   runs = (await (await request.get('http://127.0.0.1:8000/api/seats.php')).json()).runs;
   expect(runs.find((r) => r.label === 'Premiéra').reserveSeats).not.toContain('ML-1-1');
+});
+
+test('forgotten password: the login page sends a link without telling whether the e-mail exists', async ({ page }) => {
+  await page.goto('http://127.0.0.1:8000/api/admin.php');
+  await page.getByRole('link', { name: 'Zapomněl jsem heslo' }).click();
+  await page.fill('input[name=email]', 'nikdo@example.cz');
+  await page.getByRole('button', { name: 'Poslat odkaz' }).click();
+  await expect(page.locator('.login')).toContainText('Pokud e-mail u nás má účet, poslali jsme na něj odkaz na nové heslo.');
+  await page.goto('http://127.0.0.1:8000/api/admin.php?heslo=' + 'a'.repeat(48));
+  await expect(page.locator('.error')).toHaveText('Odkaz neplatí nebo vypršel. Požádejte o nový.');
 });

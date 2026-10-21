@@ -1,10 +1,9 @@
 <?php
-// Organizer API used by the ticket scanner (scanner.html). Access: invite link
-// from admin (only the invited runs) or the optional master password (all runs).
-//   GET  organizer.php                                      → {loggedIn, name, runs, passwordLogin, layout}
-//   POST organizer.php {action: "invite", token}            → {password: create|enter, name} or {loggedIn} (accept_invite())
-//   POST organizer.php {action: "invite", token, password, passwordAgain?} → creates / checks the invite password, signs in
-//   POST organizer.php {action: "login", password}          → master password (if enabled)
+// Organizer API used by the ticket scanner (scanner.html). Access: accounts with the role
+// Odbavovatel or Správce (scanner_access.php), all runs.
+//   GET  organizer.php                                      → {loggedIn, name, admin, runs, layout}
+//                                                             (a signed-in admin session signs the scanner in too)
+//   POST organizer.php {action: "login", email, password}   → signs the device in
 //   POST organizer.php {action: "logout"}
 //   POST organizer.php {action: "verify", code, runId, confirmOutside?}
 //                                                           → ticket check for the run being checked in
@@ -21,11 +20,12 @@ require __DIR__ . '/lib/bootstrap.php';
 
 run_api(function (): void {
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        $access = scanner_access();
+        $access = scanner_access() ?? scanner_access_from_admin_session();
         json_response([
             'loggedIn' => $access !== null,
             'name' => $access['name'] ?? null,
-            'passwordLogin' => master_password_usable('ORGANIZER_PASSWORD'),
+            // the account may also use the admin (link "Správa" in the scanner)
+            'admin' => $access !== null && (in_array('admin', $access['roles'], true) || in_array('accountant', $access['roles'], true)),
             'runs' => $access ? array_map('scanner_run_public', scanner_runs($access)) : [],
             'layout' => layout_public(),
         ]);
@@ -36,29 +36,17 @@ run_api(function (): void {
 
     $body = read_json_body();
     switch ($body['action'] ?? '') {
-        case 'invite':
-            if (!login_allowed('organizer')) {
-                json_error('Příliš mnoho pokusů. Zkuste to za 15 minut.', 429);
-            }
-            $accepted = accept_invite($body['token'] ?? null, $body['password'] ?? null, $body['passwordAgain'] ?? null);
-            if (isset($accepted['error'])) {
-                json_error($accepted['error'], $accepted['status']);
-            }
-            json_response($accepted);
-            // no break – json_response exits
         case 'login':
-            $password = (string) config('ORGANIZER_PASSWORD');
-            if (!master_password_usable('ORGANIZER_PASSWORD')) {
-                json_error('Přihlášení heslem je vypnuté. Použijte pozvánku od správce.', 403);
-            }
             if (!login_allowed('organizer')) {
                 json_error('Příliš mnoho pokusů. Zkuste to za 15 minut.', 429);
             }
-            if (!is_string($body['password'] ?? null) || !hash_equals($password, $body['password'])) {
+            $email = $body['email'] ?? null;
+            $password = $body['password'] ?? null;
+            $signedIn = is_string($email) && is_string($password) ? scanner_login($email, $password) : 'Nesprávný e-mail nebo heslo.';
+            if (is_string($signedIn)) {
                 sleep(1);
-                json_error('Nesprávné heslo.', 401);
+                json_error($signedIn, 401);
             }
-            scanner_set_cookie(master_cookie());
             json_response(['loggedIn' => true]);
             // no break
         case 'logout':
@@ -127,7 +115,7 @@ function require_organizer(): array
 {
     $access = scanner_access();
     if ($access === null) {
-        json_error('Přihlaste se pozvánkou od správce.', 401);
+        json_error('Přihlaste se svým e-mailem a heslem.', 401);
     }
     return $access;
 }

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import QRCode from 'qrcode';
-import { ENV, adminLogin, seed } from './helpers.js';
+import { SCANNER, adminLogin, seed } from './helpers.js';
 
 /**
  * Replaces the camera with a canvas stream that shows the given QR code
@@ -35,7 +35,8 @@ const snapshotLoaded = (page) =>
 
 async function login(page) {
   await page.goto('/scanner.html');
-  await page.locator('input[type=password]').fill(ENV.ORGANIZER_PASSWORD);
+  await page.getByLabel('E-mail').fill(SCANNER.email);
+  await page.getByLabel('Heslo').fill(SCANNER.password);
   await page.getByRole('button', { name: /Přihlásit/ }).click();
 }
 
@@ -109,37 +110,33 @@ test('organizer sells free seats at the entrance: QR payment, then the seats are
   await expect(page.getByRole('button', { name: /Řada 4, místo 5/ })).toBeDisabled();
 });
 
-test('an invite link makes the organizer create a password; a forwarded link alone signs nobody in', async ({ page, browser }) => {
+test('an invited Odbavovatel sets a password and lands in the scanner; Správa is not for them', async ({ page, browser }) => {
   const admin = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   await adminLogin(admin);
-  await admin.goto('http://127.0.0.1:8000/api/admin.php?view=scanners');
-  const form = admin.locator('form', { hasText: 'Nová pozvánka' });
-  await form.locator('input[name=name]').fill('Vchod E2E');
-  await form.locator('input[name="runs[]"]').first().check();
-  await form.getByRole('button', { name: 'Vytvořit pozvánku' }).click();
-  const token = new URL(await admin.locator('.invite-link').inputValue()).searchParams.get('pozvanka');
-  await expect(admin.locator('tr', { hasText: 'Vchod E2E' })).toContainText('Čeká na heslo');
+  await admin.goto('http://127.0.0.1:8000/api/admin.php?view=users');
+  await admin.fill('input[name=name]', 'Vchod B');
+  await admin.fill('input[name=email]', 'vchod.b@example.cz');
+  await admin.locator('form', { hasText: 'Pozvat uživatele' }).getByLabel('Odbavovatel').check();
+  await admin.getByRole('button', { name: 'Poslat pozvánku' }).click();
+  const link = await admin.locator('.invite-link').inputValue();
+  await expect(admin.locator('tr', { hasText: 'vchod.b@example.cz' })).toContainText('Nepřijata');
 
-  // The organizer opens the link and creates the password.
-  await page.goto(`/scanner.html?pozvanka=${token}`);
-  await expect(page.locator('.scan-login')).toContainText('Vytvořte si heslo');
-  await page.getByLabel('Nové heslo (alespoň 8 znaků)').fill('vchod-heslo');
-  await page.getByLabel('Heslo znovu').fill('vchod-heslo');
-  await page.getByRole('button', { name: 'Vytvořit heslo a přihlásit' }).click();
-  await expect(page.locator('.scan-login')).toHaveCount(0);
-  await expect(page).not.toHaveURL(/pozvanka/);
-
-  // Someone else with the forwarded link.
-  const other = await browser.newPage();
-  await other.goto(`http://127.0.0.1:4173/scanner.html?pozvanka=${token}`);
-  await expect(other.locator('.scan-login')).toContainText('Zadejte heslo');
-  await other.getByLabel('Heslo').fill('hadam-heslo');
-  await other.getByRole('button', { name: 'Přihlásit' }).click();
-  await expect(other.locator('.form-error')).toContainText('Nesprávné heslo.');
-  await other.getByLabel('Heslo').fill('vchod-heslo');
-  await other.getByRole('button', { name: 'Přihlásit' }).click();
-  await expect(other.locator('.scan-login')).toHaveCount(0);
+  // On the organizer's phone.
+  await page.goto(link);
+  await page.fill('input[name=password]', 'vchodove-heslo-b');
+  await page.fill('input[name=password_again]', 'vchodove-heslo-b');
+  await page.getByRole('button', { name: 'Uložit heslo a přihlásit' }).click();
+  await expect(page).toHaveURL(/scanner\.html/);
+  await expect(page.locator('.scan-who')).toHaveText('Vchod B');
+  await expect(page.getByRole('link', { name: 'Správa' })).toHaveCount(0);
 
   await admin.reload();
-  await expect(admin.locator('tr', { hasText: 'Vchod E2E' })).toContainText('Aktivní');
+  await expect(admin.locator('tr', { hasText: 'vchod.b@example.cz' })).toContainText('Přijata');
+});
+
+test('a Správce signed in to the admin opens the scanner from the menu without signing in again', async ({ page }) => {
+  await adminLogin(page);
+  await page.getByRole('link', { name: 'Odbavení' }).click();
+  await expect(page.locator('.scan-who')).toHaveText('Správce E2E');
+  await expect(page.getByRole('link', { name: 'Správa' })).toBeVisible();
 });

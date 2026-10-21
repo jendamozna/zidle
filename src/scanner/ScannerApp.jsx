@@ -3,7 +3,7 @@ import { SECTION_BY_ID, parseSeatId, setLayout } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { KIND_LABELS } from '../pricing.js';
 import { decodeTicket } from './ticket.js';
-import { acceptInvite, getSession, login, logout, verifyTicket } from './api.js';
+import { adminUrl, getSession, login, logout, verifyTicket } from './api.js';
 import { STALE_MS, cachedSession, clearOffline, getQueue, markTicketCheckedIn, saveSession, verifyOffline } from './offline.js';
 import { useOffline } from './useOffline.js';
 import { useQrCamera } from './useQrCamera.js';
@@ -82,7 +82,9 @@ const formatTime = (iso) =>
     timeZone: 'Europe/Prague',
   }).format(new Date(iso));
 
-function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
+/** Sign-in with the account (role Odbavovatel or Správce) the organizer was invited to. */
+function LoginScreen({ onLoggedIn }) {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -92,7 +94,7 @@ function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
     setBusy(true);
     setError(null);
     try {
-      await login(password);
+      await login(email, password);
       onLoggedIn();
     } catch (err) {
       setError(err.message);
@@ -107,93 +109,27 @@ function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
         Vstupenky na TZG <span>2026</span>
       </h1>
       <p className="muted">Odbavení vstupenek</p>
-      {inviteError && <p className="form-error">{inviteError}</p>}
-      <p className="scan-login-help">
-        Otevřete na tomto mobilu <strong>odkaz nebo QR kód z pozvánky</strong>, kterou Vám poslal správce. Pozvánka
-        povolí odbavení Vašich termínů.
-      </p>
-      {passwordLogin && (
-        <>
-          <label className="field">
-            <span>Nebo hlavní heslo pořadatele</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          {error && <p className="form-error">{error}</p>}
-          <button type="submit" className="btn btn-primary btn-block" disabled={busy || !password}>
-            {busy ? 'Přihlašuji…' : 'Přihlásit'}
-          </button>
-        </>
-      )}
-    </form>
-  );
-}
-
-/**
- * Invite link opened: the first time the organizer creates a password, later the link works only with it
- * (a forwarded link alone signs nobody in).
- */
-function InviteScreen({ invite, onLoggedIn }) {
-  const [mode, setMode] = useState(invite.mode);
-  const [password, setPassword] = useState('');
-  const [again, setAgain] = useState('');
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const create = mode === 'create';
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await acceptInvite(invite.token, password, create ? again : undefined);
-      onLoggedIn();
-    } catch (err) {
-      setError(err.message);
-      if (err.status === 409) setMode('enter');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form className="scan-login" onSubmit={submit}>
-      <h1 className="brand">
-        Vstupenky na TZG <span>2026</span>
-      </h1>
-      <p className="muted">Pozvánka – {invite.name}</p>
-      <p className="scan-login-help">
-        {create
-          ? 'Vytvořte si heslo k pozvánce. Budete ho zadávat při dalším otevření odkazu (i na jiném mobilu) – bez něj odkaz nefunguje.'
-          : 'Zadejte heslo, které jste si vytvořili při prvním otevření pozvánky.'}
-      </p>
       <label className="field">
-        <span>{create ? 'Nové heslo (alespoň 8 znaků)' : 'Heslo'}</span>
+        <span>E-mail</span>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />
+      </label>
+      <label className="field">
+        <span>Heslo</span>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoComplete={create ? 'new-password' : 'current-password'}
-          minLength={create ? 8 : undefined}
+          autoComplete="current-password"
           required
         />
       </label>
-      {create && (
-        <label className="field">
-          <span>Heslo znovu</span>
-          <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" required />
-        </label>
-      )}
       {error && <p className="form-error">{error}</p>}
-      <button type="submit" className="btn btn-primary btn-block" disabled={busy || !password}>
-        {busy ? 'Přihlašuji…' : create ? 'Vytvořit heslo a přihlásit' : 'Přihlásit'}
+      <button type="submit" className="btn btn-primary btn-block" disabled={busy || !email || !password}>
+        {busy ? 'Přihlašuji…' : 'Přihlásit'}
       </button>
-      {!create && <p className="muted small">Zapomenuté heslo: požádejte správce o nový odkaz.</p>}
+      <p className="scan-login-help">
+        Účet Vám založí správce pozvánkou na e-mail. <a href={adminUrl('?zapomenute')}>Zapomněl jsem heslo</a>
+      </p>
     </form>
   );
 }
@@ -298,7 +234,7 @@ function OfflineStrip({ offline }) {
   );
 }
 
-function Scanner({ runs, name, onLogout, onUnauthorized }) {
+function Scanner({ runs, name, admin, onLogout, onUnauthorized }) {
   const [mode, setMode] = useState('scan'); // scan | sale
   const [scan, setScan] = useState(null);
   const [runId, setRunId] = useState(() => defaultRunId(runs));
@@ -405,6 +341,11 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
               ☀
             </button>
           )}
+          {admin && (
+            <a className="btn btn-ghost btn-small" href={adminUrl()}>
+              Správa
+            </a>
+          )}
           <button type="button" className="btn btn-ghost btn-small" onClick={onLogout}>
             Odhlásit
           </button>
@@ -472,17 +413,15 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
 
 export default function ScannerApp() {
   const [session, setSession] = useState('loading'); // loading | in | out | error
-  const [info, setInfo] = useState({ runs: [], name: null, passwordLogin: false });
+  const [info, setInfo] = useState({ runs: [], name: null, admin: false });
   const [error, setError] = useState(null);
-  const [inviteError, setInviteError] = useState(null);
-  const [invite, setInvite] = useState(null); // invite link waiting for its password: { token, mode, name }
 
   const loadSession = useCallback(() => {
     getSession()
       .then((s) => {
         setLayout(s.layout);
-        setInfo({ runs: s.runs ?? [], name: s.name, passwordLogin: s.passwordLogin });
-        if (s.loggedIn) saveSession({ name: s.name, runs: s.runs ?? [], layout: s.layout });
+        setInfo({ runs: s.runs ?? [], name: s.name, admin: !!s.admin });
+        if (s.loggedIn) saveSession({ name: s.name, admin: !!s.admin, runs: s.runs ?? [], layout: s.layout });
         else clearOffline();
         setSession(s.loggedIn ? 'in' : 'out');
       })
@@ -491,7 +430,7 @@ export default function ScannerApp() {
         const cached = err.offline ? cachedSession() : null;
         if (cached) {
           setLayout(cached.layout);
-          setInfo({ runs: cached.runs, name: cached.name, passwordLogin: false });
+          setInfo({ runs: cached.runs, name: cached.name, admin: !!cached.admin });
           setSession('in');
           return;
         }
@@ -500,26 +439,8 @@ export default function ScannerApp() {
       });
   }, []);
 
-  // Invite link: scanner.html?pozvanka=<token> asks for the invite password (created on the first
-  // opening) and signs this device in; the token leaves the URL at once.
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const token = url.searchParams.get('pozvanka');
-    if (!token) {
-      loadSession();
-      return;
-    }
-    url.searchParams.delete('pozvanka');
-    window.history.replaceState(null, '', url);
-    acceptInvite(token)
-      .then((res) => {
-        if (res.loggedIn) loadSession();
-        else setInvite({ token, mode: res.password, name: res.name });
-      })
-      .catch((err) => {
-        setInviteError(err.message);
-        loadSession();
-      });
+    loadSession();
   }, [loadSession]);
 
   const handleLogout = useCallback(() => {
@@ -532,30 +453,19 @@ export default function ScannerApp() {
     setSession('out');
   }, []);
 
-  // Access revoked or expired: nothing stored can be used or sent any more.
+  // Account disabled, password changed or role removed: nothing stored can be used or sent any more.
   const handleUnauthorized = useCallback(() => {
     clearOffline();
     setSession('out');
   }, []);
 
-  if (invite) {
-    return (
-      <InviteScreen
-        invite={invite}
-        onLoggedIn={() => {
-          setInvite(null);
-          loadSession();
-        }}
-      />
-    );
-  }
   if (session === 'loading') return <div className="scan-center muted">Načítám…</div>;
   if (session === 'error') return <div className="scan-center form-error">{error}</div>;
-  if (session === 'out') {
-    return <LoginScreen passwordLogin={info.passwordLogin} inviteError={inviteError} onLoggedIn={loadSession} />;
-  }
+  if (session === 'out') return <LoginScreen onLoggedIn={loadSession} />;
   if (!info.runs.length) {
-    return <div className="scan-center muted">Nemáte přiřazený žádný termín. Požádejte správce o pozvánku.</div>;
+    return <div className="scan-center muted">Zatím není žádný termín k odbavení.</div>;
   }
-  return <Scanner runs={info.runs} name={info.name} onLogout={handleLogout} onUnauthorized={handleUnauthorized} />;
+  return (
+    <Scanner runs={info.runs} name={info.name} admin={info.admin} onLogout={handleLogout} onUnauthorized={handleUnauthorized} />
+  );
 }

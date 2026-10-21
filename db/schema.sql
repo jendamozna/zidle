@@ -112,26 +112,6 @@ CREATE TABLE IF NOT EXISTS settings (
   PRIMARY KEY (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
--- Scanner invitations: admin invites organizers (devices) for specific runs.
-CREATE TABLE IF NOT EXISTS scanner_invites (
-  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  name         VARCHAR(100) NOT NULL COMMENT 'e.g. Vchod A – Petr',
-  token_hash   CHAR(64)     NOT NULL COMMENT 'sha256 of the invite token (the token is shown only once)',
-  password_hash VARCHAR(255) NULL   COMMENT 'organizer''s password created on the first opening of the link (NULL = not yet)',
-  created_at   DATETIME     NOT NULL,
-  last_used_at DATETIME     NULL,
-  revoked_at   DATETIME     NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_token (token_hash)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
-
-CREATE TABLE IF NOT EXISTS scanner_invite_runs (
-  invite_id INT UNSIGNED NOT NULL,
-  run_id    INT UNSIGNED NOT NULL,
-  PRIMARY KEY (invite_id, run_id),
-  CONSTRAINT fk_invite_run FOREIGN KEY (invite_id) REFERENCES scanner_invites (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
-
 -- Check-ins recorded by scanners without a connection that could not be applied
 -- when they were synchronised (e.g. the same ticket let in on two devices).
 CREATE TABLE IF NOT EXISTS scan_conflicts (
@@ -149,15 +129,19 @@ CREATE TABLE IF NOT EXISTS scan_conflicts (
   KEY idx_run (run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
--- Admin accounts (accountants): invited by e-mail, the invitee sets a password;
--- the e-mail is the login. ADMIN_PASSWORD stays as the master login.
+-- User accounts with roles (admin = Správce, accountant = Účetní, scanner = Odbavovatel):
+-- the first Správce is created by api/deploy.php, everybody else is invited by e-mail
+-- and sets a password; the e-mail is the login.
 CREATE TABLE IF NOT EXISTS admin_users (
   id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
   email             VARCHAR(190) NOT NULL COMMENT 'Login, lower case',
   name              VARCHAR(100) NOT NULL,
+  roles             VARCHAR(40)  NOT NULL DEFAULT '' COMMENT 'CSV of admin, accountant, scanner',
   password_hash     VARCHAR(255) NULL COMMENT 'password_hash(); NULL until the invitation is accepted',
   invite_hash       CHAR(64)     NULL COMMENT 'sha256 of the open invitation token',
   invite_expires_at DATETIME     NULL COMMENT 'UTC',
+  reset_hash        CHAR(64)     NULL COMMENT 'sha256 of the open forgotten-password token',
+  reset_expires_at  DATETIME     NULL COMMENT 'UTC',
   invited_by        VARCHAR(100) NOT NULL DEFAULT '',
   created_at        DATETIME     NOT NULL COMMENT 'UTC',
   accepted_at       DATETIME     NULL COMMENT 'UTC, first password set',
@@ -165,5 +149,6 @@ CREATE TABLE IF NOT EXISTS admin_users (
   disabled_at       DATETIME     NULL COMMENT 'UTC; disabled accounts cannot sign in',
   PRIMARY KEY (id),
   UNIQUE KEY uq_email (email),
-  UNIQUE KEY uq_invite (invite_hash)
+  UNIQUE KEY uq_invite (invite_hash),
+  UNIQUE KEY uq_reset (reset_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;

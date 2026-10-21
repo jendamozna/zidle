@@ -43,7 +43,7 @@ export const cachedSession = () => {
 /** Remembers the session and drops snapshots of runs that are gone or ended more than a day ago. */
 export function saveSession(session) {
   update((data) => {
-    data.session = { name: session.name, runs: session.runs, layout: session.layout };
+    data.session = { name: session.name, admin: session.admin, runs: session.runs, layout: session.layout };
     const keep = new Set(
       session.runs.filter((r) => new Date(r.scanTo).getTime() + KEEP_AFTER_RUN_MS > Date.now()).map((r) => String(r.id)),
     );
