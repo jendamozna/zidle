@@ -1,10 +1,11 @@
-import { LEVELS, occupancyLevel } from '../data/layout.js';
+import { LEVELS, occupancyLevel, sectionSeatIds } from '../data/layout.js';
 import { freeLabel } from '../plural.js';
 import SeatPlan from './SeatPlan.jsx';
 
 export default function SectionDetail({ section, seats, onBack }) {
   const stat = seats.stats.bySection[section.id];
   const isBalcony = section.level === 'balcony';
+  const hasReserve = sectionSeatIds(section).some((id) => seats.seatState(id) === 'reserve');
 
   return (
     <div className="detail">
@@ -33,6 +34,11 @@ export default function SectionDetail({ section, seats, onBack }) {
           <span><i className="seat-dot seat-available" /> Volné</span>
           <span><i className="seat-dot seat-selected" /> Moje</span>
           <span><i className="seat-dot seat-taken" /> Obsazené</span>
+          {hasReserve && (
+            <span>
+              <i className="seat-dot seat-reserve" /> Záložní
+            </span>
+          )}
         </div>
       </div>
     </div>

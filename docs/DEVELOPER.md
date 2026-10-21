@@ -62,7 +62,7 @@ api/
   config.php           defaults (+ config.local.php / environment / api/.env overrides); .env.example
   lib/bootstrap.php    config(), db(), db_query(), JSON helpers (json_response/json_error end the request), expire_reservations(), QR payment, reservation_payload()
   lib/layout.php       LEVELS, PLAN, SECTIONS (the only layout definition), layout_public(), total_capacity(),
-                       section_capacity(), optional_section_ids(), section_name(),
+                       section_rows(), section_capacity(), reserve_section_ids(), seat_is_reserve(), section_name(),
                        is_valid_seat_id(), compare_seat_ids()
   lib/settings.php     runs: loading, times, storno rules, open sections (run_capacity()), check-in window,
                        run_public(); payment deadline rules
@@ -143,7 +143,7 @@ has no time-zone tables – check that run's time in admin. Migration 013
 adds seat kinds, discount codes, per-seat check-ins and on-site sales.
 Migration 014 removes VIP guests: their held seats are released and the
 table dropped (free seats are given with discount codes, §13). Migration 015
-adds `runs.open_sections` for the new layout (§5); seat ids of the former
+adds `runs.open_reserves` for the new layout (§5); seat ids of the former
 layout that no longer exist (e.g. `ML-10-1`) stay in old reservations but
 are not valid for new ones.
 
@@ -206,8 +206,8 @@ unquoted value), optional `export ` prefix, `"…"` (backslash escapes) or
 ## 5. Domain model
 
 - **Run** (`runs`) – one performance. `starts_at`, optional `label`, optional
-  `booking_closes_at`, `storno_rules` (JSON), `open_sections` (optional
-  sections opened for sale). Seats, reservations, check-in and scanner
+  `booking_closes_at`, `storno_rules` (JSON), `open_reserves` (sections whose
+  reserve seats are for sale). Seats, reservations, check-in and scanner
   invites are per run.
 - **Section / seat** – fixed layout, defined only in `api/lib/layout.php`
   after the hand-drawn plan of the church: `LEVELS` (main *Hlavní loď* /
@@ -215,19 +215,23 @@ unquoted value), optional `export ` prefix, `"…"` (backslash escapes) or
   tall, with decorations `items`: main – *Pódium* on top, *Kapela* box above
   the left wing; balcony – the open middle `void` drawn as a U with *↑ k
   pódiu*) and `SECTIONS` id → name, short name, level, `label` [x, y, align]
-  (where the name stands on the map), optional `optional`, and `rows`: one
-  `[seats, x1, y1, x2, y2]` per row (row 1 first – nearest the stage or the
-  balcony railing; seat 1 at (x1, y1), the last seat at (x2, y2), the others
-  evenly between, so rows may be horizontal, vertical or slanted). The apps
+  (where the name stands on the map) and `rows`: one `[seats, x1, y1, x2, y2]`
+  per row (row 1 first – nearest the stage or the balcony railing; the first
+  seat at (x1, y1), the last at (x2, y2), the others evenly between, so rows
+  may be horizontal, vertical or slanted); a row split by a gap is `['parts'
+  => [[seats, x1, y1, x2, y2], …]]` (numbering continues across the parts);
+  `'reserve' => true` marks a row of reserve seats. `section_rows()` brings
+  both forms to `{seats, reserve, parts}`. The apps
   get it as `layout` from `seats.php` (customer) and `GET organizer.php`
   (scanner): `layout_public()` = `{levels, plan, sections: [{id, name, short,
-  level, optional, label: {x, y, align}, rows: [{seats, x1, y1, x2, y2}]}]}`
+  level, label: {x, y, align}, rows: [{seats, reserve, parts: [{seats, x1, y1,
+  x2, y2}]}]}]}`
   in `SECTIONS` order. `src/data/layout.js` holds no data: `setLayout(layout)`
   fills its live exports `LEVELS`, `PLAN`, `SECTIONS`, `SECTION_BY_ID`,
   `TOTAL_CAPACITY` before the first map/scanner view is drawn (`useSeats` on
   every `seats.php` response, `ScannerApp` from the session or the cached
-  one); `seatPositions(section)` and `seatSpacing(section)` derive the seat
-  positions:
+  one); `seatPositions(section)` (with `reserve` per seat), `reserveSeatIds()`
+  and `seatSpacing(section)` derive the seat positions:
 
   | Id | Name (short) | Level | Seats per row (row 1 first) | Capacity |
   | --- | --- | --- | --- | --- |
@@ -235,21 +239,20 @@ unquoted value), optional `export ` prefix, `"…"` (backslash escapes) or
   | ML | Levá hlavní (L. hlavní) | main | 9 × 8 | 72 |
   | MR | Pravá hlavní (P. hlavní) | main | 9 × 8 | 72 |
   | WR | Pravé křídlo (P. křídlo) | main | 4, 4, 4, 5, 5, 5, 4 (the last row set apart) | 31 |
-  | BV | Balkon vlevo – přídavná místa (Přídavná L), **optional** | balcony | 5, 5, 6, 6, 6 (vertical benches) | 28 |
-  | BL | Balkon vlevo (Balkon L) – bench along the railing | balcony | 12 (vertical) | 12 |
+  | BL | Balkon vlevo (Balkon L) | balcony | 12 (bench along the railing, seats 1–5 and 6–12 split by a gap); reserve rows 2–6: 5, 5, 6, 6, 6 | 40 (28 reserve) |
   | BC | Balkon střed (Balkon S) | balcony | 7, 14, 14, 7, 7 (rows 4–5 shifted by 5 seats) | 49 |
-  | BR | Balkon vpravo (Balkon P) | balcony | 6 (vertical), 5 (slanted) | 11 |
-  | BW | Balkon vpravo – přídavná místa (Přídavná P), **optional** | balcony | 3, 3 (vertical) | 6 |
+  | BR | Balkon vpravo (Balkon P) | balcony | 6 (vertical), 5 (slanted); reserve rows 3–4: 3, 3 | 17 (6 reserve) |
   | | total (main 195, balcony 106) | | | 301 |
 
   Seat id `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-2-14`; `is_valid_seat_id()`
   checks the row and the seat count of that row.
-- **Optional sections** (`BV`, `BW` – `optional_section_ids()`): closed for
-  sale until the admin opens them for a run (Nastavení, §14; e.g. when the
-  rest of the balcony is full). `run_closed_sections(run)`,
-  `run_capacity(run)` = seats for sale (267 with both closed). Closed seats
-  cannot be booked or sold on site (§8); the map shows them grey with
-  *zatím uzavřeno*.
+- **Reserve seats** („Záložní“; reserve rows of `BL` and `BR` –
+  `reserve_section_ids()`, `section_reserve_capacity()`): shown on the map but
+  not for sale until the admin opens the section's reserve seats for a run
+  (Nastavení, §14; e.g. when the rest of the balcony is full).
+  `run_closed_reserves(run)`, `seat_closed_in_run(run, seat)`,
+  `run_capacity(run)` = seats for sale (267 with both closed). Closed reserve
+  seats cannot be booked or sold on site (§8).
 - **Reservation** – one run, customer data, current seats, price, VS, status,
   history (cancelled seats, fees, refunds, check-in). Each seat is an
   **adult** (from 18, `adult_price`) or **child** seat (4–17, `child_price`;
@@ -278,7 +281,7 @@ All `DATETIME` columns and JSON dates are UTC.
 
 | Table | Purpose / key columns |
 | --- | --- |
-| `runs` | `id`, `label`, `starts_at`, `booking_closes_at` (NULL = start), `storno_rules` JSON `[{"from":"YYYY-MM-DDTHH:MM:SSZ","percent":50}]`, `open_sections` JSON `["BV"]` (optional sections for sale) |
+| `runs` | `id`, `label`, `starts_at`, `booking_closes_at` (NULL = start), `storno_rules` JSON `[{"from":"YYYY-MM-DDTHH:MM:SSZ","percent":50}]`, `open_reserves` JSON `["BL"]` (sections whose reserve seats are for sale) |
 | `reservations` | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `child_seats` (CSV, child tickets incl. cancelled ones), `free_seats` (CSV, paid by discount codes), `seat_count`, `adult_price`, `child_price` (CZK per seat when booked; migration 013 sets both to `amount / seat_count` for older rows), `amount` (price of current seats), `paid_amount` (sum of all received transfers), `variable_symbol` (unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `cancelled_by` (`customer`/`admin`), `cancel_fee`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at` / `checked_in_by` (first seat checked in), `sold_by` (organizer of an on-site sale, NULL = website), `payment_checked_at` (accountant verified an on-site payment) |
 | `ticket_checkins` | PK (`reservation_id`, `seat_id`), `checked_in_at`, `checked_in_by`; FK cascade. One row per checked-in seat ticket (migration 013 adds all seats of reservations checked in before). |
 | `discount_codes` | `code` (8 chars, unique, shown `XXXX-XXXX`), `email`, `created_at`, `created_by`, `emailed_at`, `used_at`, `reservation_id`, `seat_id` (the seat made free), `revoked_at` |
@@ -308,11 +311,10 @@ Until the first `seats.php` answer (layout) the app shows *Načítám…*.
 each a `LevelMap` drawn from `PLAN` and the section rows with % positions
 (aspect ratio 100 : `height`): decorations (stage, band, U-shaped balcony
 void), every seat as a small square (white = free, light red = taken, red =
-own selection, grey = closed section; size = 0.78 × the section's seat
-spacing), the section's area as a button coloured by `occupancyLevel` (`< 50`
+own selection, grey dashed = reserve seat not for sale; size = 0.78 × the
+section's seat spacing), the section's area as a button coloured by `occupancyLevel` (`< 50`
 low/green, `50–84` medium/amber, `≥ 85` high/red) that opens the section, and
-the label (short name + *N volných* / *zatím uzavřeno*, red count of own
-seats). Closed sections are grey and can't be opened. Run bar above the map
+the label (short name + *N volných*, red count of own seats). Run bar above the map
 (one line: run, **Změnit termín**; on phones < 641 px the words *Termín* /
 *termín* are hidden – `.wide-only`) (asks `confirm()` when seats are
 selected; selection is cleared on run change).
@@ -323,16 +325,17 @@ coloured by occupancy; *Pódium* (main floor) or *↑ Směr k pódiu* (balcony);
 the seats laid out as on the map (`SeatPlan.jsx`: the same row geometry,
 scaled so a seat is 30–44 px – wider sections such as *Balkon střed* scroll
 sideways – row numbers before seat 1 of each row, seat number on each
-seat); *↓ Vchod* on the main floor; legend. Seat states: `available` (light
-green), `selected` (red), `taken` (light red, disabled).
+seat); *↓ Vchod* on the main floor; legend (+ *Záložní* when the section has
+closed reserve seats). Seat states: `available` (light green), `selected`
+(red), `taken` (light red, disabled), `reserve` (grey, dashed, disabled).
 
 **Selection** (`useSeats(runId)`): local only; polling `seats.php?run=` every
 30 s and on window focus; seats taken meanwhile are dropped with toast
 `Místa … mezitím rezervoval někdo jiný.`; max `maxSeats` (`Najednou lze
 rezervovat nejvýše N míst.`); when booking is closed seats cannot be
 selected (`Rezervace na tento termín jsou uzavřeny.`); seats of closed
-sections (`run.closedSections`) cannot be selected. Free seats count only
-open sections.
+reserve seats (`run.closedReserves`) have the state `reserve` and cannot be
+selected; free seats and section capacities leave them out.
 
 **Top bar**: free seats, total price (selected seats × adult price), **Rezervovat** (or `Rezervace uzavřeny`).
 **Footer** (all customer views): *Kontakt na pořadatele* with `CONTACT_EMAIL`
@@ -411,7 +414,7 @@ deletes `reservation_seats` of `expired`/`cancelled` reservations.
 | `codes` array, ≤ seats, each once, 8 chars of the code alphabet (after `normalize_discount_code()`) | 422 `Slevových kódů může být nejvýše tolik, kolik je míst.` / `Každý slevový kód lze zadat jen jednou.` / `Slevový kód X neplatí nebo už byl použit.` (field `codes`) |
 | IP rate limit (`RESERVATIONS_PER_IP_PER_HOUR_ALTCHA` with ALTCHA, else `RESERVATIONS_PER_IP_PER_HOUR`) | 429 `Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.` |
 | < 2 pending for the e-mail in this run (not for a reservation costing 0 or an on-site sale) | 429 `Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.` |
-| no seat in a closed optional section (`run_closed_sections()`) | 409 `Některá místa zatím nejsou v prodeji.` + `conflict` |
+| no closed reserve seat (`seat_closed_in_run()`) | 409 `Některá místa zatím nejsou v prodeji.` + `conflict` |
 | seats free in the run (`FOR UPDATE`; duplicate key fallback) | 409 `Některá místa už mezitím někdo rezervoval.` + `conflict` |
 | every code exists, unused, not revoked (`lock_discount_codes()`, `FOR UPDATE`) | 422 `Slevový kód XXXX-XXXX neplatí nebo už byl použit.` + `fields.codes` |
 
@@ -608,8 +611,8 @@ and the tickets handed out; each seat is checked in separately.
 - **Prodej** tab (`SaleView.jsx`, on-site sale §9; needs a connection, else
   *„Prodej na místě potřebuje internet. Zkuste to znovu, až bude spojení.“*):
   `sale-seats` → one horizontally scrolling row of section chips with free
-  counts (closed sections disabled with *uzavřeno*), the section's seats as in
-  the customer app (`SeatPlan`, held seats disabled), up to `maxSeats`;
+  counts, the section's seats as in the customer app (`SeatPlan`, held and
+  closed reserve seats disabled), up to `maxSeats`;
   *Dospělí · 300 Kč* and stepper *Děti 4–17 let · 150 Kč*; button *„QR platba
   <total> · N míst“* → `sale-create` → QR payment (QR, amount, VS, account,
   seats *„P. křídlo ř. 2 m. 3 – Dospělý 300 Kč“*) with **Zaplaceno – vpustit** / **Zrušit prodej**; afterwards the
@@ -797,8 +800,8 @@ Tabs:
   *„Splatnost N: zadejte datum a počet hodin 1–720.“*, success *„Splatnost
   uložena. Platí pro nové rezervace, už vytvořené si splatnost ponechají.“*;
   shows *„Nyní platí: N hodin“*); runs: `run-save` (start required, label, booking cut-off
-  before start, storno rows, checkboxes *„prodávat Balkon vlevo – přídavná
-  místa (28 míst)“* / *… vpravo … (6 míst)* = `open_sections`, hint *„Přídavná
+  before start, storno rows, checkboxes *„prodávat záložní místa – Balkon
+  vlevo (28)“* / *… Balkon vpravo (6)* = `open_reserves`, hint *„Záložní
   místa na balkoně jsou v prodeji, jen když je tu zaškrtnete (třeba až se
   zaplní zbytek balkonu).“* – not locked by reservations), `run-delete` (only without reservations, else *„Termín má rezervace, nelze ho smazat.“*;
   removes invite links and offline scan conflicts of the run). Shows the GDPR deletion date.
@@ -880,14 +883,14 @@ amounts, seats and statuses stay.
 
 | Method | Endpoint | Body / query | Response |
 | --- | --- | --- | --- |
-| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, capacity, stornoRules, closedSections), `runId`, `taken[]`, `price` (adult seat), `childPrice`, `deadlineHours` (in effect now), `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays`, `layout` {levels, plan, sections} |
+| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, capacity, stornoRules, closedReserves), `runId`, `taken[]`, `price` (adult seat), `childPrice`, `deadlineHours` (in effect now), `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays`, `layout` {levels, plan, sections} |
 | GET | `altcha.php` | – | `{enabled, challenge}` (ALTCHA v2 challenge: `parameters`, `signature`) |
 | POST | `reservations.php` | `runId, firstName, lastName, email, seats[], children, codes[], formToken, hp, altcha` | 201 reservation payload |
 | GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, `tickets[]` {seat, kind, price, free, code (paid only), checkedInAt}, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, cancellation (+ `seatPrices`), refunds) |
 | GET | `tickets.php?token=` | – | PDF of a paid reservation's tickets (§11), else 404 |
 | POST | `cancel.php` | `token, seats?` | reservation payload |
 | GET | `organizer.php` | – | `loggedIn, name, passwordLogin, runs[]` (+ `scanFrom`, `scanTo`), `layout` |
-| POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `snapshot {runId}`, `sync {runId, events}`, `sale-seats {runId}` → `{taken, closed, price, childPrice, maxSeats}`, `sale-create {runId, seats, children}` → 201 `{sale: {id, status, variableSymbol, amount, seats, tickets, spd, account, iban}}` (errors 422 *„Vyberte 1 až 20 volných míst.“* / *„Dětských vstupenek může být nejvýše tolik, kolik je míst.“*, 409 seats taken, 503 no IBAN), `sale-paid {runId, id}` → `{message}`, `sale-cancel {runId, id}` → `{message}` | see §9, §11, §12 |
+| POST | `organizer.php` | `action`: `invite {token}`, `login {password}`, `logout`, `verify {code, runId, confirmOutside?}`, `snapshot {runId}`, `sync {runId, events}`, `sale-seats {runId}` → `{taken, closedReserves, price, childPrice, maxSeats}`, `sale-create {runId, seats, children}` → 201 `{sale: {id, status, variableSymbol, amount, seats, tickets, spd, account, iban}}` (errors 422 *„Vyberte 1 až 20 volných míst.“* / *„Dětských vstupenek může být nejvýše tolik, kolik je míst.“*, 409 seats taken, 503 no IBAN), `sale-paid {runId, id}` → `{message}`, `sale-cancel {runId, id}` → `{message}` | see §9, §11, §12 |
 
 Errors: `{"error": "<Czech message>", …}` with HTTP status; uncaught
 exceptions are logged (`[zidle]`) and return 500 `Chyba serveru. Zkuste to
@@ -963,10 +966,10 @@ duplicate and invalid e-mail, new link = new password while the old one
 works until then, expired link, disabled account cannot sign in and loses
 its session, nobody disables themselves, master password with an empty
 e-mail); layout (order, seats per row of the
-wings, main sections and balcony centre, 195 + 106 = 301 seats, optional
-sections, a plan per level, last seat of each section valid, one more
-invalid); optional sections closed by default (267 for sale, booking
-refused) and opened for a run; offline: snapshot content (no e-mails),
+wings, main sections and balcony, the bench split 5 | 7, 195 + 106 = 301
+seats, reserve rows, a plan per level, last seat of each section valid, one more
+invalid); reserve seats closed by default (267 for sale, booking refused,
+the bench of the same section bookable) and opened for a run; offline: snapshot content (no e-mails),
 offline check-ins with device time and first-wins, resend
 without a new conflict, second device → `already_checked_in` recorded once,
 unpaid / unknown / other-run tickets → conflicts, device time limits. Locally:
@@ -992,7 +995,7 @@ for *zakaznik@example.com*) and stores its JSON output (`ticket` /
 Tests:
 
 - `customer.spec.js` – choose *Premiéra*, the map has as many section areas
-  (`.plan-hit`) as the server layout, the optional ones closed, and its balcony
+  (`.plan-hit`) as the server layout, all reserve seats shown as reserve, and its balcony
   heading, two seats, form (waits for
   `FORM_MIN_SECONDS`, real invisible ALTCHA), payment page with QR, 600 Kč
   and VS, seats taken in `seats.php`, cancel all → *Rezervaci jste zrušili.*

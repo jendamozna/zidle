@@ -206,14 +206,14 @@ if ($me !== null && $csrfOk && in_array($action, ['run-save', 'run-delete'], tru
             $_SESSION['flash'] = implode(' ', $errors);
         } else {
             $rulesJson = $locked ? json_encode($existing['storno_rules']) : json_encode(normalize_storno_rules($rules), JSON_UNESCAPED_UNICODE);
-            // Optional sections (extra balcony seats) opened for sale – may change any time.
-            $open = json_encode(array_values(array_intersect(optional_section_ids(), array_map('strval', (array) ($_POST['open_sections'] ?? [])))));
+            // Reserve seats (balcony) opened for sale – may change any time.
+            $open = json_encode(array_values(array_intersect(reserve_section_ids(), array_map('strval', (array) ($_POST['open_reserves'] ?? [])))));
             $values = [$label, db_time($starts), $closes ? db_time($closes) : null, $rulesJson, $open];
             if ($id > 0) {
-                db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ?, storno_rules = ?, open_sections = ? WHERE id = ?')
+                db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ?, storno_rules = ?, open_reserves = ? WHERE id = ?')
                     ->execute([...$values, $id]);
             } else {
-                db()->prepare('INSERT INTO runs (label, starts_at, booking_closes_at, storno_rules, open_sections) VALUES (?, ?, ?, ?, ?)')
+                db()->prepare('INSERT INTO runs (label, starts_at, booking_closes_at, storno_rules, open_reserves) VALUES (?, ?, ?, ?, ?)')
                     ->execute($values);
             }
             $_SESSION['flash'] = $id > 0 ? 'Termín uložen.' : 'Termín přidán.';
@@ -720,7 +720,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $deleteAt = data_deletion_at();
       $local = static fn (?string $utc) => $utc ? utc_time($utc)->setTimezone(new DateTimeZone(PRAGUE))->format('Y-m-d\TH:i') : '';
       $runForms = array_values(runs());
-      $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null, 'storno_rules' => [], 'open_sections' => []];
+      $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null, 'storno_rules' => [], 'open_reserves' => []];
   ?>
   <p class="hint settings-intro">Každý termín má vlastní plánek míst, rezervace a storno podmínky.
     Rezervace a rušení zákazníkem končí začátkem termínu (nebo dříve, je-li vyplněn konec rezervací).
@@ -771,11 +771,11 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         </div>
       <?php endforeach ?>
     </div>
-    <p class="hint">Přídavná místa na balkoně jsou v prodeji, jen když je tu zaškrtnete (třeba až se zaplní zbytek balkonu).</p>
+    <p class="hint">Záložní místa na balkoně jsou v prodeji, jen když je tu zaškrtnete (třeba až se zaplní zbytek balkonu).</p>
     <div class="checks">
-      <?php foreach (optional_section_ids() as $sid): ?>
-        <label class="check"><input type="checkbox" name="open_sections[]" value="<?= $h($sid) ?>" <?= in_array($sid, $run['open_sections'], true) ? 'checked' : '' ?>>
-          prodávat <?= $h(section_name($sid)) ?> (<?= section_capacity(SECTIONS[$sid]) ?> míst)</label>
+      <?php foreach (SECTIONS as $sid => $def): if (section_reserve_capacity($def) === 0) { continue; } ?>
+        <label class="check"><input type="checkbox" name="open_reserves[]" value="<?= $h($sid) ?>" <?= in_array($sid, $run['open_reserves'], true) ? 'checked' : '' ?>>
+          prodávat záložní místa – <?= $h($def['name']) ?> (<?= section_reserve_capacity($def) ?>)</label>
       <?php endforeach ?>
     </div>
     <div class="actions">

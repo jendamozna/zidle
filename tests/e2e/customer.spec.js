@@ -25,8 +25,9 @@ test('customer books two seats, sees the QR payment and cancels', async ({ page,
   // The plan is drawn from the layout the server sends.
   const layout = (await (await request.get('/api/seats.php')).json()).layout;
   await expect(page.locator('.plan-hit')).toHaveCount(layout.sections.length);
-  // Optional balcony seats are closed until the admin opens them.
-  await expect(page.locator('.plan-section.is-closed')).toHaveCount(layout.sections.filter((s) => s.optional).length);
+  // Reserve balcony seats ("Záložní") are shown but not for sale until the admin opens them.
+  const reserve = layout.sections.flatMap((s) => s.rows).filter((r) => r.reserve).reduce((sum, r) => sum + r.seats, 0);
+  await expect(page.locator('.plan-seat.seat-reserve')).toHaveCount(reserve);
   await expect(page.locator('.level-balcony h2')).toHaveText(layout.levels.balcony);
   await page.locator('.plan-hit').first().click();
   const seats = page.locator('button.seat-available');

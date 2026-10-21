@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { SECTIONS, capacity, compareSeatIds, formatCzk, parseSeatId } from '../data/layout.js';
+import { SECTIONS, SECTION_BY_ID, capacity, compareSeatIds, formatCzk, parseSeatId, reserveSeatIds } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { KIND_LABELS, priceSeats } from '../pricing.js';
 import Stepper from '../components/Stepper.jsx';
@@ -144,9 +144,12 @@ export default function SaleView({ runId, onUnauthorized }) {
   if (!info) return <div className="sale">{error ? <p className="form-error">{error}</p> : <p className="muted">Načítám…</p>}</div>;
 
   const section = SECTIONS.find((s) => s.id === sectionId) ?? null;
-  const closed = new Set(info.closed);
-  const free = (s) => capacity(s) - [...info.taken].filter((id) => id.startsWith(`${s.id}-`)).length;
-  const seatState = (id) => (selected.has(id) ? 'selected' : info.taken.has(id) ? 'taken' : 'available');
+  // Reserve seats not for sale in this run.
+  const closed = new Set(info.closedReserves.flatMap((id) => (SECTION_BY_ID[id] ? reserveSeatIds(SECTION_BY_ID[id]) : [])));
+  const free = (s) =>
+    capacity(s) - [...info.taken, ...closed].filter((id) => id.startsWith(`${s.id}-`)).length;
+  const seatState = (id) =>
+    selected.has(id) ? 'selected' : info.taken.has(id) ? 'taken' : closed.has(id) ? 'reserve' : 'available';
   const prices = priceSeats([...selected], children, 0, info.price, info.childPrice);
 
   return (
@@ -163,10 +166,10 @@ export default function SaleView({ runId, onUnauthorized }) {
             key={s.id}
             type="button"
             className={s.id === sectionId ? 'is-active' : ''}
-            disabled={closed.has(s.id) || free(s) === 0}
+            disabled={free(s) === 0}
             onClick={() => setSectionId(s.id === sectionId ? null : s.id)}
           >
-            {s.short} <small>{closed.has(s.id) ? 'uzavřeno' : free(s)}</small>
+            {s.short} <small>{free(s)}</small>
           </button>
         ))}
       </div>

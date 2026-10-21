@@ -414,7 +414,7 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
 
 // ------------------------------------------------------------------- layout
 
-test('the layout matches the plan: seats per row, capacities, optional balcony seats', function (): void {
+test('the layout matches the plan: seats per row, capacities, reserve balcony seats', function (): void {
     $layout = layout_public();
     same(array_keys(SECTIONS), array_column($layout['sections'], 'id'), 'order');
     $sizes = array_combine(array_column($layout['sections'], 'id'), array_map(fn ($s) => array_column($s['rows'], 'seats'), $layout['sections']));
@@ -422,12 +422,16 @@ test('the layout matches the plan: seats per row, capacities, optional balcony s
     same(array_fill(0, 9, 8), $sizes['ML'], 'left main');
     same([4, 4, 4, 5, 5, 5, 4], $sizes['WR'], 'right wing');
     same([7, 14, 14, 7, 7], $sizes['BC'], 'balcony centre');
+    same([12, 5, 5, 6, 6, 6], $sizes['BL'], 'balcony left: bench + reserve rows');
+    same([5, 7], array_column(section_rows(SECTIONS['BL'])[0]['parts'], 0), 'bench split 1–5 | 6–12');
+    same([6, 5, 3, 3], $sizes['BR'], 'balcony right');
     same([195, 106, 301], [
         array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'main'))),
         array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'balcony'))),
         total_capacity(),
     ], 'capacities');
-    same(['BV', 'BW'], optional_section_ids(), 'optional sections');
+    same([['BL', 'BR'], 28, 6], [reserve_section_ids(), section_reserve_capacity(SECTIONS['BL']), section_reserve_capacity(SECTIONS['BR'])], 'reserve seats');
+    same([true, false, true, false], [seat_is_reserve('BL-2-1'), seat_is_reserve('BL-1-12'), seat_is_reserve('BR-4-3'), seat_is_reserve('BR-2-5')], 'reserve rows');
     same(array_keys(LEVELS), array_keys($layout['plan']), 'a plan per level');
     foreach ($layout['sections'] as $section) {
         $rows = count($section['rows']);
@@ -440,18 +444,19 @@ test('the layout matches the plan: seats per row, capacities, optional balcony s
     }
 });
 
-test('optional balcony seats are closed until the admin opens them for the run', function (): void {
+test('reserve balcony seats are not for sale until the admin opens them for the run', function (): void {
     $run = run_by_id(1) ?? [];
-    same([['BV', 'BW'], 267], [run_closed_sections($run), run_capacity($run)], 'closed by default');
-    same(409, book(['BV-1-1'])['status'] ?? null, 'cannot be booked');
-    db()->exec("UPDATE runs SET open_sections = '[\"BV\"]' WHERE id = 1");
+    same([['BL', 'BR'], 267], [run_closed_reserves($run), run_capacity($run)], 'closed by default');
+    same(409, book(['BL-2-1'])['status'] ?? null, 'reserve seat cannot be booked');
+    same(true, isset(book(['BL-1-6'])['reservation']), 'the bench of the same section can');
+    db()->exec("UPDATE runs SET open_reserves = '[\"BL\"]' WHERE id = 1");
     runs(true);
     try {
         $run = run_by_id(1) ?? [];
-        same([['BW'], 295], [run_closed_sections($run), run_capacity($run)], 'BV opened');
-        same(true, isset(book(['BV-1-1'])['reservation']), 'booked');
+        same([['BR'], 295], [run_closed_reserves($run), run_capacity($run)], 'BL reserve opened');
+        same(true, isset(book(['BL-2-1'])['reservation']), 'booked');
     } finally {
-        db()->exec("UPDATE runs SET open_sections = '[]' WHERE id = 1");
+        db()->exec("UPDATE runs SET open_reserves = '[]' WHERE id = 1");
         runs(true);
     }
 });

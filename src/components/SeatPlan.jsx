@@ -1,20 +1,21 @@
 import { seatPositions, seatSpacing } from '../data/layout.js';
 
-const STATE_LABEL = { available: 'volné', selected: 'moje', taken: 'obsazené' };
+const STATE_LABEL = { available: 'volné', selected: 'moje', taken: 'obsazené', reserve: 'záložní' };
 const pct = (value) => `${value}%`;
 
 /**
  * Seats of one section laid out as in the church (rows from the server layout), large
  * enough to tap. Row numbers stand before seat 1 of each row. seatState(id) →
- * available | selected | taken; minSeat / maxSeat = seat size range in px.
+ * available | selected | taken | reserve (not for sale); minSeat / maxSeat = seat size range in px.
  */
 export default function SeatPlan({ section, seatState, onToggle, minSeat = 30, maxSeat = 44 }) {
   const spacing = seatSpacing(section);
   const seats = seatPositions(section);
   const labels = section.rows.map((row, r) => {
-    const length = Math.hypot(row.x2 - row.x1, row.y2 - row.y1);
-    const [dx, dy] = length > 0 ? [(row.x2 - row.x1) / length, (row.y2 - row.y1) / length] : [1, 0];
-    return { row: r + 1, x: row.x1 - dx * spacing, y: row.y1 - dy * spacing };
+    const first = row.parts[0];
+    const length = Math.hypot(first.x2 - first.x1, first.y2 - first.y1);
+    const [dx, dy] = length > 0 ? [(first.x2 - first.x1) / length, (first.y2 - first.y1) / length] : [1, 0];
+    return { row: r + 1, x: first.x1 - dx * spacing, y: first.y1 - dy * spacing };
   });
   const points = [...seats, ...labels];
   const pad = spacing * 0.6;
@@ -52,7 +53,7 @@ export default function SeatPlan({ section, seatState, onToggle, minSeat = 30, m
               type="button"
               className={`seat seat-${state}`}
               style={{ left: x(seat.x), top: y(seat.y) }}
-              disabled={state === 'taken'}
+              disabled={state === 'taken' || state === 'reserve'}
               aria-pressed={state === 'selected'}
               aria-label={`Řada ${seat.row}, místo ${seat.seat}, ${STATE_LABEL[state]}`}
               title={seat.id}

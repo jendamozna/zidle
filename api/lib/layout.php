@@ -8,10 +8,12 @@
 // SECTIONS (in this order everywhere):
 //   name/short – full and short Czech name; level – key of LEVELS;
 //   rows       – one entry per row (row 1 first: nearest the stage or the balcony railing):
-//                [number of seats, x1, y1, x2, y2] = centres of seat 1 and of the last seat
-//                in plan units; the seats lie evenly on that line;
-//   label      – [x, y, align] where the section's name is shown on the map (y = top);
-//   optional   – extra seats, closed for sale until the admin opens them for a run.
+//                [number of seats, x1, y1, x2, y2] = centres of the first and the last seat
+//                in plan units, the seats lie evenly on that line; a row split by a gap is
+//                ['parts' => [[seats, x1, y1, x2, y2], …]] (numbering goes on across the parts);
+//                'reserve' => true marks reserve seats ("Záložní"): not for sale until the
+//                admin opens the section's reserve seats for a run;
+//   label      – [x, y, align] where the section's name is shown on the map (y = top).
 const LEVELS = [
     'main' => 'Hlavní loď',
     'balcony' => 'Balkon',
@@ -46,13 +48,11 @@ const SECTIONS = [
         [5, 85, 32.3, 95.8, 32.3], [5, 85, 35.9, 95.8, 35.9], [5, 85, 39.5, 95.8, 39.5],
         [4, 86.35, 45, 94.45, 45],
     ]],
-    'BV' => ['name' => 'Balkon vlevo – přídavná místa', 'short' => 'Přídavná L', 'level' => 'balcony', 'optional' => true,
-        'label' => [2, 34.5, 'left'], 'rows' => [
-            [5, 25.5, 2.5, 25.5, 13.3], [5, 22, 2.5, 22, 13.3],
-            [6, 25.5, 17.5, 25.5, 31], [6, 22, 17.5, 22, 31], [6, 18.5, 17.5, 18.5, 31],
-        ]],
     'BL' => ['name' => 'Balkon vlevo', 'short' => 'Balkon L', 'level' => 'balcony', 'label' => [34, 1.5, 'left'], 'rows' => [
-        [12, 30, 1.5, 30, 31.2],
+        ['parts' => [[5, 30, 2.5, 30, 13.3], [7, 30, 17.5, 30, 33.7]]], // bench along the railing: seats 1–5 | 6–12
+        ['reserve' => true, 'parts' => [[5, 25.5, 2.5, 25.5, 13.3]]], ['reserve' => true, 'parts' => [[5, 22, 2.5, 22, 13.3]]],
+        ['reserve' => true, 'parts' => [[6, 25.5, 17.5, 25.5, 31]]], ['reserve' => true, 'parts' => [[6, 22, 17.5, 22, 31]]],
+        ['reserve' => true, 'parts' => [[6, 18.5, 17.5, 18.5, 31]]],
     ]],
     'BC' => ['name' => 'Balkon střed', 'short' => 'Balkon S', 'level' => 'balcony', 'label' => [50, 52.5, 'center'], 'rows' => [
         [7, 32.45, 37, 48.65, 37], [14, 32.45, 40.2, 67.55, 40.2], [14, 32.45, 43.4, 67.55, 43.4],
@@ -60,17 +60,31 @@ const SECTIONS = [
     ]],
     'BR' => ['name' => 'Balkon vpravo', 'short' => 'Balkon P', 'level' => 'balcony', 'label' => [66, 1.5, 'right'], 'rows' => [
         [6, 70, 2.5, 70, 16], [5, 70, 20.5, 62.5, 30.5],
+        ['reserve' => true, 'parts' => [[3, 75, 19.5, 75, 24.9]]], ['reserve' => true, 'parts' => [[3, 78.5, 19.5, 78.5, 24.9]]],
     ]],
-    'BW' => ['name' => 'Balkon vpravo – přídavná místa', 'short' => 'Přídavná P', 'level' => 'balcony', 'optional' => true,
-        'label' => [76.75, 28, 'center'], 'rows' => [
-            [3, 75, 19.5, 75, 24.9], [3, 78.5, 19.5, 78.5, 24.9],
-        ]],
 ];
+
+/**
+ * Rows of the section in one shape: [['seats' => n, 'reserve' => bool, 'parts' => [[n, x1, y1, x2, y2], …]], …].
+ */
+function section_rows(array $section): array
+{
+    $rows = [];
+    foreach ($section['rows'] as $row) {
+        $parts = isset($row['parts']) ? $row['parts'] : [$row];
+        $rows[] = [
+            'seats' => (int) array_sum(array_column($parts, 0)),
+            'reserve' => !empty($row['reserve']),
+            'parts' => array_values($parts),
+        ];
+    }
+    return $rows;
+}
 
 /** Number of seats in each row of the section. */
 function section_row_sizes(array $section): array
 {
-    return array_map(static fn ($row) => (int) $row[0], $section['rows']);
+    return array_column(section_rows($section), 'seats');
 }
 
 function section_capacity(array $section): int
@@ -78,15 +92,33 @@ function section_capacity(array $section): int
     return array_sum(section_row_sizes($section));
 }
 
-/** Ids of the optional sections (closed for sale unless opened for the run). */
-function optional_section_ids(): array
+/** Reserve seats of the section (rows marked 'reserve'). */
+function section_reserve_capacity(array $section): int
 {
-    return array_keys(array_filter(SECTIONS, static fn ($s) => !empty($s['optional'])));
+    return array_sum(array_column(array_filter(section_rows($section), static fn ($r) => $r['reserve']), 'seats'));
+}
+
+/** Ids of the sections that have reserve seats. */
+function reserve_section_ids(): array
+{
+    return array_keys(array_filter(SECTIONS, static fn ($s) => section_reserve_capacity($s) > 0));
+}
+
+/** True for a seat in a reserve row (e.g. "BL-2-1"). */
+function seat_is_reserve(string $id): bool
+{
+    [$section, $row] = array_pad(explode('-', $id), 2, '');
+    foreach (SECTIONS as $sid => $def) {
+        if ($sid === $section) {
+            return (section_rows($def)[(int) $row - 1]['reserve'] ?? false) === true;
+        }
+    }
+    return false;
 }
 
 /**
  * Layout for the apps: {levels, plan: {main|balcony: {height, items}}, sections: [{id, name, short,
- * level, optional, label: {x, y, align}, rows: [{seats, x1, y1, x2, y2}]}]}.
+ * level, label: {x, y, align}, rows: [{seats, reserve, parts: [{seats, x1, y1, x2, y2}]}]}]}.
  */
 function layout_public(): array
 {
@@ -97,15 +129,18 @@ function layout_public(): array
             'name' => $s['name'],
             'short' => $s['short'],
             'level' => $s['level'],
-            'optional' => !empty($s['optional']),
             'label' => ['x' => $s['label'][0], 'y' => $s['label'][1], 'align' => $s['label'][2]],
-            'rows' => array_map(static fn ($r) => ['seats' => $r[0], 'x1' => $r[1], 'y1' => $r[2], 'x2' => $r[3], 'y2' => $r[4]], $s['rows']),
+            'rows' => array_map(static fn ($r) => [
+                'seats' => $r['seats'],
+                'reserve' => $r['reserve'],
+                'parts' => array_map(static fn ($p) => ['seats' => $p[0], 'x1' => $p[1], 'y1' => $p[2], 'x2' => $p[3], 'y2' => $p[4]], $r['parts']),
+            ], section_rows($s)),
         ];
     }
     return ['levels' => LEVELS, 'plan' => PLAN, 'sections' => $sections];
 }
 
-/** All seats of the layout, optional sections included. */
+/** All seats of the layout, reserve seats included. */
 function total_capacity(): int
 {
     return array_sum(array_map('section_capacity', SECTIONS));

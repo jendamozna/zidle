@@ -313,11 +313,6 @@ h2 {
   background: var(--occ-high-bg);
   border-color: var(--occ-high-edge);
 }
-.is-closed .plan-hit {
-  background: var(--surface-2);
-  cursor: default;
-}
-
 .plan-hit:not(:disabled):hover {
   box-shadow: var(--shadow-lift);
 }
@@ -340,8 +335,9 @@ h2 {
 .plan-seat.seat-taken {
   background: var(--seat-taken);
 }
-.plan-seat.seat-closed {
-  background: var(--wall);
+.plan-seat.seat-reserve {
+  background: var(--surface-2);
+  border: 1px dashed var(--ink-3);
 }
 
 .plan-label {
@@ -366,11 +362,6 @@ h2 {
 .plan-label.align-right {
   transform: translateX(-100%);
   align-items: flex-end;
-}
-
-.is-closed .plan-label {
-  cursor: default;
-  opacity: 0.75;
 }
 
 .mine-count {
@@ -609,6 +600,13 @@ h2 {
   background: var(--seat-taken);
   border-color: #e39a90;
   color: var(--seat-taken-ink);
+  cursor: not-allowed;
+}
+
+.seat-reserve {
+  background: var(--surface-2);
+  border: 1.5px dashed var(--ink-3);
+  color: var(--ink-3);
   cursor: not-allowed;
 }
 

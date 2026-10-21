@@ -5,7 +5,7 @@ const pct = (value) => `${value}%`;
 
 /**
  * One level of the church drawn from the server layout (PLAN + section rows):
- * every seat is a dot coloured by its state, a section opens with a tap.
+ * every seat is a dot coloured by its state (reserve seats grey), a section opens with a tap.
  */
 function LevelMap({ level, stats, seatState, loading, onOpen }) {
   const { height, items } = PLAN[level];
@@ -30,23 +30,21 @@ function LevelMap({ level, stats, seatState, loading, onOpen }) {
         const xs = seats.map((s) => s.x);
         const ys = seats.map((s) => s.y);
         const box = { x: Math.min(...xs) - pad, y: Math.min(...ys) - pad, x2: Math.max(...xs) + pad, y2: Math.max(...ys) + pad };
-        const closed = stat.closed;
-        const open = () => !closed && onOpen(section.id);
-        const label = closed ? 'zatím uzavřeno' : loading ? '–' : freeLabel(stat.free);
+        const open = () => onOpen(section.id);
+        const label = loading ? '–' : freeLabel(stat.free);
         return (
-          <div key={section.id} className={`plan-section ${closed ? 'is-closed' : `occ-${occupancyLevel(stat.pct)}`}`}>
+          <div key={section.id} className={`plan-section occ-${occupancyLevel(stat.pct)}`}>
             <button
               type="button"
               className="plan-hit"
               style={{ left: pct(box.x), top: y(box.y), width: pct(box.x2 - box.x), height: y(box.y2 - box.y) }}
               onClick={open}
-              disabled={closed}
               aria-label={`${section.name}, ${label}${stat.mine.length ? `, moje místa: ${stat.mine.length}` : ''}`}
             />
             {seats.map((seat) => (
               <span
                 key={seat.id}
-                className={`plan-seat seat-${closed ? 'closed' : seatState(seat.id)}`}
+                className={`plan-seat seat-${seatState(seat.id)}`}
                 style={{ left: pct(seat.x), top: y(seat.y), width: pct(size) }}
               />
             ))}

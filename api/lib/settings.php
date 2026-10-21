@@ -4,7 +4,7 @@
 //   starts_at          – UTC; bookings and customer cancellations close then
 //   booking_closes_at  – optional earlier end of bookings (UTC)
 //   storno_rules       – [{"from": "YYYY-MM-DDTHH:MM:SSZ" (UTC), "percent": 50}, ...]
-//   open_sections      – ids of optional sections (layout.php) opened for sale in this run
+//   open_reserves      – ids of sections whose reserve seats (layout.php) are for sale in this run
 declare(strict_types=1);
 
 const PRAGUE = 'Europe/Prague';
@@ -38,7 +38,7 @@ function runs(bool $fresh = false): array
             $run['id'] = (int) $run['id'];
             $raw = $run['storno_rules'];
             $run['storno_rules'] = normalize_storno_rules((array) json_decode($raw, true));
-            $run['open_sections'] = array_values(array_intersect(optional_section_ids(), (array) json_decode((string) ($run['open_sections'] ?? '[]'), true)));
+            $run['open_reserves'] = array_values(array_intersect(reserve_section_ids(), (array) json_decode((string) ($run['open_reserves'] ?? '[]'), true)));
             // Older rows stored rule dates in Prague local time: rewrite them in UTC once.
             $encoded = json_encode($run['storno_rules']);
             if ($encoded !== $raw) {
@@ -129,16 +129,28 @@ function iso_utc(DateTimeImmutable $t): string
     return $t->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
 }
 
-/** Optional sections of the run that are not open for sale. */
-function run_closed_sections(array $run): array
+/** Sections whose reserve seats are not for sale in the run. */
+function run_closed_reserves(array $run): array
 {
-    return array_values(array_diff(optional_section_ids(), $run['open_sections']));
+    return array_values(array_diff(reserve_section_ids(), $run['open_reserves']));
 }
 
-/** Seats for sale in the run (closed optional sections left out). */
+/** True when the seat is a reserve seat that is not for sale in the run. */
+function seat_closed_in_run(array $run, string $seat): bool
+{
+    return seat_is_reserve($seat) && in_array(seat_section($seat), run_closed_reserves($run), true);
+}
+
+/** Seats for sale in the run (closed reserve seats left out). */
 function run_capacity(array $run): int
 {
-    return total_capacity() - array_sum(array_map(static fn ($id) => section_capacity(SECTIONS[$id]), run_closed_sections($run)));
+    $closed = 0;
+    foreach (SECTIONS as $id => $section) {
+        if (in_array($id, run_closed_reserves($run), true)) {
+            $closed += section_reserve_capacity($section);
+        }
+    }
+    return total_capacity() - $closed;
 }
 
 /** Public form of a run for the frontend. */
@@ -153,7 +165,7 @@ function run_public(array $run, ?int $free = null): array
         'free' => $free,
         'capacity' => run_capacity($run),
         'stornoRules' => $run['storno_rules'],
-        'closedSections' => run_closed_sections($run),
+        'closedReserves' => run_closed_reserves($run),
     ];
 }
 

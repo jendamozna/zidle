@@ -5,10 +5,11 @@
 //
 // PLAN: {main|balcony: {height, items: [{kind: stage|band|void, label, x, y, w, h}]}} –
 //   one map per level, 100 units wide.
-// Section: {id, name, short, level, optional, label: {x, y, align}, rows: [{seats, x1, y1, x2, y2}]}
-//   rows – row 1 first (nearest the stage / balcony railing); seat 1 sits at (x1, y1),
-//          the last seat at (x2, y2), the others evenly between (plan units)
-//   optional – extra seats, sold only in runs where the admin opened them
+// Section: {id, name, short, level, label: {x, y, align}, rows: [{seats, reserve, parts: [{seats, x1, y1, x2, y2}]}]}
+//   rows  – row 1 first (nearest the stage / balcony railing); a row has one or more parts
+//           (a gap between them); in a part the first seat sits at (x1, y1), the last at
+//           (x2, y2), the others evenly between (plan units); numbering goes on across parts
+//   reserve – reserve seats ("Záložní"), sold only in runs where the admin opened them
 
 /** Level names, e.g. {main: 'Hlavní loď', balcony: 'Balkon'}. */
 export let LEVELS = {};
@@ -39,27 +40,36 @@ export function sectionSeatIds(section) {
   return section.rows.flatMap((row, r) => Array.from({ length: row.seats }, (_, i) => seatId(section.id, r + 1, i + 1)));
 }
 
-/** Seats of the section with their plan position: [{id, row, seat, x, y}]. */
+/** Seats of the section with their plan position: [{id, row, seat, reserve, x, y}]. */
 export function seatPositions(section) {
-  return section.rows.flatMap((row, r) =>
-    Array.from({ length: row.seats }, (_, i) => {
-      const t = row.seats > 1 ? i / (row.seats - 1) : 0;
-      return {
-        id: seatId(section.id, r + 1, i + 1),
-        row: r + 1,
-        seat: i + 1,
-        x: row.x1 + (row.x2 - row.x1) * t,
-        y: row.y1 + (row.y2 - row.y1) * t,
-      };
-    }),
-  );
+  return section.rows.flatMap((row, r) => {
+    let seat = 0;
+    return row.parts.flatMap((part) =>
+      Array.from({ length: part.seats }, (_, i) => {
+        const t = part.seats > 1 ? i / (part.seats - 1) : 0;
+        seat += 1;
+        return {
+          id: seatId(section.id, r + 1, seat),
+          row: r + 1,
+          seat,
+          reserve: row.reserve,
+          x: part.x1 + (part.x2 - part.x1) * t,
+          y: part.y1 + (part.y2 - part.y1) * t,
+        };
+      }),
+    );
+  });
 }
+
+/** Ids of the reserve seats of the section. */
+export const reserveSeatIds = (section) => seatPositions(section).filter((s) => s.reserve).map((s) => s.id);
 
 /** Distance between neighbouring seats in the section (plan units), for the seat size. */
 export function seatSpacing(section) {
   const gaps = section.rows
-    .filter((row) => row.seats > 1)
-    .map((row) => Math.hypot(row.x2 - row.x1, row.y2 - row.y1) / (row.seats - 1));
+    .flatMap((row) => row.parts)
+    .filter((part) => part.seats > 1)
+    .map((part) => Math.hypot(part.x2 - part.x1, part.y2 - part.y1) / (part.seats - 1));
   return gaps.length ? Math.min(...gaps) : 2.7;
 }
 

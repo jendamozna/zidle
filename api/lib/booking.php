@@ -13,7 +13,7 @@ declare(strict_types=1);
  */
 function book_reservation(array $run, string $firstName, string $lastName, string $email, array $seats, int $children, array $codes, ?string $soldBy = null): array
 {
-    $closed = array_values(array_filter($seats, static fn ($seat) => in_array(seat_section($seat), run_closed_sections($run), true)));
+    $closed = array_values(array_filter($seats, static fn ($seat) => seat_closed_in_run($run, $seat)));
     if ($closed) {
         return ['error' => 'Některá místa zatím nejsou v prodeji.', 'status' => 409, 'extra' => ['conflict' => $closed]];
     }
