@@ -250,7 +250,7 @@ function ics_fold(string $line): string
 function seat_label(string $seat): string
 {
     [$section, $row, $number] = array_pad(explode('-', $seat), 3, '');
-    return (SECTIONS[$section]['name'] ?? $section) . " · řada {$row} · místo {$number}";
+    return section_name($section) . " · řada {$row} · místo {$number}";
 }
 
 /** "ML-1-1,ML-1-2,BC-2-5" → ["Levá hlavní: ř. 1 m. 1, 2", "Balkon střed: ř. 2 m. 5"] */

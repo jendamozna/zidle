@@ -1,26 +1,28 @@
 // Seating layout of the church. It is defined only on the server
 // (api/lib/layout.php) and loaded with seats.php / organizer.php; setLayout()
 // fills the bindings below before the first map is drawn. Everything else
-// (seat ids, capacities, occupancy) is derived from it.
+// (seat ids, positions, capacities, occupancy) is derived from it.
 //
-// Section: {id, name, short, level, group, rows, seatsPerRow, rotated, rowSide}
-//   group       – floor plan place: left / right (main floor), balcony
-//   rows        – number of rows (row 1 is closest to the stage / railing)
-//   seatsPerRow – chairs in each row
-//   rotated     – section is turned 90° in the floor plan (rows run vertically)
-//   rowSide     – for rotated sections: side on which row 1 lies
+// PLAN: {main|balcony: {height, items: [{kind: stage|band|void, label, x, y, w, h}]}} –
+//   one map per level, 100 units wide.
+// Section: {id, name, short, level, optional, label: {x, y, align}, rows: [{seats, x1, y1, x2, y2}]}
+//   rows – row 1 first (nearest the stage / balcony railing); seat 1 sits at (x1, y1),
+//          the last seat at (x2, y2), the others evenly between (plan units)
+//   optional – extra seats, sold only in runs where the admin opened them
 
 /** Level names, e.g. {main: 'Hlavní loď', balcony: 'Balkon'}. */
 export let LEVELS = {};
+export let PLAN = {};
 export let SECTIONS = [];
 export let SECTION_BY_ID = {};
 export let TOTAL_CAPACITY = 0;
 
-export const capacity = (section) => section.rows * section.seatsPerRow;
+export const capacity = (section) => section.rows.reduce((sum, row) => sum + row.seats, 0);
 
-/** Takes the layout from the server ({levels, sections}). */
+/** Takes the layout from the server ({levels, plan, sections}). */
 export function setLayout(layout) {
   LEVELS = layout.levels;
+  PLAN = layout.plan;
   SECTIONS = layout.sections;
   SECTION_BY_ID = Object.fromEntries(SECTIONS.map((s) => [s.id, s]));
   TOTAL_CAPACITY = SECTIONS.reduce((sum, s) => sum + capacity(s), 0);
@@ -34,11 +36,31 @@ export function parseSeatId(id) {
 }
 
 export function sectionSeatIds(section) {
-  const ids = [];
-  for (let r = 1; r <= section.rows; r++) {
-    for (let s = 1; s <= section.seatsPerRow; s++) ids.push(seatId(section.id, r, s));
-  }
-  return ids;
+  return section.rows.flatMap((row, r) => Array.from({ length: row.seats }, (_, i) => seatId(section.id, r + 1, i + 1)));
+}
+
+/** Seats of the section with their plan position: [{id, row, seat, x, y}]. */
+export function seatPositions(section) {
+  return section.rows.flatMap((row, r) =>
+    Array.from({ length: row.seats }, (_, i) => {
+      const t = row.seats > 1 ? i / (row.seats - 1) : 0;
+      return {
+        id: seatId(section.id, r + 1, i + 1),
+        row: r + 1,
+        seat: i + 1,
+        x: row.x1 + (row.x2 - row.x1) * t,
+        y: row.y1 + (row.y2 - row.y1) * t,
+      };
+    }),
+  );
+}
+
+/** Distance between neighbouring seats in the section (plan units), for the seat size. */
+export function seatSpacing(section) {
+  const gaps = section.rows
+    .filter((row) => row.seats > 1)
+    .map((row) => Math.hypot(row.x2 - row.x1, row.y2 - row.y1) / (row.seats - 1));
+  return gaps.length ? Math.min(...gaps) : 2.7;
 }
 
 export function compareSeatIds(a, b) {

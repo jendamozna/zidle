@@ -4,6 +4,7 @@
 //   starts_at          – UTC; bookings and customer cancellations close then
 //   booking_closes_at  – optional earlier end of bookings (UTC)
 //   storno_rules       – [{"from": "YYYY-MM-DDTHH:MM:SSZ" (UTC), "percent": 50}, ...]
+//   open_sections      – ids of optional sections (layout.php) opened for sale in this run
 declare(strict_types=1);
 
 const PRAGUE = 'Europe/Prague';
@@ -37,6 +38,7 @@ function runs(bool $fresh = false): array
             $run['id'] = (int) $run['id'];
             $raw = $run['storno_rules'];
             $run['storno_rules'] = normalize_storno_rules((array) json_decode($raw, true));
+            $run['open_sections'] = array_values(array_intersect(optional_section_ids(), (array) json_decode((string) ($run['open_sections'] ?? '[]'), true)));
             // Older rows stored rule dates in Prague local time: rewrite them in UTC once.
             $encoded = json_encode($run['storno_rules']);
             if ($encoded !== $raw) {
@@ -127,6 +129,18 @@ function iso_utc(DateTimeImmutable $t): string
     return $t->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
 }
 
+/** Optional sections of the run that are not open for sale. */
+function run_closed_sections(array $run): array
+{
+    return array_values(array_diff(optional_section_ids(), $run['open_sections']));
+}
+
+/** Seats for sale in the run (closed optional sections left out). */
+function run_capacity(array $run): int
+{
+    return total_capacity() - array_sum(array_map(static fn ($id) => section_capacity(SECTIONS[$id]), run_closed_sections($run)));
+}
+
 /** Public form of a run for the frontend. */
 function run_public(array $run, ?int $free = null): array
 {
@@ -137,7 +151,9 @@ function run_public(array $run, ?int $free = null): array
         'bookingClosesAt' => iso_utc(run_booking_closes($run)),
         'bookingOpen' => run_booking_open($run),
         'free' => $free,
+        'capacity' => run_capacity($run),
         'stornoRules' => $run['storno_rules'],
+        'closedSections' => run_closed_sections($run),
     ];
 }
 

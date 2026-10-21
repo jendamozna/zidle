@@ -1,45 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { SECTIONS, compareSeatIds, formatCzk, parseSeatId } from '../data/layout.js';
+import { SECTIONS, capacity, compareSeatIds, formatCzk, parseSeatId } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { KIND_LABELS, priceSeats } from '../pricing.js';
 import Stepper from '../components/Stepper.jsx';
+import SeatPlan from '../components/SeatPlan.jsx';
 import { saleCancel, saleCreate, salePaid, saleSeats } from './api.js';
 
 const shortSeat = (id) => {
   const { sectionId, row, seat } = parseSeatId(id);
   return `${SECTIONS.find((s) => s.id === sectionId)?.short ?? sectionId} ř. ${row} m. ${seat}`;
 };
-
-/** Grid of one section: free seats can be picked, held ones are disabled. */
-function SeatGrid({ section, taken, selected, onToggle }) {
-  return (
-    <div className="sale-grid" role="group" aria-label={section.name}>
-      {Array.from({ length: section.rows }, (_, r) => (
-        <div key={r} className="sale-row">
-          <span className="muted">{r + 1}</span>
-          {Array.from({ length: section.seatsPerRow }, (_, n) => {
-            const id = `${section.id}-${r + 1}-${n + 1}`;
-            const isTaken = taken.has(id);
-            return (
-              <button
-                key={id}
-                type="button"
-                className={`sale-seat ${selected.has(id) ? 'is-on' : ''}`}
-                disabled={isTaken}
-                aria-pressed={selected.has(id)}
-                aria-label={`Řada ${r + 1}, místo ${n + 1}`}
-                onClick={() => onToggle(id)}
-              >
-                {n + 1}
-              </button>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /** QR payment shown to the customer; the organizer confirms when the customer shows the payment sent. */
 function SalePayment({ sale, busy, onPaid, onCancel }) {
@@ -173,7 +144,9 @@ export default function SaleView({ runId, onUnauthorized }) {
   if (!info) return <div className="sale">{error ? <p className="form-error">{error}</p> : <p className="muted">Načítám…</p>}</div>;
 
   const section = SECTIONS.find((s) => s.id === sectionId) ?? null;
-  const free = (s) => s.rows * s.seatsPerRow - [...info.taken].filter((id) => id.startsWith(`${s.id}-`)).length;
+  const closed = new Set(info.closed);
+  const free = (s) => capacity(s) - [...info.taken].filter((id) => id.startsWith(`${s.id}-`)).length;
+  const seatState = (id) => (selected.has(id) ? 'selected' : info.taken.has(id) ? 'taken' : 'available');
   const prices = priceSeats([...selected], children, 0, info.price, info.childPrice);
 
   return (
@@ -190,14 +163,18 @@ export default function SaleView({ runId, onUnauthorized }) {
             key={s.id}
             type="button"
             className={s.id === sectionId ? 'is-active' : ''}
-            disabled={free(s) === 0}
+            disabled={closed.has(s.id) || free(s) === 0}
             onClick={() => setSectionId(s.id === sectionId ? null : s.id)}
           >
-            {s.short} <small>{free(s)}</small>
+            {s.short} <small>{closed.has(s.id) ? 'uzavřeno' : free(s)}</small>
           </button>
         ))}
       </div>
-      {section && <SeatGrid section={section} taken={info.taken} selected={selected} onToggle={toggle} />}
+      {section && (
+        <div className="sale-plan">
+          <SeatPlan section={section} seatState={seatState} onToggle={toggle} minSeat={30} maxSeat={40} />
+        </div>
+      )}
 
       {selected.size > 0 && (
         <div className="sale-summary">

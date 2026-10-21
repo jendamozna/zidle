@@ -469,53 +469,10 @@
   opacity: 0.4;
 }
 
-.sale-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow-x: auto;
-  padding: 0.6rem;
+.sale-plan {
+  padding: 0.5rem;
   border-radius: var(--radius-sm);
   background: var(--surface);
-}
-
-.sale-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.sale-row .muted {
-  width: 1.4rem;
-  flex: none;
-  font-size: 0.75rem;
-  text-align: right;
-}
-
-.sale-seat {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  border: 1.5px solid var(--seat-free-edge);
-  background: var(--seat-free);
-  color: var(--seat-free-ink);
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.sale-seat:disabled {
-  background: var(--surface-2);
-  border-color: var(--surface-2);
-  color: var(--ink-2);
-  opacity: 0.5;
-}
-
-.sale-seat.is-on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
 }
 
 .sale-summary {

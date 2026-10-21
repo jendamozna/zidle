@@ -5,7 +5,7 @@ import { seed } from './helpers.js';
 async function pickSeats(page, count) {
   await page.goto('/');
   await page.locator('.run-card', { hasText: 'Premiéra' }).click();
-  await page.locator('.section-card').first().click();
+  await page.locator('.plan-hit').first().click();
   const seats = page.locator('button.seat-available');
   for (let i = 0; i < count; i++) await seats.first().click();
   await page.getByRole('button', { name: /Zpět na mapu/ }).click();
@@ -24,9 +24,11 @@ test('customer books two seats, sees the QR payment and cancels', async ({ page,
   await page.locator('.run-card', { hasText: 'Premiéra' }).click();
   // The plan is drawn from the layout the server sends.
   const layout = (await (await request.get('/api/seats.php')).json()).layout;
-  await expect(page.locator('.section-card')).toHaveCount(layout.sections.length);
+  await expect(page.locator('.plan-hit')).toHaveCount(layout.sections.length);
+  // Optional balcony seats are closed until the admin opens them.
+  await expect(page.locator('.plan-section.is-closed')).toHaveCount(layout.sections.filter((s) => s.optional).length);
   await expect(page.locator('.level-balcony h2')).toHaveText(layout.levels.balcony);
-  await page.locator('.section-card').first().click();
+  await page.locator('.plan-hit').first().click();
   const seats = page.locator('button.seat-available');
   await seats.first().click();
   await seats.first().click();

@@ -107,7 +107,7 @@ export default function App() {
   else if (reservation) view = <PaymentView reservation={reservation} onChange={setReservation} onBack={closePayment} />;
   else if (choosing) view = <RunPicker runs={seats.runs} onSelect={chooseRun} />;
   else if (section) view = <SectionDetail section={section} seats={seats} onBack={() => setSectionId(null)} />;
-  else view = <Overview stats={stats} loading={seats.loading} onOpen={setSectionId} />;
+  else view = <Overview stats={stats} seatState={seats.seatState} loading={seats.loading} onOpen={setSectionId} />;
 
   return (
     <div className="app">

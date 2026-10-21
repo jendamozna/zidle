@@ -9,7 +9,7 @@
 //                                                           → ticket check for the run being checked in
 //   POST organizer.php {action: "snapshot", runId}          → list for checking tickets offline (scanner_snapshot())
 //   POST organizer.php {action: "sync", runId, events}      → check-ins made offline (apply_offline_scans())
-//   POST organizer.php {action: "sale-seats", runId}        → {taken, price, childPrice, maxSeats} for selling on site
+//   POST organizer.php {action: "sale-seats", runId}        → {taken, closed, price, childPrice, maxSeats} for selling on site
 //   POST organizer.php {action: "sale-create", runId, seats, children} → {sale} with the QR payment (onsite.php)
 //   POST organizer.php {action: "sale-paid", runId, id}     → paid and checked in
 //   POST organizer.php {action: "sale-cancel", runId, id}   → seats free again
@@ -84,6 +84,7 @@ run_api(function (): void {
             expire_reservations();
             json_response([
                 'taken' => run_taken_seats($run['id']),
+                'closed' => run_closed_sections($run),
                 'price' => adult_price(),
                 'childPrice' => child_price(),
                 'maxSeats' => (int) config('MAX_SEATS_PER_RESERVATION'),

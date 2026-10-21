@@ -1,27 +1,93 @@
 <?php
 // Seating layout of the church – the only definition. The customer app and the
 // scanner load it from the server (layout_public() in seats.php / organizer.php).
+//
+// PLAN: one map per level (main floor with the stage on top, U-shaped balcony),
+//   width 100 units, `height` units tall; `items` are drawn decorations:
+//   stage / band / void (the open middle of the balcony) with x, y, w, h and a label.
+// SECTIONS (in this order everywhere):
 //   name/short – full and short Czech name; level – key of LEVELS;
-//   group      – place in the floor plan: left / right (main floor, stage on top),
-//                balcony (U-shaped, in list order);
-//   rows/seats – rows and chairs per row (row 1 nearest the stage or railing);
-//   rotated    – drawn turned by 90° (rows run vertically), rowSide = side of row 1.
+//   rows       – one entry per row (row 1 first: nearest the stage or the balcony railing):
+//                [number of seats, x1, y1, x2, y2] = centres of seat 1 and of the last seat
+//                in plan units; the seats lie evenly on that line;
+//   label      – [x, y, align] where the section's name is shown on the map (y = top);
+//   optional   – extra seats, closed for sale until the admin opens them for a run.
 const LEVELS = [
     'main' => 'Hlavní loď',
     'balcony' => 'Balkon',
 ];
 
-const SECTIONS = [
-    'WL' => ['name' => 'Levé křídlo', 'short' => 'L. křídlo', 'level' => 'main', 'group' => 'left', 'rows' => 4, 'seats' => 6],
-    'ML' => ['name' => 'Levá hlavní', 'short' => 'L. hlavní', 'level' => 'main', 'group' => 'left', 'rows' => 10, 'seats' => 8],
-    'MR' => ['name' => 'Pravá hlavní', 'short' => 'P. hlavní', 'level' => 'main', 'group' => 'right', 'rows' => 10, 'seats' => 8],
-    'WR' => ['name' => 'Pravé křídlo', 'short' => 'P. křídlo', 'level' => 'main', 'group' => 'right', 'rows' => 6, 'seats' => 6],
-    'BL' => ['name' => 'Balkon vlevo', 'short' => 'Balkon L', 'level' => 'balcony', 'group' => 'balcony', 'rows' => 4, 'seats' => 12, 'rotated' => true, 'rowSide' => 'right'],
-    'BC' => ['name' => 'Balkon střed', 'short' => 'Balkon S', 'level' => 'balcony', 'group' => 'balcony', 'rows' => 4, 'seats' => 12],
-    'BR' => ['name' => 'Balkon vpravo', 'short' => 'Balkon P', 'level' => 'balcony', 'group' => 'balcony', 'rows' => 2, 'seats' => 10, 'rotated' => true, 'rowSide' => 'left'],
+const PLAN = [
+    'main' => ['height' => 54, 'items' => [
+        ['kind' => 'stage', 'label' => 'Pódium', 'x' => 32, 'y' => 0, 'w' => 36, 'h' => 8],
+        ['kind' => 'band', 'label' => 'Kapela', 'x' => 1.5, 'y' => 23, 'w' => 14, 'h' => 12],
+    ]],
+    'balcony' => ['height' => 58, 'items' => [
+        ['kind' => 'void', 'label' => '↑ k pódiu', 'x' => 33, 'y' => 0, 'w' => 34, 'h' => 33],
+    ]],
 ];
 
-/** Layout for the apps: {levels, sections: [{id, name, short, level, group, rows, seatsPerRow, rotated, rowSide}]}. */
+const SECTIONS = [
+    'WL' => ['name' => 'Levé křídlo', 'short' => 'L. křídlo', 'level' => 'main', 'label' => [8.6, 52.5, 'center'], 'rows' => [
+        [5, 3.2, 38.5, 14, 38.5], [5, 3.2, 41.7, 14, 41.7], [5, 3.2, 44.9, 14, 44.9], [5, 3.2, 48.1, 14, 48.1],
+    ]],
+    'ML' => ['name' => 'Levá hlavní', 'short' => 'L. hlavní', 'level' => 'main', 'label' => [30.45, 9.5, 'center'], 'rows' => [
+        [8, 21, 17.5, 39.9, 17.5], [8, 21, 21.1, 39.9, 21.1], [8, 21, 24.7, 39.9, 24.7], [8, 21, 28.3, 39.9, 28.3],
+        [8, 21, 31.9, 39.9, 31.9], [8, 21, 35.5, 39.9, 35.5], [8, 21, 39.1, 39.9, 39.1], [8, 21, 42.7, 39.9, 42.7],
+        [8, 21, 46.3, 39.9, 46.3],
+    ]],
+    'MR' => ['name' => 'Pravá hlavní', 'short' => 'P. hlavní', 'level' => 'main', 'label' => [69.55, 9.5, 'center'], 'rows' => [
+        [8, 60.1, 17.5, 79, 17.5], [8, 60.1, 21.1, 79, 21.1], [8, 60.1, 24.7, 79, 24.7], [8, 60.1, 28.3, 79, 28.3],
+        [8, 60.1, 31.9, 79, 31.9], [8, 60.1, 35.5, 79, 35.5], [8, 60.1, 39.1, 79, 39.1], [8, 60.1, 42.7, 79, 42.7],
+        [8, 60.1, 46.3, 79, 46.3],
+    ]],
+    'WR' => ['name' => 'Pravé křídlo', 'short' => 'P. křídlo', 'level' => 'main', 'label' => [90.4, 12.5, 'center'], 'rows' => [
+        [4, 86.35, 21.5, 94.45, 21.5], [4, 86.35, 25.1, 94.45, 25.1], [4, 86.35, 28.7, 94.45, 28.7],
+        [5, 85, 32.3, 95.8, 32.3], [5, 85, 35.9, 95.8, 35.9], [5, 85, 39.5, 95.8, 39.5],
+        [4, 86.35, 45, 94.45, 45],
+    ]],
+    'BV' => ['name' => 'Balkon vlevo – přídavná místa', 'short' => 'Přídavná L', 'level' => 'balcony', 'optional' => true,
+        'label' => [2, 34.5, 'left'], 'rows' => [
+            [5, 25.5, 2.5, 25.5, 13.3], [5, 22, 2.5, 22, 13.3],
+            [6, 25.5, 17.5, 25.5, 31], [6, 22, 17.5, 22, 31], [6, 18.5, 17.5, 18.5, 31],
+        ]],
+    'BL' => ['name' => 'Balkon vlevo', 'short' => 'Balkon L', 'level' => 'balcony', 'label' => [34, 1.5, 'left'], 'rows' => [
+        [12, 30, 1.5, 30, 31.2],
+    ]],
+    'BC' => ['name' => 'Balkon střed', 'short' => 'Balkon S', 'level' => 'balcony', 'label' => [50, 52.5, 'center'], 'rows' => [
+        [7, 32.45, 37, 48.65, 37], [14, 32.45, 40.2, 67.55, 40.2], [14, 32.45, 43.4, 67.55, 43.4],
+        [7, 45.95, 46.6, 62.15, 46.6], [7, 45.95, 49.8, 62.15, 49.8],
+    ]],
+    'BR' => ['name' => 'Balkon vpravo', 'short' => 'Balkon P', 'level' => 'balcony', 'label' => [66, 1.5, 'right'], 'rows' => [
+        [6, 70, 2.5, 70, 16], [5, 70, 20.5, 62.5, 30.5],
+    ]],
+    'BW' => ['name' => 'Balkon vpravo – přídavná místa', 'short' => 'Přídavná P', 'level' => 'balcony', 'optional' => true,
+        'label' => [76.75, 28, 'center'], 'rows' => [
+            [3, 75, 19.5, 75, 24.9], [3, 78.5, 19.5, 78.5, 24.9],
+        ]],
+];
+
+/** Number of seats in each row of the section. */
+function section_row_sizes(array $section): array
+{
+    return array_map(static fn ($row) => (int) $row[0], $section['rows']);
+}
+
+function section_capacity(array $section): int
+{
+    return array_sum(section_row_sizes($section));
+}
+
+/** Ids of the optional sections (closed for sale unless opened for the run). */
+function optional_section_ids(): array
+{
+    return array_keys(array_filter(SECTIONS, static fn ($s) => !empty($s['optional'])));
+}
+
+/**
+ * Layout for the apps: {levels, plan: {main|balcony: {height, items}}, sections: [{id, name, short,
+ * level, optional, label: {x, y, align}, rows: [{seats, x1, y1, x2, y2}]}]}.
+ */
 function layout_public(): array
 {
     $sections = [];
@@ -31,19 +97,18 @@ function layout_public(): array
             'name' => $s['name'],
             'short' => $s['short'],
             'level' => $s['level'],
-            'group' => $s['group'],
-            'rows' => $s['rows'],
-            'seatsPerRow' => $s['seats'],
-            'rotated' => $s['rotated'] ?? false,
-            'rowSide' => $s['rowSide'] ?? null,
+            'optional' => !empty($s['optional']),
+            'label' => ['x' => $s['label'][0], 'y' => $s['label'][1], 'align' => $s['label'][2]],
+            'rows' => array_map(static fn ($r) => ['seats' => $r[0], 'x1' => $r[1], 'y1' => $r[2], 'x2' => $r[3], 'y2' => $r[4]], $s['rows']),
         ];
     }
-    return ['levels' => LEVELS, 'sections' => $sections];
+    return ['levels' => LEVELS, 'plan' => PLAN, 'sections' => $sections];
 }
 
+/** All seats of the layout, optional sections included. */
 function total_capacity(): int
 {
-    return array_sum(array_map(static fn ($s) => $s['rows'] * $s['seats'], SECTIONS));
+    return array_sum(array_map('section_capacity', SECTIONS));
 }
 
 function is_valid_seat_id(string $id): bool
@@ -51,12 +116,27 @@ function is_valid_seat_id(string $id): bool
     if (!preg_match('/^([A-Z]{2})-(\d{1,2})-(\d{1,2})$/', $id, $m)) {
         return false;
     }
-    $section = SECTIONS[$m[1]] ?? null;
+    $sizes = isset(SECTIONS[$m[1]]) ? section_row_sizes(SECTIONS[$m[1]]) : [];
     $row = (int) $m[2];
     $seat = (int) $m[3];
-    return $section !== null
-        && $row >= 1 && $row <= $section['rows']
-        && $seat >= 1 && $seat <= $section['seats'];
+    return $row >= 1 && $row <= count($sizes) && $seat >= 1 && $seat <= $sizes[$row - 1];
+}
+
+/** Full name of a section ("ML" → "Levá hlavní"), the id itself when unknown. */
+function section_name(string $id): string
+{
+    foreach (SECTIONS as $sid => $section) {
+        if ($sid === $id) {
+            return $section['name'];
+        }
+    }
+    return $id;
+}
+
+/** Section id of a seat id ("ML-1-2" → "ML"). */
+function seat_section(string $id): string
+{
+    return explode('-', $id)[0];
 }
 
 /** Sort order of seat ids: section (layout order), row, seat. */

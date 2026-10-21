@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SECTIONS, TOTAL_CAPACITY, capacity, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
+import { SECTIONS, capacity, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
 import { createReservation, fetchSeats } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
 
@@ -74,9 +74,13 @@ export function useSeats(runId) {
     };
   }, [refresh]);
 
+  const run = runs?.find((r) => r.id === runId) ?? null;
+  // Optional sections (extra balcony seats) not open for sale in this run.
+  const closedSections = useMemo(() => new Set(run?.closedSections ?? []), [run]);
+
   const toggleSeat = useCallback(
     (id) => {
-      if (taken.has(id)) return;
+      if (taken.has(id) || closedSections.has(parseSeatId(id).sectionId)) return;
       if (!bookingOpen) {
         setNotice({ text: 'Rezervace na tento termín jsou uzavřeny.' });
         return;
@@ -92,12 +96,12 @@ export function useSeats(runId) {
         return next;
       });
     },
-    [taken, selected, maxSeats, bookingOpen],
+    [taken, selected, maxSeats, bookingOpen, closedSections],
   );
 
   const stats = useMemo(() => {
     const bySection = Object.fromEntries(
-      SECTIONS.map((s) => [s.id, { capacity: capacity(s), taken: 0, mine: [] }]),
+      SECTIONS.map((s) => [s.id, { capacity: capacity(s), taken: 0, mine: [], closed: closedSections.has(s.id) }]),
     );
     for (const id of taken) {
       const section = bySection[parseSeatId(id).sectionId];
@@ -110,19 +114,18 @@ export function useSeats(runId) {
       s.free = s.capacity - s.occupied;
       s.pct = Math.round((s.occupied / s.capacity) * 100);
     }
-    const occupied = Object.values(bySection).reduce((sum, s) => sum + s.occupied, 0);
     return {
       bySection,
-      free: TOTAL_CAPACITY - occupied,
+      free: Object.values(bySection).reduce((sum, s) => sum + (s.closed ? 0 : s.free), 0),
       selected: [...selected].sort(compareSeatIds),
       selectedCount: selected.size,
       price,
       childPrice,
       total: selected.size * price,
     };
-  }, [taken, selected, price, childPrice, layoutReady]); // eslint-disable-line react-hooks/exhaustive-deps -- layoutReady: SECTIONS were replaced
+  }, [taken, selected, price, childPrice, closedSections, layoutReady]); // eslint-disable-line react-hooks/exhaustive-deps -- layoutReady: SECTIONS were replaced
 
-  /** Submits the selection with customer details ({firstName, …, children, infants, codes}); resolves with the reservation. */
+  /** Submits the selection with customer details ({firstName, …, children, codes}); resolves with the reservation. */
   const reserve = useCallback(
     async (customer) => {
       const ids = [...selected].sort(compareSeatIds);
@@ -156,7 +159,7 @@ export function useSeats(runId) {
     bookingOpen,
     notice,
     runs,
-    run: runs?.find((r) => r.id === runId) ?? null,
+    run,
     dataRetentionDays,
     contact,
     layoutReady,

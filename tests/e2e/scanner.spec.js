@@ -96,8 +96,8 @@ test('organizer sells free seats at the entrance: QR payment, then the seats are
   await login(page);
   await page.getByRole('tab', { name: 'Prodej' }).click();
   await page.locator('.sale-sections button').first().click();
+  await page.getByRole('button', { name: 'Řada 4, místo 4' }).click();
   await page.getByRole('button', { name: 'Řada 4, místo 5' }).click();
-  await page.getByRole('button', { name: 'Řada 4, místo 6' }).click();
   await page.getByRole('button', { name: 'Děti 4–17 let: více' }).click();
   await page.getByRole('button', { name: /QR platba 450 Kč/ }).click();
   await expect(page.locator('.sale-pay img')).toBeVisible();
@@ -106,5 +106,5 @@ test('organizer sells free seats at the entrance: QR payment, then the seats are
   await page.getByRole('button', { name: 'Zaplaceno – vpustit' }).click();
   await expect(page.locator('.sale-done')).toHaveText('Zaplaceno 450 Kč – 2 místa odbavena.');
   // The section stays open; the sold seats are taken now.
-  await expect(page.getByRole('button', { name: 'Řada 4, místo 5' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Řada 4, místo 5/ })).toBeDisabled();
 });

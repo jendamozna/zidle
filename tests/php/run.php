@@ -414,14 +414,45 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
 
 // ------------------------------------------------------------------- layout
 
-test('the layout for the apps lists all sections in order with their shape', function (): void {
+test('the layout matches the plan: seats per row, capacities, optional balcony seats', function (): void {
     $layout = layout_public();
     same(array_keys(SECTIONS), array_column($layout['sections'], 'id'), 'order');
-    same(total_capacity(), array_sum(array_map(fn ($s) => $s['rows'] * $s['seatsPerRow'], $layout['sections'])), 'capacity');
-    same(['left', 'left', 'right', 'right', 'balcony', 'balcony', 'balcony'], array_column($layout['sections'], 'group'), 'groups');
-    same(array_keys(LEVELS), array_values(array_unique(array_column($layout['sections'], 'level'))), 'levels used');
+    $sizes = array_combine(array_column($layout['sections'], 'id'), array_map(fn ($s) => array_column($s['rows'], 'seats'), $layout['sections']));
+    same([5, 5, 5, 5], $sizes['WL'], 'left wing');
+    same(array_fill(0, 9, 8), $sizes['ML'], 'left main');
+    same([4, 4, 4, 5, 5, 5, 4], $sizes['WR'], 'right wing');
+    same([7, 14, 14, 7, 7], $sizes['BC'], 'balcony centre');
+    same([195, 106, 301], [
+        array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'main'))),
+        array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'balcony'))),
+        total_capacity(),
+    ], 'capacities');
+    same(['BV', 'BW'], optional_section_ids(), 'optional sections');
+    same(array_keys(LEVELS), array_keys($layout['plan']), 'a plan per level');
     foreach ($layout['sections'] as $section) {
-        same(true, is_valid_seat_id("{$section['id']}-{$section['rows']}-{$section['seatsPerRow']}"), "last seat of {$section['id']}");
+        $rows = count($section['rows']);
+        $last = $section['rows'][$rows - 1]['seats'];
+        same([true, false, false], [
+            is_valid_seat_id("{$section['id']}-{$rows}-{$last}"),
+            is_valid_seat_id("{$section['id']}-{$rows}-" . ($last + 1)),
+            is_valid_seat_id("{$section['id']}-" . ($rows + 1) . '-1'),
+        ], "last seat of {$section['id']}");
+    }
+});
+
+test('optional balcony seats are closed until the admin opens them for the run', function (): void {
+    $run = run_by_id(1) ?? [];
+    same([['BV', 'BW'], 267], [run_closed_sections($run), run_capacity($run)], 'closed by default');
+    same(409, book(['BV-1-1'])['status'] ?? null, 'cannot be booked');
+    db()->exec("UPDATE runs SET open_sections = '[\"BV\"]' WHERE id = 1");
+    runs(true);
+    try {
+        $run = run_by_id(1) ?? [];
+        same([['BW'], 295], [run_closed_sections($run), run_capacity($run)], 'BV opened');
+        same(true, isset(book(['BV-1-1'])['reservation']), 'booked');
+    } finally {
+        db()->exec("UPDATE runs SET open_sections = '[]' WHERE id = 1");
+        runs(true);
     }
 });
 

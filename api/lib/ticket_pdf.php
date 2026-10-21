@@ -30,7 +30,7 @@ function ticket_pdf(array $r): string
             . '<td class="info">'
             . '<div class="brand">Moje židle <span>2026</span></div>'
             . '<div class="run">' . $h($runText) . '</div>'
-            . '<div class="seat">' . $h(SECTIONS[$section]['name'] ?? $section) . '</div>'
+            . '<div class="seat">' . $h(section_name($section)) . '</div>'
             . '<div class="place">řada <b>' . $h($row) . '</b> &nbsp; místo <b>' . $h($seat) . '</b></div>'
             . '<div class="kind">' . $h(SEAT_KIND_LABELS[$item['kind']]) . '</div>'
             . '<div class="meta">' . $h($name) . ' · VS ' . $h($r['variable_symbol']) . ' · vstupenka ' . ($n + 1) . ' z ' . $count . '</div>'
