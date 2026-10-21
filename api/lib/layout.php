@@ -31,7 +31,7 @@ const PLAN = [
 ];
 
 const SECTIONS = [
-    'WL' => ['name' => 'Levé křídlo', 'short' => 'L. křídlo', 'level' => 'main', 'label' => [8.6, 30.5, 'center'], 'rows' => [
+    'WL' => ['name' => 'Levé křídlo', 'short' => 'L. křídlo', 'level' => 'main', 'label' => [8.6, 9.5, 'center'], 'rows' => [
         [5, 3.2, 38.5, 14, 38.5], [5, 3.2, 41.7, 14, 41.7], [5, 3.2, 44.9, 14, 44.9], [5, 3.2, 48.1, 14, 48.1],
     ]],
     'ML' => ['name' => 'Levá hlavní', 'short' => 'L. hlavní', 'level' => 'main', 'label' => [35.45, 9.5, 'center'], 'rows' => [
