@@ -11,8 +11,8 @@
 //                [number of seats, x1, y1, x2, y2] = centres of the first and the last seat
 //                in plan units, the seats lie evenly on that line; a row split by a gap is
 //                ['parts' => [[seats, x1, y1, x2, y2], …]] (numbering goes on across the parts);
-//                'reserve' => true marks reserve seats ("Záložní"): not for sale until the
-//                admin opens the section's reserve seats for a run;
+//                'reserve' => true marks reserve rows: their seats are "Záložní" (not for
+//                sale) in a new run; the admin can switch any seat of a run (admin → Plánek);
 //   label      – [x, y, align] where the section's name is shown on the map (y = top).
 const LEVELS = [
     'main' => 'Hlavní loď',
@@ -93,28 +93,30 @@ function section_capacity(array $section): int
     return array_sum(section_row_sizes($section));
 }
 
-/** Reserve seats of the section (rows marked 'reserve'). */
-function section_reserve_capacity(array $section): int
+/** Seat ids of the section in layout order. */
+function section_seat_ids(string $id, array $section): array
 {
-    return array_sum(array_column(array_filter(section_rows($section), static fn ($r) => $r['reserve']), 'seats'));
-}
-
-/** Ids of the sections that have reserve seats. */
-function reserve_section_ids(): array
-{
-    return array_keys(array_filter(SECTIONS, static fn ($s) => section_reserve_capacity($s) > 0));
-}
-
-/** True for a seat in a reserve row (e.g. "BL-2-1"). */
-function seat_is_reserve(string $id): bool
-{
-    [$section, $row] = array_pad(explode('-', $id), 2, '');
-    foreach (SECTIONS as $sid => $def) {
-        if ($sid === $section) {
-            return (section_rows($def)[(int) $row - 1]['reserve'] ?? false) === true;
+    $ids = [];
+    foreach (section_row_sizes($section) as $r => $count) {
+        for ($n = 1; $n <= $count; $n++) {
+            $ids[] = $id . '-' . ($r + 1) . '-' . $n;
         }
     }
-    return false;
+    return $ids;
+}
+
+/** Seats that are "Záložní" (not for sale) in a run until the admin changes it: the rows marked 'reserve'. */
+function default_reserve_seats(): array
+{
+    $ids = [];
+    foreach (SECTIONS as $id => $section) {
+        foreach (section_rows($section) as $r => $row) {
+            for ($n = 1; $row['reserve'] && $n <= $row['seats']; $n++) {
+                $ids[] = $id . '-' . ($r + 1) . '-' . $n;
+            }
+        }
+    }
+    return $ids;
 }
 
 /**

@@ -1,5 +1,6 @@
 <?php
-// Copy to config.local.php and fill in.
+// Copy to config.local.php and fill in. SMTP, the contact e-mail/phone and PUBLIC_URL
+// go to api/.env (copy .env.example); a key set here would override the .env value.
 return [
     'DB_HOST' => '127.0.0.1',
     'DB_NAME' => 'zidle',
@@ -15,14 +16,5 @@ return [
     'ORGANIZER_PASSWORD' => '',  // optional master password for all runs; organizers normally use invite links from admin
     'TICKET_SECRET' => 'paste output of: php -r "echo bin2hex(random_bytes(32));"',
 
-    'MAIL_ENABLED' => true,
-    'SMTP_HOST' => 'smtp.example.com',
-    'SMTP_PORT' => 587,
-    'SMTP_AUTH' => true,
-    'SMTP_SENDER' => 'rezervace@example.com',
-    'SMTP_USER' => '',                 // only when the login differs from SMTP_SENDER
-    'CONTACT_EMAIL' => 'farnost@example.com',
-    'CONTACT_PHONE' => '+420 123 456 789',
-    'SMTP_PASSWORD' => 'change-me',
-    'PUBLIC_URL' => 'https://example.com/zidle/',
+    // E-mails (SMTP), contact e-mail and phone, PUBLIC_URL: in api/.env (see .env.example).
 ];

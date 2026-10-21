@@ -65,7 +65,23 @@ if ($action === 'logout' && $csrfOk) {
 }
 
 $flash = null;
-$view = in_array($_GET['view'] ?? '', ['codes', 'scanners', 'users', 'settings'], true) ? $_GET['view'] : 'reservations';
+$view = in_array($_GET['view'] ?? '', ['plan', 'codes', 'scanners', 'users', 'settings'], true) ? $_GET['view'] : 'reservations';
+
+// Plánek: which seats of a run are "Záložní" (not for sale).
+if ($me !== null && $csrfOk && in_array($action, ['plan-save', 'plan-default'], true)) {
+    $runId = (int) ($_POST['run_id'] ?? 0);
+    if (run_by_id($runId) === null) {
+        $_SESSION['flash'] = 'Vyberte termín.';
+    } else {
+        $held = save_run_reserve_seats($runId, $action === 'plan-default' ? null : (array) ($_POST['reserve'] ?? []));
+        $run = runs()[$runId];
+        $_SESSION['flash'] = ($action === 'plan-default' ? 'Obnoveno výchozí rozložení.' : 'Plánek uložen.')
+            . ' V prodeji ' . run_capacity($run) . ' míst, záložních ' . count($run['reserve_seats']) . '.'
+            . ($held ? ' Obsazená místa zůstala v prodeji: ' . implode(', ', $held) . '.' : '');
+    }
+    header('Location: admin.php?' . http_build_query(['view' => 'plan', 'run' => $runId]));
+    exit;
+}
 
 if ($me !== null && $csrfOk && in_array($action, ['code-create', 'code-resend', 'code-revoke'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
@@ -206,14 +222,12 @@ if ($me !== null && $csrfOk && in_array($action, ['run-save', 'run-delete'], tru
             $_SESSION['flash'] = implode(' ', $errors);
         } else {
             $rulesJson = $locked ? json_encode($existing['storno_rules']) : json_encode(normalize_storno_rules($rules), JSON_UNESCAPED_UNICODE);
-            // Reserve seats (balcony) opened for sale – may change any time.
-            $open = json_encode(array_values(array_intersect(reserve_section_ids(), array_map('strval', (array) ($_POST['open_reserves'] ?? [])))));
-            $values = [$label, db_time($starts), $closes ? db_time($closes) : null, $rulesJson, $open];
+            $values = [$label, db_time($starts), $closes ? db_time($closes) : null, $rulesJson];
             if ($id > 0) {
-                db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ?, storno_rules = ?, open_reserves = ? WHERE id = ?')
+                db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ?, storno_rules = ? WHERE id = ?')
                     ->execute([...$values, $id]);
             } else {
-                db()->prepare('INSERT INTO runs (label, starts_at, booking_closes_at, storno_rules, open_reserves) VALUES (?, ?, ?, ?, ?)')
+                db()->prepare('INSERT INTO runs (label, starts_at, booking_closes_at, storno_rules) VALUES (?, ?, ?, ?)')
                     ->execute($values);
             }
             $_SESSION['flash'] = $id > 0 ? 'Termín uložen.' : 'Termín přidán.';
@@ -355,6 +369,28 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .settings .rule input[type=number] { width:110px; }
   .settings button { align-self:flex-start; }
   .hint { margin:0; font-size:.85rem; color:var(--ink-2); }
+  .plan-bar { display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-bottom:16px; position:sticky; top:8px; z-index:2; }
+  .plan-legend { display:inline-flex; align-items:center; gap:6px; font-size:.85rem; color:var(--ink-2); margin-right:auto; }
+  .plan-legend i { display:inline-block; width:14px; height:14px; border-radius:4px; margin-left:8px; }
+  .plan-level { margin-bottom:16px; }
+  .plan-level .section-title { margin:0 0 8px; }
+  .plan-map { position:relative; width:100%; container-type:inline-size; }
+  .plan-item { position:absolute; display:grid; place-items:center; font-size:.75rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2); }
+  .plan-stage { background:#efe9df; border-radius:0 0 999px 999px / 0 0 60% 60%; }
+  .plan-band { border:1.5px dashed var(--wall); border-radius:8px; }
+  .plan-void { border:2px solid var(--wall); border-top:0; border-radius:0 0 50% 50% / 0 0 45% 45%; }
+  .plan-name { position:absolute; display:flex; flex-direction:column; align-items:center; transform:translate(-50%, -30%); font-size:.8rem; line-height:1.2; white-space:nowrap; }
+  .plan-name[data-align=left] { align-items:flex-start; transform:translate(0, -30%); }
+  .plan-name[data-align=right] { align-items:flex-end; transform:translate(-100%, -30%); }
+  .plan-name .link { background:none; border:0; padding:0; color:var(--accent); font-weight:500; font-size:.75rem; text-decoration:underline; }
+  .ps { position:absolute; width:2.2%; aspect-ratio:1; transform:translate(-50%, -50%); cursor:pointer; }
+  .ps input { position:absolute; opacity:0; pointer-events:none; }
+  .ps span, .plan-legend i { display:grid; place-items:center; width:100%; height:100%; border-radius:5px; font-size:max(9px, .9cqi); font-weight:600; }
+  .ps span, .ps-free { background:#d8f0d9; border:1px solid #a4d4a8; color:#24572f; }
+  .ps input:checked + span, .ps-reserve { background:#efe9df; border:1px dashed #8e8577; color:#8e8577; }
+  .ps-held span, i.ps-held { background:#efb3aa; border:1px solid #e39a90; color:#7a2a20; }
+  .ps-held { cursor:not-allowed; }
+  .ps input:focus-visible + span { outline:2px solid var(--accent); outline-offset:1px; }
   .settings label.wide { max-width:none; }
   textarea { font:inherit; padding:8px 12px; border-radius:10px; border:1px solid var(--wall); background:#fff; resize:vertical; }
   .code { font-family:ui-monospace, monospace; letter-spacing:.05em; white-space:nowrap; }
@@ -436,6 +472,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <h1>Správa rezervací</h1>
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
+      <a href="admin.php?view=plan" class="<?= $view === 'plan' ? 'active' : '' ?>">Plánek</a>
       <a href="admin.php?view=codes" class="<?= $view === 'codes' ? 'active' : '' ?>">Slevové kódy</a>
       <?php $conflictCount = (int) db_query('SELECT COUNT(*) FROM scan_conflicts')->fetchColumn(); ?>
       <a href="admin.php?view=scanners" class="<?= $view === 'scanners' ? 'active' : '' ?>">Pořadatelé<?= $conflictCount ? ' <span class="tab-alert" title="Konflikty z odbavení bez spojení">' . $conflictCount . '</span>' : '' ?></a>
@@ -452,7 +489,86 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <?php if ($flash): ?><div class="flash"><?= $h($flash) ?></div><?php endif ?>
 
-  <?php if ($view === 'codes'):
+  <?php if ($view === 'plan'):
+      $planRuns = array_values(runs());
+      $planRun = run_by_id((int) ($_GET['run'] ?? 0)) ?? ($planRuns[0] ?? null);
+  ?>
+  <p class="hint settings-intro">Klikem přepnete židli mezi <strong>v prodeji</strong> a <strong>záložní</strong> (zákazníci ji vidí,
+    ale nemohou ji koupit). Platí jen pro vybraný termín. Obsazené židle nelze přepnout. Nový termín začíná s výchozím
+    rozložením (záložní řady na balkoně).</p>
+  <?php if ($planRun === null): ?>
+    <p class="card hint">Nejdřív přidejte termín v Nastavení.</p>
+  <?php else:
+      $heldStmt = db()->prepare('SELECT seat_id FROM reservation_seats WHERE run_id = ?');
+      $heldStmt->execute([$planRun['id']]);
+      $planHeld = array_flip($heldStmt->fetchAll(PDO::FETCH_COLUMN));
+      $planReserve = array_flip($planRun['reserve_seats']);
+  ?>
+  <form class="filters" method="get">
+    <input type="hidden" name="view" value="plan">
+    <select name="run" onchange="this.form.submit()">
+      <?php foreach ($planRuns as $run): ?><option value="<?= (int) $run['id'] ?>" <?= $planRun['id'] === $run['id'] ? 'selected' : '' ?>><?= $h(run_label($run)) ?></option><?php endforeach ?>
+    </select>
+  </form>
+  <form method="post" class="plan-form">
+    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+    <input type="hidden" name="run_id" value="<?= (int) $planRun['id'] ?>">
+    <div class="plan-bar card">
+      <span>V prodeji <strong id="plan-sale"><?= run_capacity($planRun) ?></strong> · záložních <strong id="plan-reserve"><?= count($planRun['reserve_seats']) ?></strong> · obsazených <?= count($planHeld) ?></span>
+      <span class="plan-legend"><i class="ps-free"></i> v prodeji <i class="ps-reserve"></i> záložní <i class="ps-held"></i> obsazené</span>
+      <button name="action" value="plan-save">Uložit plánek</button>
+      <button class="secondary" name="action" value="plan-default" onclick="return confirm('Vrátit výchozí rozložení záložních míst?')">Výchozí rozložení</button>
+    </div>
+    <?php foreach (PLAN as $level => $plan): ?>
+      <div class="card plan-level">
+        <h2 class="section-title"><?= $h(LEVELS[$level]) ?></h2>
+        <div class="plan-map" style="aspect-ratio: 100 / <?= $plan['height'] ?>">
+          <?php foreach ($plan['items'] as $item): ?>
+            <div class="plan-item plan-<?= $h($item['kind']) ?>" style="left:<?= $item['x'] ?>%;top:<?= $item['y'] / $plan['height'] * 100 ?>%;width:<?= $item['w'] ?>%;height:<?= $item['h'] / $plan['height'] * 100 ?>%"><?= $h($item['label']) ?></div>
+          <?php endforeach ?>
+          <?php foreach (SECTIONS as $sid => $def): if ($def['level'] !== $level) { continue; } ?>
+            <div class="plan-name" style="left:<?= $def['label'][0] ?>%;top:<?= $def['label'][1] / $plan['height'] * 100 ?>%" data-align="<?= $h($def['label'][2]) ?>">
+              <strong><?= $h($def['short']) ?></strong>
+              <button type="button" class="link" data-section="<?= $h($sid) ?>" data-to="0">vše v prodeji</button>
+              <button type="button" class="link" data-section="<?= $h($sid) ?>" data-to="1">vše záložní</button>
+            </div>
+            <?php foreach (section_rows($def) as $r => $row):
+                $seat = 0;
+                foreach ($row['parts'] as $part):
+                    for ($i = 0; $i < $part[0]; $i++):
+                        $seat++;
+                        $t = $part[0] > 1 ? $i / ($part[0] - 1) : 0;
+                        $x = $part[1] + ($part[3] - $part[1]) * $t;
+                        $y = ($part[2] + ($part[4] - $part[2]) * $t) / $plan['height'] * 100;
+                        $seatId = $sid . '-' . ($r + 1) . '-' . $seat;
+                        $isHeld = isset($planHeld[$seatId]); ?>
+              <label class="ps <?= $isHeld ? 'ps-held' : '' ?>" style="left:<?= $x ?>%;top:<?= $y ?>%" title="<?= $h(seat_label($seatId)) ?>">
+                <input type="checkbox" name="reserve[]" value="<?= $h($seatId) ?>" data-section="<?= $h($sid) ?>" <?= isset($planReserve[$seatId]) ? 'checked' : '' ?> <?= $isHeld ? 'disabled' : '' ?>><span><?= $seat ?></span>
+              </label>
+            <?php endfor; endforeach; endforeach; endforeach ?>
+        </div>
+      </div>
+    <?php endforeach ?>
+  </form>
+  <script>
+    (() => {
+      const form = document.querySelector('.plan-form');
+      const boxes = [...form.querySelectorAll('input[name="reserve[]"]')];
+      const count = () => {
+        const reserve = boxes.filter((b) => b.checked).length;
+        document.getElementById('plan-reserve').textContent = reserve;
+        document.getElementById('plan-sale').textContent = boxes.length - reserve;
+      };
+      form.addEventListener('change', count);
+      form.querySelectorAll('button[data-section]').forEach((button) => button.addEventListener('click', () => {
+        boxes.filter((b) => b.dataset.section === button.dataset.section && !b.disabled).forEach((b) => { b.checked = button.dataset.to === '1'; });
+        count();
+      }));
+    })();
+  </script>
+  <?php endif ?>
+
+  <?php elseif ($view === 'codes'):
       $q = trim((string) ($_GET['q'] ?? ''));
       $codeSearch = normalize_discount_code($q);
       $stmt = db()->prepare(
@@ -720,7 +836,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $deleteAt = data_deletion_at();
       $local = static fn (?string $utc) => $utc ? utc_time($utc)->setTimezone(new DateTimeZone(PRAGUE))->format('Y-m-d\TH:i') : '';
       $runForms = array_values(runs());
-      $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null, 'storno_rules' => [], 'open_reserves' => []];
+      $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null, 'storno_rules' => []];
   ?>
   <p class="hint settings-intro">Každý termín má vlastní plánek míst, rezervace a storno podmínky.
     Rezervace a rušení zákazníkem končí začátkem termínu (nebo dříve, je-li vyplněn konec rezervací).
@@ -769,13 +885,6 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <label>Od<input type="datetime-local" name="rule_from[]" value="<?= $h($rule['from'] === '' ? '' : prague_input(storno_from($rule['from']))) ?>"<?= $dis ?>></label>
           <label>Poplatek %<input type="number" name="rule_percent[]" min="0" max="100" value="<?= $h($rule['percent']) ?>"<?= $dis ?>></label>
         </div>
-      <?php endforeach ?>
-    </div>
-    <p class="hint">Záložní místa na balkoně jsou v prodeji, jen když je tu zaškrtnete (třeba až se zaplní zbytek balkonu).</p>
-    <div class="checks">
-      <?php foreach (SECTIONS as $sid => $def): if (section_reserve_capacity($def) === 0) { continue; } ?>
-        <label class="check"><input type="checkbox" name="open_reserves[]" value="<?= $h($sid) ?>" <?= in_array($sid, $run['open_reserves'], true) ? 'checked' : '' ?>>
-          prodávat záložní místa – <?= $h($def['name']) ?> (<?= section_reserve_capacity($def) ?>)</label>
       <?php endforeach ?>
     </div>
     <div class="actions">

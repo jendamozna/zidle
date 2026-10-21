@@ -430,8 +430,9 @@ test('the layout matches the plan: seats per row, capacities, reserve balcony se
         array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'balcony'))),
         total_capacity(),
     ], 'capacities');
-    same([['BL', 'BR'], 28, 6], [reserve_section_ids(), section_reserve_capacity(SECTIONS['BL']), section_reserve_capacity(SECTIONS['BR'])], 'reserve seats');
-    same([true, false, true, false], [seat_is_reserve('BL-2-1'), seat_is_reserve('BL-1-12'), seat_is_reserve('BR-4-3'), seat_is_reserve('BR-2-5')], 'reserve rows');
+    $default = default_reserve_seats();
+    same([34, true, false, true, false], [count($default), in_array('BL-2-1', $default, true), in_array('BL-1-12', $default, true),
+        in_array('BR-4-3', $default, true), in_array('BR-2-5', $default, true)], 'default reserve rows');
     same(array_keys(LEVELS), array_keys($layout['plan']), 'a plan per level');
     foreach ($layout['sections'] as $section) {
         $rows = count($section['rows']);
@@ -444,21 +445,23 @@ test('the layout matches the plan: seats per row, capacities, reserve balcony se
     }
 });
 
-test('reserve balcony seats are not for sale until the admin opens them for the run', function (): void {
+test('"Záložní" seats: the reserve rows by default, any seat switchable per run, taken seats stay for sale', function (): void {
     $run = run_by_id(1) ?? [];
-    same([['BL', 'BR'], 267], [run_closed_reserves($run), run_capacity($run)], 'closed by default');
+    same([34, 267], [count($run['reserve_seats']), run_capacity($run)], 'default');
     same(409, book(['BL-2-1'])['status'] ?? null, 'reserve seat cannot be booked');
     same(true, isset(book(['BL-1-6'])['reservation']), 'the bench of the same section can');
-    db()->exec("UPDATE runs SET open_reserves = '[\"BL\"]' WHERE id = 1");
-    runs(true);
     try {
+        same(['BL-1-6'], save_run_reserve_seats(1, ['ML-1-1', 'BL-1-6', 'XX-1-1']), 'a taken seat cannot become reserve');
         $run = run_by_id(1) ?? [];
-        same([['BR'], 295], [run_closed_reserves($run), run_capacity($run)], 'BL reserve opened');
-        same(true, isset(book(['BL-2-1'])['reservation']), 'booked');
+        same([['ML-1-1'], 300], [$run['reserve_seats'], run_capacity($run)], 'only ML-1-1 reserve');
+        same(true, isset(book(['BL-2-1'])['reservation']), 'former reserve seat booked');
+        same(409, book(['ML-1-1'])['status'] ?? null, 'new reserve seat refused');
+        same(['ML-1-1'], run_public($run)['reserveSeats'], 'sent to the apps');
+        same(34, count(run_by_id(2)['reserve_seats'] ?? []), 'other runs keep the default');
     } finally {
-        db()->exec("UPDATE runs SET open_reserves = '[]' WHERE id = 1");
-        runs(true);
+        save_run_reserve_seats(1, null);
     }
+    same(34, count(run_by_id(1)['reserve_seats'] ?? []), 'back to the default');
 });
 
 // ----------------------------------------------------------- admin accounts

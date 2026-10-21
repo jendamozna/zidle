@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { SECTIONS, SECTION_BY_ID, capacity, compareSeatIds, formatCzk, parseSeatId, reserveSeatIds } from '../data/layout.js';
+import { SECTIONS, capacity, compareSeatIds, formatCzk, parseSeatId } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { KIND_LABELS, priceSeats } from '../pricing.js';
 import Stepper from '../components/Stepper.jsx';
@@ -144,8 +144,8 @@ export default function SaleView({ runId, onUnauthorized }) {
   if (!info) return <div className="sale">{error ? <p className="form-error">{error}</p> : <p className="muted">Načítám…</p>}</div>;
 
   const section = SECTIONS.find((s) => s.id === sectionId) ?? null;
-  // Reserve seats not for sale in this run.
-  const closed = new Set(info.closedReserves.flatMap((id) => (SECTION_BY_ID[id] ? reserveSeatIds(SECTION_BY_ID[id]) : [])));
+  // "Záložní" seats: not for sale in this run.
+  const closed = new Set(info.reserveSeats);
   const free = (s) =>
     capacity(s) - [...info.taken, ...closed].filter((id) => id.startsWith(`${s.id}-`)).length;
   const seatState = (id) =>

@@ -99,3 +99,24 @@ test('admin sets a shorter payment deadline for reservations from a date', async
   await page.getByRole('button', { name: 'Uložit splatnost' }).click();
   await expect(page.getByText('Nyní platí: 72 hodin')).toBeVisible();
 });
+
+test('admin switches seats of a run between for sale and "Záložní" on the plan', async ({ page, request }) => {
+  await adminLogin(page);
+  await page.getByRole('link', { name: 'Plánek' }).click();
+  const premiere = await page.locator('select[name=run] option', { hasText: 'Premiéra' }).getAttribute('value');
+  await page.locator('select[name=run]').selectOption(premiere);
+  await expect(page.locator('select[name=run] option:checked')).toContainText('Premiéra');
+  const seat = page.locator('.ps:has(input[value="ML-1-1"])');
+  await seat.click();
+  await expect(seat.locator('input')).toBeChecked();
+  await page.getByRole('button', { name: 'Uložit plánek' }).click();
+  await expect(page.locator('.flash')).toContainText('Plánek uložen. V prodeji 266 míst, záložních 35.');
+  let runs = (await (await request.get('http://127.0.0.1:8000/api/seats.php')).json()).runs;
+  expect(runs.find((r) => r.label === 'Premiéra').reserveSeats).toContain('ML-1-1');
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Výchozí rozložení' }).click();
+  await expect(page.locator('.flash')).toContainText('Obnoveno výchozí rozložení. V prodeji 267 míst, záložních 34.');
+  runs = (await (await request.get('http://127.0.0.1:8000/api/seats.php')).json()).runs;
+  expect(runs.find((r) => r.label === 'Premiéra').reserveSeats).not.toContain('ML-1-1');
+});

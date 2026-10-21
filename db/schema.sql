@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS runs (
   starts_at         DATETIME     NOT NULL COMMENT 'UTC',
   booking_closes_at DATETIME     NULL COMMENT 'UTC; NULL = at the start',
   storno_rules      TEXT         NOT NULL DEFAULT '[]' COMMENT 'JSON [{"from": "YYYY-MM-DDTHH:MM:SSZ" (UTC), "percent": 50}]',
-  open_reserves     TEXT         NOT NULL DEFAULT '[]' COMMENT 'JSON ids of sections whose reserve seats are for sale, e.g. ["BL"]',
+  reserve_seats     TEXT         NULL COMMENT 'JSON seat ids that are "Záložní" (not for sale); NULL = the reserve rows of the layout',
   PRIMARY KEY (id),
   KEY idx_starts (starts_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;

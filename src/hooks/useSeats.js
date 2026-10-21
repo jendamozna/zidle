@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SECTIONS, SECTION_BY_ID, capacity, compareSeatIds, parseSeatId, reserveSeatIds, setLayout } from '../data/layout.js';
+import { SECTIONS, capacity, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
 import { createReservation, fetchSeats } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
 
@@ -75,11 +75,8 @@ export function useSeats(runId) {
   }, [refresh]);
 
   const run = runs?.find((r) => r.id === runId) ?? null;
-  // Reserve seats (balcony) not for sale in this run.
-  const closedSeats = useMemo(
-    () => new Set((run?.closedReserves ?? []).flatMap((id) => (SECTION_BY_ID[id] ? reserveSeatIds(SECTION_BY_ID[id]) : []))),
-    [run, layoutReady], // eslint-disable-line react-hooks/exhaustive-deps -- layoutReady: SECTION_BY_ID was replaced
-  );
+  // "Záložní" seats: not for sale in this run (chosen by the admin).
+  const closedSeats = useMemo(() => new Set(run?.reserveSeats ?? []), [run]);
 
   const toggleSeat = useCallback(
     (id) => {

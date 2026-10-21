@@ -9,7 +9,7 @@
 //   rows  – row 1 first (nearest the stage / balcony railing); a row has one or more parts
 //           (a gap between them); in a part the first seat sits at (x1, y1), the last at
 //           (x2, y2), the others evenly between (plan units); numbering goes on across parts
-//   reserve – reserve seats ("Záložní"), sold only in runs where the admin opened them
+//   reserve – reserve row: "Záložní" in a new run by default (the run's seats come in run.reserveSeats)
 
 /** Level names, e.g. {main: 'Hlavní loď', balcony: 'Balkon'}. */
 export let LEVELS = {};
@@ -60,9 +60,6 @@ export function seatPositions(section) {
     );
   });
 }
-
-/** Ids of the reserve seats of the section. */
-export const reserveSeatIds = (section) => seatPositions(section).filter((s) => s.reserve).map((s) => s.id);
 
 /** Distance between neighbouring seats in the section (plan units), for the seat size. */
 export function seatSpacing(section) {
