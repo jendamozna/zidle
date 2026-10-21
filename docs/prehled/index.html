@@ -48,6 +48,10 @@ section { display: flex; flex-direction: column; gap: 20px; }
 header.hero { display: flex; flex-direction: column; gap: 14px; }
 
 /* the journey */
+.prices { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 14px; }
+.prices div { padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; gap: 2px; }
+.prices strong { font-size: 1.25rem; }
+.prices span { color: var(--fg-2); font-size: .9rem; }
 .flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; counter-reset: step; }
 .flow li { counter-increment: step; display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); gap: 4px 14px; padding: 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
 .flow li::before { content: counter(step); grid-row: span 2; width: 2.4rem; height: 2.4rem; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--surface); font: 600 1.1rem var(--font-display); }
@@ -102,12 +106,17 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
 
   <section aria-labelledby="flow">
     <h2 id="flow">V pěti krocích</h2>
+    <div class="prices">
+      <div><strong>300 Kč</strong><span>dospělí od 18 let</span></div>
+      <div><strong>150 Kč</strong><span>děti 4–17 let</span></div>
+      <div><strong>zdarma</strong><span>děti do 3 let na klíně – bez vlastního místa a vstupenky</span></div>
+    </div>
     <ol class="flow">
-      <li><strong>Výběr</strong><span>Návštěvník vybere představení a na plánku kostela naklikne místa (300 Kč, nejvýše 20 najednou).</span></li>
-      <li><strong>Rezervace</strong><span>Vyplní jméno a e-mail. Místa jsou od té chvíle držena jen pro něj.</span></li>
-      <li><strong>Platba</strong><span>Zaplatí převodem – nejsnáz QR platbou v bankovní aplikaci. Má na to 3 dny (nejpozději do začátku představení).</span></li>
-      <li><strong>Vstupenka</strong><span>Účetní platbu potvrdí a návštěvníkovi přijde e-mailem vstupenka s QR kódem a pozvánkou do kalendáře.</span></li>
-      <li><strong>Vstup</strong><span>U vchodu ji ukáže v mobilu, pořadatel ji načte telefonem a pustí ho dál.</span></li>
+      <li><strong>Výběr</strong><span>Návštěvník vybere představení a na plánku kostela naklikne místa (nejvýše 20 najednou).</span></li>
+      <li><strong>Rezervace</strong><span>Určí, kolik míst je pro děti, případně zadá slevový kód, a vyplní jméno a e-mail. Místa jsou od té chvíle držena jen pro něj.</span></li>
+      <li><strong>Platba</strong><span>Zaplatí převodem – nejsnáz QR platbou v bankovní aplikaci. Má na to 3 dny (nejpozději do začátku představení; správce může od určitého data splatnost zkrátit).</span></li>
+      <li><strong>Vstupenky</strong><span>Účetní platbu potvrdí a návštěvníkovi přijdou e-mailem vstupenky – pro každé místo vlastní QR kód, v příloze i PDF k vytištění a rozstříhání.</span></li>
+      <li><strong>Vstup</strong><span>U vchodu ukáže vstupenky v mobilu nebo vytištěné, pořadatel je načte telefonem – každou židli zvlášť.</span></li>
     </ol>
   </section>
 
@@ -118,8 +127,9 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <h3>Návštěvník</h3>
         <span class="where">webová stránka · mobil i počítač</span>
         <ul>
-          <li>vybere představení a místa, rezervuje a zaplatí</li>
-          <li>dostane vstupenku e-mailem</li>
+          <li>vybere představení a místa, určí dětská místa, rezervuje a zaplatí</li>
+          <li>může použít slevový kód – jedno místo zdarma za každý kód</li>
+          <li>dostane e-mailem vstupenky – na každou židli jednu, i k vytištění</li>
           <li>může zrušit celou rezervaci nebo jen některá místa</li>
         </ul>
       </article>
@@ -129,7 +139,9 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <ul>
           <li>kontroluje platby ve výpisu a zapisuje, kolik skutečně přišlo</li>
           <li>vrací peníze při zrušení</li>
-          <li>zakládá představení, storno podmínky a VIP hosty s konkrétními místy</li>
+          <li>zakládá představení, storno podmínky a splatnost plateb</li>
+          <li>rozesílá slevové kódy na e-maily</li>
+          <li>ověřuje platby za vstupenky prodané u vchodu</li>
           <li>posílá pozvánky pořadatelům u vchodu</li>
           <li>zve další účetní – každý má vlastní přihlášení</li>
         </ul>
@@ -138,8 +150,8 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <h3>Pořadatel u vchodu</h3>
         <span class="where">scanner · vlastní mobil s pozvánkou</span>
         <ul>
-          <li>načítá vstupenky kamerou telefonu</li>
-          <li>vpouští VIP hosty podle jména</li>
+          <li>načítá vstupenky kamerou telefonu – každou židli zvlášť</li>
+          <li>prodává volná místa přímo u vchodu – zákazník zaplatí QR platbou</li>
           <li>vidí jen představení, na která dostal pozvánku</li>
           <li>odbavuje i při výpadku internetu (podle staženého seznamu)</li>
         </ul>
@@ -168,13 +180,13 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <figure><div class="phone"><img src="03-sekce.jpg" alt="Detail sekce s místy" width="585" height="1266" loading="lazy"></div>
         <figcaption><strong>3. Výběr míst</strong>Řada a číslo na každé židli. Zelená volná, červená vybraná nebo obsazená.</figcaption></figure>
       <figure><div class="phone"><img src="04-formular.jpg" alt="Formulář rezervace" width="585" height="1266" loading="lazy"></div>
-        <figcaption><strong>4. Rezervace</strong>Jméno a e-mail, cena, storno podmínky a informace o ochraně údajů.</figcaption></figure>
+        <figcaption><strong>4. Rezervace</strong>Kolik míst je pro děti 4–17 let, děti do 3 let na klíně, slevové kódy, výsledná cena. Pod tím jméno, e-mail, storno podmínky a ochrana údajů.</figcaption></figure>
       <figure><div class="phone"><img src="05-platba.jpg" alt="Stránka s QR platbou" width="585" height="1770" loading="lazy"></div>
-        <figcaption><strong>5. Platba</strong>QR platba a všechny platební údaje ke zkopírování. Stejné údaje přijdou e-mailem.</figcaption></figure>
-      <figure><div class="phone"><img src="06-vstupenka-storno.jpg" alt="Vstupenka a zrušení míst" width="585" height="1770" loading="lazy"></div>
-        <figcaption><strong>6. Vstupenka a zrušení</strong>Po zaplacení vstupenka. Zde lze zrušit celou rezervaci nebo jen některá místa.</figcaption></figure>
-      <figure><div class="phone"><img src="07-email.jpg" alt="E-mail se vstupenkou" width="630" height="1050" loading="lazy"></div>
-        <figcaption><strong>7. Vstupenka e-mailem</strong>QR kód, představení, jméno a místa. V příloze je událost do kalendáře (udalost.ics) – Gmail i Outlook nabídnou „Přidat do kalendáře“.</figcaption></figure>
+        <figcaption><strong>5. Platba</strong>QR platba a všechny platební údaje ke zkopírování, pod nimi každé místo s druhem a cenou (místo za slevový kód zdarma). Stejné údaje přijdou e-mailem.</figcaption></figure>
+      <figure><div class="phone"><img src="06-vstupenka-storno.jpg" alt="Vstupenky a zrušení míst" width="585" height="3267" loading="lazy"></div>
+        <figcaption><strong>6. Vstupenky a zrušení</strong>Po zaplacení vstupenka pro každé místo a tlačítko na PDF k tisku. Zde lze zrušit celou rezervaci nebo jen některá místa.</figcaption></figure>
+      <figure><div class="phone"><img src="07-email.jpg" alt="E-mail se vstupenkami" width="630" height="2096" loading="lazy"></div>
+        <figcaption><strong>7. Vstupenky e-mailem</strong>Představení, jméno a pro každé místo vlastní QR kód (1 QR kód = 1 židle). V příloze vstupenky.pdf k vytištění – vstupenky pod sebou s čarou na rozstříhání – a událost do kalendáře (udalost.ics).</figcaption></figure>
     </div>
 
     <div class="group-head"><h3>Pořadatel u vchodu</h3><span class="where">mobil · scanner</span></div>
@@ -184,19 +196,23 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <figure><div class="phone"><img src="09-scanner-mimo-cas.jpg" alt="Varování mimo čas odbavení" width="585" height="1266" loading="lazy"></div>
         <figcaption><strong>Hlídání času</strong>Mimo hodinu před a po začátku představení scanner varuje. Odbavit lze jen po potvrzení.</figcaption></figure>
       <figure><div class="phone"><img src="10-scanner-platna.jpg" alt="Platná vstupenka" width="585" height="1266" loading="lazy"></div>
-        <figcaption><strong>Platná vstupenka</strong>Zelená = pustit dál. Ukáže jméno a místa.</figcaption></figure>
+        <figcaption><strong>Platná vstupenka</strong>Zelená = pustit dál. Velké číslo řady a místa, dospělý / dítě, kolik míst z rezervace už prošlo a děti na klíně.</figcaption></figure>
       <figure><div class="phone"><img src="11-scanner-uz-odbaveno.jpg" alt="Vstupenka už použita" width="585" height="1266" loading="lazy"></div>
-        <figcaption><strong>Už odbaveno</strong>Druhé načtení stejné vstupenky ukáže, kdy prošla poprvé.</figcaption></figure>
-      <figure><div class="phone"><img src="12-scanner-vip.jpg" alt="Seznam VIP hostů" width="585" height="1266" loading="lazy"></div>
-        <figcaption><strong>VIP hosté</strong>Vyhledání podle jména, u každého hosta jeho místa a tlačítko Vpustit.</figcaption></figure>
+        <figcaption><strong>Už odbaveno</strong>Druhé načtení stejné vstupenky (stejné židle) ukáže, kdy prošla poprvé.</figcaption></figure>
       <figure><div class="phone"><img src="17-scanner-offline.jpg" alt="Odbavení bez internetu" width="585" height="1266" loading="lazy"></div>
         <figcaption><strong>Bez internetu</strong>Scanner ověřuje podle seznamu staženého předem. Žlutý pruh ukazuje, odkdy je seznam a kolik odbavení čeká na odeslání.</figcaption></figure>
+      <figure><div class="phone"><img src="22-scanner-prodej.jpg" alt="Prodej vstupenek u vchodu" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>Prodej u vchodu</strong>Dokud jsou volná místa, pořadatel je vybere na plánku sekce a určí dětská místa.</figcaption></figure>
+      <figure><div class="phone"><img src="23-scanner-prodej-platba.jpg" alt="QR platba za prodané vstupenky" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>Platba u vchodu</strong>Zákazník naskenuje QR platbu v bankovní aplikaci a ukáže odeslanou platbu. Pořadatel klepne „Zaplaceno – vpustit“ – místa jsou rovnou odbavená.</figcaption></figure>
     </div>
 
     <div class="group-head"><h3>Účetní / správce</h3><span class="where">počítač · správa</span></div>
     <div class="screens-wide">
       <figure><div class="desktop"><img src="13-admin-rezervace.jpg" alt="Seznam rezervací" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>Rezervace</strong>Obsazenost představení, vyhledávání podle VS nebo jména, zápis přijaté částky, zrušení, vracení peněz.</figcaption></figure>
+        <figcaption><strong>Rezervace</strong>Obsazenost představení, vyhledávání podle VS nebo jména, zápis přijaté částky, zrušení, vracení peněz, PDF vstupenek. U každého místa je vidět dětská vstupenka, slevový kód a zda už prošlo. Červená karta upozorní na prodeje u vchodu, u kterých je třeba ověřit, že platba dorazila.</figcaption></figure>
+      <figure><div class="desktop"><img src="21-admin-kody.jpg" alt="Slevové kódy" width="1360" height="860" loading="lazy"></div>
+        <figcaption><strong>Slevové kódy</strong>Zadáte e-maily, každý dostane jeden kód (kdo má dostat víc, zadejte ho víckrát). Je vidět, který kód byl použit a na jaké místo. Nepoužitý kód lze poslat znovu nebo zrušit.</figcaption></figure>
       <figure><div class="desktop"><img src="15-admin-poradatele.jpg" alt="Pozvánky pořadatelů" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>Pořadatelé</strong>Pozvánky pro mobily u vchodu, vždy jen na vybraná představení. Přístup lze kdykoli zrušit.</figcaption></figure>
       <figure><div class="desktop"><img src="18-admin-konflikty.jpg" alt="Konflikty z odbavení bez internetu" width="1360" height="860" loading="lazy"></div>
@@ -205,27 +221,28 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <figcaption><strong>Účetní</strong>Pozvání další účetní e-mailem, stav pozvánek, nové heslo při zapomenutí, vypnutí účtu.</figcaption></figure>
       <figure><div class="desktop"><img src="20-pozvanka-heslo.jpg" alt="Vytvoření hesla z pozvánky" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>Pozvánka pro účetní</strong>Odkaz z e-mailu: pozvaná si vytvoří heslo, přihlašovacím jménem je její e-mail.</figcaption></figure>
-      <figure><div class="desktop"><img src="14-admin-vip.jpg" alt="VIP hosté" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>VIP hosté</strong>Hosté zdarma pro každé představení. Místa se vybírají na plánku – šedá obsadily rezervace, zlatá jiní VIP. Je vidět, kdo už přišel.</figcaption></figure>
       <figure><div class="desktop"><img src="16-admin-terminy.jpg" alt="Nastavení představení" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>Představení a storno</strong>Datum a čas každého představení a jeho storno poplatky. Po první rezervaci jsou zamčené.</figcaption></figure>
+        <figcaption><strong>Splatnost, představení a storno</strong>Nahoře splatnost plateb: od zvoleného data a hodiny mají nové rezervace kratší (nebo delší) lhůtu na zaplacení. Pod tím datum a čas každého představení a jeho storno poplatky – po první rezervaci jsou zamčené.</figcaption></figure>
     </div>
   </section>
 
   <section aria-labelledby="rules">
     <h2 id="rules">Důležitá pravidla</h2>
     <div class="rules">
-      <div class="rule"><strong>Kdo nezaplatí, přijde o místa</strong><p>Na platbu jsou 3 dny (nejpozději do začátku představení). Den předem přijde připomínka. Když platba nedorazí ani 2 dny po splatnosti, místa se uvolní.</p></div>
+      <div class="rule"><strong>Ceny</strong><p>Dospělí od 18 let 300 Kč, děti 4–17 let 150 Kč. Děti do 3 let sedí na klíně zdarma – nemají vlastní místo ani vstupenku, v rezervaci se jen uvedou.</p></div>
+      <div class="rule"><strong>Slevové kódy</strong><p>Kód platí na libovolné představení a jen jednou. Odečte cenu jednoho místa – vždy nejdražšího (nejdřív dospělého, pak dětského). Kódů lze v rezervaci použít víc, nejvýše jeden na místo. Když kódy pokryjí celou cenu, rezervace je potvrzená hned. Při stornu se za místo zdarma nic nevrací a kód zůstává použitý.</p></div>
+      <div class="rule"><strong>1 QR kód = 1 židle</strong><p>Každé místo má vlastní vstupenku. Rodina si je může vytisknout, rozstříhat a rozdat – u vchodu se načítá každá zvlášť a scanner ukáže, zda jde o dospělého, nebo dítě.</p></div>
+      <div class="rule"><strong>Prodej u vchodu</strong><p>Dokud jsou volná místa, pořadatel je prodá přímo na místě: zákazník zaplatí QR platbou v bankovní aplikaci, pořadatel po ukázání odeslané platby vpustí. Peníze pak ve výpisu ověří účetní („Platba dorazila“). Prodej potřebuje internet.</p></div>
+      <div class="rule"><strong>Kdo nezaplatí, přijde o místa</strong><p>Na platbu jsou 3 dny (nejpozději do začátku představení). Správce může od zvoleného data a hodiny nastavit jinou splatnost v hodinách – platí pro rezervace vytvořené od té doby. Den předem přijde připomínka. Když platba nedorazí ani 2 dny po splatnosti, místa se uvolní.</p></div>
       <div class="rule"><strong>Platby potvrzuje člověk</strong><p>Aplikace není napojená na banku. Účetní páruje platby podle variabilního symbolu a zapíše, kolik skutečně přišlo. Vstupenka proto přijde až po potvrzení.</p></div>
       <div class="rule"><strong>Málo nebo moc peněz</strong><p>Když přijde méně, návštěvník dostane e-mail, kolik má doplatit, a vstupenka přijde po doplacení. Přeplatek se vrací na účet, ze kterého platba přišla.</p></div>
       <div class="rule"><strong>Zrušení a storno</strong><p>Návštěvník ruší sám přes odkaz z e-mailu, celou rezervaci i jednotlivá místa. Poplatek podle storno podmínek představení, zbytek se do 14 dnů vrátí na účet, ze kterého platba přišla.</p></div>
-      <div class="rule"><strong>Vstupenku nejde padělat</strong><p>QR kód je elektronicky podepsaný. Pořadatel vždy vidí aktuální stav: zaplaceno, zrušeno nebo už prošel.</p></div>
+      <div class="rule"><strong>Vstupenku nejde padělat</strong><p>QR kód je elektronicky podepsaný. Pořadatel vždy vidí aktuální stav: zaplaceno, zrušeno (i jednotlivé zrušené místo) nebo už prošel.</p></div>
       <div class="rule"><strong>Vstupenka platí jen na své představení</strong><p>Kdo přijde jiný den, scanner ukáže „Jiný termín“ a dotyčného nepustí jako odbaveného.</p></div>
       <div class="rule"><strong>Bez internetu u vchodu</strong><p>Scanner si s internetem průběžně stahuje seznam vstupenek. Když spojení vypadne, ověřuje podle něj (pozná i zrušené a už použité vstupenky) a odbavení odešle, až se spojení vrátí. Mobily bez spojení o sobě navzájem nevědí – kopii stejné vstupenky na dvou vchodech zjistí systém až dodatečně.</p></div>
       <div class="rule"><strong>Odbavení jen v pravý čas</strong><p>Od hodiny před do hodiny po začátku představení. Jindy scanner varuje, aby se omylem neodbavovalo jiné představení.</p></div>
       <div class="rule"><strong>Čas a storno podmínky se nemění</strong><p>Jakmile má představení první rezervaci, nelze už změnit jeho začátek ani storno podmínky – platí to, za co si lidé místa koupili.</p></div>
       <div class="rule"><strong>Platba, která už nejde použít</strong><p>Peníze po propadnutí rezervace ji obnoví, pokud představení ještě nezačalo a místa jsou volná. Jinak – a také u zrušené rezervace nebo platby poslané dvakrát – se peníze vrací na účet plátce a návštěvník dostane e-mail.</p></div>
-      <div class="rule"><strong>VIP hosté</strong><p>Neplatí a nemají vstupenku, ale mají přidělená konkrétní místa – na webu se ukazují jako obsazená. Pořadatel je najde na seznamu podle jména.</p></div>
       <div class="rule"><strong>Každá účetní má vlastní přihlášení</strong><p>Správce pozve účetní e-mailem, ta si na odkazu (platí 7 dní) vytvoří heslo, přihlašuje se svým e-mailem. Kdo heslo zapomene, dostane nový odkaz. Účet lze kdykoli vypnout – dotyčná je hned odhlášená. Všichni správci mají stejná práva.</p></div>
       <div class="rule"><strong>Ochrana proti robotům</strong><p>Formulář chrání neviditelná kontrola – návštěvník nic nevyplňuje ani nevybírá obrázky, prohlížeč se ověří sám na pozadí.</p></div>
       <div class="rule"><strong>Ochrana osobních údajů</strong><p>Ukládá se jen jméno a e-mail. 30 dní po posledním představení se automaticky smažou – u rezervací, kde se ještě vrací peníze, až po jejich vrácení.</p></div>
@@ -236,15 +253,16 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
     <h2 id="launch">Co je potřeba před spuštěním</h2>
     <ul class="checklist">
       <li>Bankovní účet pro platby a specifický symbol.</li>
-      <li>Přístup k odesílání e-mailů (SMTP): server, port, e-mailová adresa odesílatele a její heslo.</li>
+      <li>Přístup k odesílání e-mailů (SMTP): server, port, e-mailová adresa odesílatele a její heslo – zapisují se do souboru .env na serveru.</li>
       <li>Kontaktní e-mail a telefon pořadatelů – zobrazí se na webu a v každém e-mailu, odpovědi na e-maily půjdou na tento kontakt.</li>
       <li>Data a časy všech představení a jejich storno podmínky – musí být hotové před spuštěním prodeje, po první rezervaci je už nelze změnit.</li>
       <li>Adresa místa konání a přibližná délka představení – objeví se v události v kalendáři.</li>
-      <li>Seznam VIP hostů pro každé představení a jejich místa.</li>
+      <li>Seznam e-mailů, kam poslat slevové kódy (místo dřívějších VIP hostů).</li>
+      <li>Od kdy zkrátit splatnost plateb (např. poslední týden před představením 24 hodin).</li>
       <li>Jména pořadatelů u vchodu a na která představení přijdou (dostanou pozvánku).</li>
       <li>Kdo bude potvrzovat platby a vracet peníze – jména a e-maily účetních, kterým přijde pozvánka. Po jejich pozvání lze hlavní heslo z konfigurace smazat.</li>
       <li>Vyzkoušet signál a Wi-Fi přímo v kostele. Před představením otevřít scanner na každém mobilu s internetem – stáhne si seznam vstupenek pro případ výpadku.</li>
-      <li>Zkušební rezervace „naostro“: rezervace → platba → vstupenka → načtení u vchodu.</li>
+      <li>Zkušební rezervace „naostro“: rezervace → platba → vstupenky → vytištění PDF → načtení u vchodu; a zkušební prodej u vchodu s QR platbou.</li>
     </ul>
     <p class="note">Snímky obrazovek ukazují zkušební data – jména a rezervace jsou smyšlené.</p>
   </section>

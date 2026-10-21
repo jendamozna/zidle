@@ -355,7 +355,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .hint { margin:0; font-size:.85rem; color:var(--ink-2); }
   .settings label.wide { max-width:none; }
   textarea { font:inherit; padding:8px 12px; border-radius:10px; border:1px solid var(--wall); background:#fff; resize:vertical; }
-  .code { font-family:ui-monospace, monospace; letter-spacing:.05em; }
+  .code { font-family:ui-monospace, monospace; letter-spacing:.05em; white-space:nowrap; }
   .kind { display:inline-block; padding:0 6px; border-radius:6px; background:#efe9df; font-size:.72rem; color:var(--ink-2); }
   .kind.child { background:#dfe9f5; color:#1f3f6b; } .kind.free { background:#dcefd9; color:#1f5a2c; }
   @media (max-width: 760px) {
@@ -790,7 +790,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <?php endif ?>
     <?php $onsite = db_query("SELECT COUNT(*) n, COALESCE(SUM(amount), 0) amount FROM reservations WHERE sold_by IS NOT NULL AND status = 'paid' AND payment_checked_at IS NULL")->fetch(); ?>
     <?php if ($onsite['n'] > 0): ?>
-      <a class="card attention" href="admin.php?status=onsite">Na místě – ověřit platbu<strong><?= $kc($onsite['amount']) ?></strong><?= (int) $onsite['n'] ?> prodejů</a>
+      <a class="card attention" href="admin.php?status=onsite">Na místě – ověřit platbu<strong><?= $kc($onsite['amount']) ?></strong><?= ($n = (int) $onsite['n']) ?> <?= $n === 1 ? 'prodej' : ($n < 5 ? 'prodeje' : 'prodejů') ?></a>
     <?php endif ?>
   </div>
 
