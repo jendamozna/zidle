@@ -75,12 +75,59 @@ function reservation_seat_items(array $r): array
 {
     $seats = seat_list((string) $r['seats']);
     usort($seats, 'compare_seat_ids');
+    $names = ticket_names($r);
     return array_map(static fn ($seat) => [
         'seat' => $seat,
         'kind' => seat_kind($r, $seat),
         'price' => seat_value($r, $seat),
         'free' => seat_is_free($r, $seat),
+        'holder' => $names[$seat] ?? null,
     ], $seats);
+}
+
+/** Names the customer put on the seat tickets: [seat => name]. */
+function ticket_names(array $r): array
+{
+    $names = json_decode((string) ($r['ticket_names'] ?? '{}'), true);
+    return is_array($names) ? array_filter($names, static fn ($n, $s) => is_string($n) && $n !== '' && is_string($s), ARRAY_FILTER_USE_BOTH) : [];
+}
+
+/** Name shown on the ticket of the seat: the customer's name for it, else the reservation name. */
+function ticket_holder(array $r, string $seat): string
+{
+    return ticket_names($r)[$seat] ?? trim($r['first_name'] . ' ' . $r['last_name']);
+}
+
+/**
+ * Customer sets names on the seat tickets ([seat => name], '' = back to the reservation name).
+ * Only current seats, while the reservation is pending or paid and the run has not started.
+ * Returns an error message or null.
+ */
+function save_ticket_names(array $r, array $names): ?string
+{
+    $run = run_by_id((int) $r['run_id']);
+    if (!in_array($r['status'], ['pending', 'paid'], true) || $run === null || run_started($run)) {
+        return 'Jména na vstupenkách už nelze měnit.';
+    }
+    $seats = seat_list((string) $r['seats']);
+    $current = ticket_names($r);
+    foreach ($names as $seat => $name) {
+        $name = trim(preg_replace('/[|\p{Cc}\s]+/u', ' ', (string) $name) ?? '');
+        if (!in_array((string) $seat, $seats, true)) {
+            return 'Vyberte místa z této rezervace.';
+        }
+        if (mb_strlen($name) > 100) {
+            return 'Jméno na vstupence může mít nejvýše 100 znaků.';
+        }
+        if ($name === '') {
+            unset($current[(string) $seat]);
+        } else {
+            $current[(string) $seat] = $name;
+        }
+    }
+    db()->prepare('UPDATE reservations SET ticket_names = ? WHERE id = ?')
+        ->execute([json_encode((object) $current, JSON_UNESCAPED_UNICODE), $r['id']]);
+    return null;
 }
 
 /** "2 dospělí, 1 dítě 4–17 let" for e-mails. */

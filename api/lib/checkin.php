@@ -69,7 +69,8 @@ function verify_ticket(string $code, array $run, array $access, bool $confirmOut
             'seat' => $seat,
             'kind' => in_array($seat, $seats, true) || in_array($seat, seat_list((string) $r['cancelled_seats']), true)
                 ? seat_kind($r, $seat) : $ticket['kind'],
-            'name' => trim($r['first_name'] . ' ' . $r['last_name']) ?: $ticket['name'],
+            'name' => ticket_holder($r, $seat) ?: $ticket['name'],
+            'reservedBy' => trim($r['first_name'] . ' ' . $r['last_name']),
             'seats' => $seats,
             'count' => count($seats),
             'checkedIn' => count(array_intersect(array_keys($checkins), $seats)),

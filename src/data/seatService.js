@@ -49,6 +49,10 @@ export const ticketsPdfUrl = (token) => `${API_URL}/tickets.php?token=${encodeUR
 
 export const fetchReservation = (token) => request(`reservations.php?token=${encodeURIComponent(token)}`);
 
+/** Names on the seat tickets ({seat: name}, '' = the reservation name); returns the reservation. */
+export const saveTicketNames = (token, names) =>
+  request('ticket-names.php', { method: 'POST', body: JSON.stringify({ token, names }) });
+
 /** Customer cancellation of the given seats (null = whole reservation). */
 export const cancelReservation = (token, seats = null) =>
   request('cancel.php', { method: 'POST', body: JSON.stringify({ token, seats }) });

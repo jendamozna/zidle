@@ -18,7 +18,6 @@ function ticket_pdf(array $r): string
     $count = count($items);
     $run = run_by_id((int) $r['run_id']);
     $runText = $run ? run_label($run) : '–';
-    $name = trim($r['first_name'] . ' ' . $r['last_name']);
 
     $tickets = '';
     foreach ($items as $n => $item) {
@@ -33,7 +32,8 @@ function ticket_pdf(array $r): string
             . '<div class="seat">' . $h(section_name($section)) . '</div>'
             . '<div class="place">řada <b>' . $h($row) . '</b> &nbsp; místo <b>' . $h($seat) . '</b></div>'
             . '<div class="kind">' . $h(SEAT_KIND_LABELS[$item['kind']]) . '</div>'
-            . '<div class="meta">' . $h($name) . ' · VS ' . $h($r['variable_symbol']) . ' · vstupenka ' . ($n + 1) . ' z ' . $count . '</div>'
+            . '<div class="holder">' . $h(ticket_holder($r, $item['seat'])) . '</div>'
+            . '<div class="meta">VS ' . $h($r['variable_symbol']) . ' · vstupenka ' . ($n + 1) . ' z ' . $count . '</div>'
             . '</td></tr></table>';
     }
 
@@ -51,6 +51,7 @@ function ticket_pdf(array $r): string
         . '.seat { margin-top: 4mm; font-size: 15pt; font-weight: bold; }'
         . '.place { font-size: 15pt; }'
         . '.kind { margin-top: 2mm; font-size: 11pt; }'
+        . '.holder { margin-top: 2mm; font-size: 11pt; font-weight: bold; }'
         . '.meta { margin-top: 2mm; font-size: 8.5pt; color: #6b6256; }'
         . '</style></head><body>'
         . '<p class="note">Rozstříhejte podle čárkované čáry. Každá vstupenka platí pro jedno místo – při vstupu se načte její QR kód.</p>'

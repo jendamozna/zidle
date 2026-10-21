@@ -960,8 +960,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
               </form>
             </details></td>
           <td class="seats"><?php $checkedIn = reservation_checkins((int) $r['id']);
+              $holders = ticket_names($r);
               foreach (seat_list($r['seats']) as $seat): ?>
-              <?= $h($seat) ?><?= seat_kind($r, $seat) === 'child' ? ' <span class="kind child">dítě</span>' : '' ?><?= seat_is_free($r, $seat) ? ' <span class="kind free">kód</span>' : '' ?><?= isset($checkedIn[$seat]) ? ' ✓' : '' ?><br>
+              <?= $h($seat) ?><?= seat_kind($r, $seat) === 'child' ? ' <span class="kind child">dítě</span>' : '' ?><?= seat_is_free($r, $seat) ? ' <span class="kind free">kód</span>' : '' ?><?= isset($checkedIn[$seat]) ? ' ✓' : '' ?><?= isset($holders[$seat]) ? ' <small>' . $h($holders[$seat]) . '</small>' : '' ?><br>
             <?php endforeach ?>
             <?php if ($r['cancelled_seats'] !== ''): ?><br><small>zrušená místa: <?= $h(str_replace(',', ', ', $r['cancelled_seats'])) ?></small><?php endif ?>
             <?php if (in_array($r['status'], ['pending', 'paid'], true) && (int) $r['seat_count'] > 1): ?>

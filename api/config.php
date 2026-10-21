@@ -1,7 +1,6 @@
 <?php
-// Default configuration. Override values (first wins) in config.local.php (not committed),
-// environment variables of the same name, or api/.env (KEY=value lines, not committed –
-// e.g. the SMTP settings, see .env.example).
+// Default configuration. Override values in config.local.php (not committed)
+// or through environment variables of the same name.
 
 return (static function (): array {
     $defaults = [
@@ -79,27 +78,10 @@ return (static function (): array {
 
     $local = is_file(__DIR__ . '/config.local.php') ? require __DIR__ . '/config.local.php' : [];
 
-    // api/.env: KEY=value per line; # comments, optional "export " and quotes around the value.
-    $dotenv = [];
-    $lines = is_file(__DIR__ . '/.env') ? file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : false;
-    foreach ($lines ?: [] as $line) {
-        if (preg_match('/^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$/', $line, $m)) {
-            $value = $m[2];
-            if (preg_match('/^"(.*)"$/', $value, $q)) {
-                $value = stripcslashes($q[1]);
-            } elseif (preg_match("/^'(.*)'$/", $value, $q)) {
-                $value = $q[1];
-            } else {
-                $value = preg_replace('/\s+#.*$/', '', $value) ?? $value;
-            }
-            $dotenv[$m[1]] = $value;
-        }
-    }
-
     $config = [];
     foreach ($defaults as $key => $value) {
         $env = getenv($key);
-        $config[$key] = $local[$key] ?? ($env !== false ? $env : ($dotenv[$key] ?? $value));
+        $config[$key] = $local[$key] ?? ($env !== false ? $env : $value);
     }
 
     return $config;

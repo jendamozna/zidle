@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   cancelled_seats TEXT         NOT NULL DEFAULT '' COMMENT 'Seats cancelled individually, comma separated',
   child_seats     TEXT         NOT NULL DEFAULT '' COMMENT 'Seats with a child ticket (4–17 years), comma separated; the others are adult',
   free_seats      TEXT         NOT NULL DEFAULT '' COMMENT 'Seats paid by a discount code (price 0), comma separated',
+  ticket_names    TEXT         NOT NULL DEFAULT '{}' COMMENT 'JSON {seat: name on the ticket} set by the customer; others show the reservation name',
   seat_count      SMALLINT UNSIGNED NOT NULL,
   adult_price     INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK per adult seat when the reservation was made',
   child_price     INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK per child seat when the reservation was made',

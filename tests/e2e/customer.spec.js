@@ -111,6 +111,13 @@ test('a reservation paid by discount codes is confirmed at once with one ticket 
 
   await expect(page.getByText('Zaplaceno').first()).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.ticket-card img')).toHaveCount(2);
+
+  // Own names on the tickets.
+  await page.getByRole('button', { name: 'Jména na vstupenkách' }).click();
+  await page.locator('.names-form input').first().fill('Petr Testový');
+  await page.getByRole('button', { name: 'Uložit jména' }).click();
+  await expect(page.getByText('QR kódy i PDF k tisku už jména obsahují.')).toBeVisible();
+  await expect(page.locator('.ticket-card').first()).toContainText('Petr Testový');
   const pdf = await request.get(await page.getByRole('link', { name: 'PDF k tisku' }).getAttribute('href'));
   expect(pdf.headers()['content-type']).toBe('application/pdf');
   expect((await pdf.body()).subarray(0, 5).toString()).toBe('%PDF-');

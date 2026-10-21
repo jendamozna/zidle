@@ -17,6 +17,7 @@ const check = (ok, message) => {
 const reservation = {
   id: 42, variable_symbol: '1234567890', seat_count: 2, first_name: 'Jana', last_name: 'Nováková',
   seats: 'ML-1-1,ML-1-2', child_seats: 'ML-1-2', free_seats: '', adult_price: 300, child_price: 150,
+  ticket_names: JSON.stringify({ 'ML-1-2': 'Petr Novák' }),
 };
 const codes = php(
   `require 'api/lib/bootstrap.php'; $r = json_decode(${JSON.stringify(JSON.stringify(reservation))}, true);` +
@@ -28,6 +29,9 @@ check(
     adult.name === 'Jana Nováková',
   `adult seat ticket from PHP decoded by the scanner: ${codes[0]}`,
 );
-check(child?.seat === 'ML-1-2' && child.kind === 'child', `child seat ticket from PHP decoded by the scanner: ${codes[1]}`);
+check(
+  child?.seat === 'ML-1-2' && child.kind === 'child' && child.name === 'Petr Novák',
+  `child seat ticket with its own name decoded by the scanner: ${codes[1]}`,
+);
 
 process.exit(failed ? 1 : 0);

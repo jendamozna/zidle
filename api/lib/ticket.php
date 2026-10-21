@@ -33,10 +33,10 @@ function ticket_signature(string $payload): string
     return substr(rtrim(strtr(base64_encode($mac), '+/', '-_'), '='), 0, 22);
 }
 
-function ticket_name(array $r): string
+/** Name in the ticket code of the seat (the name on the ticket, without "|" and control characters). */
+function ticket_name(array $r, string $seat): string
 {
-    $name = trim($r['first_name'] . ' ' . $r['last_name']);
-    return trim(preg_replace('/[|\p{Cc}]+/u', ' ', $name) ?? '');
+    return trim(preg_replace('/[|\p{Cc}]+/u', ' ', ticket_holder($r, $seat)) ?? '');
 }
 
 /** Ticket code of one seat of the reservation. */
@@ -48,7 +48,7 @@ function ticket_code(array $r, string $seat): string
         $r['variable_symbol'],
         $seat,
         TICKET_KINDS[seat_kind($r, $seat)],
-        ticket_name($r),
+        ticket_name($r, $seat),
     ]);
     return $payload . '|' . ticket_signature($payload);
 }
@@ -118,7 +118,8 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         '',
         run_line($r),
         'Vstupenky: ' . seat_kinds_summary($r),
-        ...array_map(static fn ($i) => '- ' . seat_label($i['seat']) . ' – ' . SEAT_KIND_LABELS[$i['kind']], $items),
+        ...array_map(static fn ($i) => '- ' . seat_label($i['seat']) . ' – ' . SEAT_KIND_LABELS[$i['kind']]
+            . ($i['holder'] !== null ? ' – ' . $i['holder'] : ''), $items),
         'Variabilní symbol: ' . $r['variable_symbol'],
         '',
         'Každé místo má vlastní QR kód (1 QR kód = 1 židle). ' . $printNote,
@@ -132,6 +133,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         $inline[] = ['cid' => $cid, 'data' => ticket_png(ticket_code($r, $item['seat'])), 'name' => "vstupenka-{$item['seat']}.png", 'type' => 'image/png'];
         $tickets .= '<div style="border-top:1px dashed #d9cfbf;padding:20px 0 16px">'
             . '<img src="cid:' . $cid . '" alt="QR kód vstupenky ' . $h($item['seat']) . '" width="220" height="220" style="display:block;margin:0 auto 12px;width:220px;height:220px">'
+            . ($item['holder'] !== null ? '<p style="margin:0 0 4px;font-size:16px">' . $h($item['holder']) . '</p>' : '')
             . '<p style="margin:0 0 4px;font-size:18px;font-weight:bold">' . $h(seat_label($item['seat'])) . '</p>'
             . '<p style="margin:0;color:#6b6256">' . $h(SEAT_KIND_LABELS[$item['kind']]) . ' · vstupenka ' . ($n + 1) . ' z ' . $count . '</p>'
             . '</div>';

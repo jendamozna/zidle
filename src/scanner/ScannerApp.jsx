@@ -176,6 +176,9 @@ function ResultCard({ scan, onNext }) {
               </span>
             )}
           </div>
+          {ticket.reservedBy && ticket.reservedBy !== ticket.name && (
+            <p className="muted small">Rezervace: {ticket.reservedBy}</p>
+          )}
           {result === 'seat_cancelled' && <p className="small">Toto místo bylo z rezervace zrušeno, ostatní místa platí.</p>}
           {result === 'unknown' && (
             <p className="small">Vstupenka není v seznamu tohoto termínu – může být na jiný termín, nebo neplatná.</p>

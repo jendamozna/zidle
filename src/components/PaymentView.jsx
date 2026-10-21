@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { SECTION_BY_ID, compareSeatIds, formatCzk, parseSeatId } from '../data/layout.js';
-import { cancelReservation, ticketsPdfUrl } from '../data/seatService.js';
+import { cancelReservation, saveTicketNames, ticketsPdfUrl } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
 import { KIND_LABELS } from '../pricing.js';
 import { stornoText } from '../storno.js';
@@ -217,6 +217,7 @@ function TicketCard({ ticket }) {
     <li className={`ticket-card ${ticket.checkedInAt ? 'is-used' : ''}`}>
       {qr ? <img src={qr} alt={`QR kód vstupenky ${ticket.seat}`} width="200" height="200" /> : <div className="qr-placeholder" />}
       <div>
+        {ticket.holder && <span className="ticket-holder">{ticket.holder}</span>}
         <strong>{SECTION_BY_ID[sectionId]?.short ?? sectionId}</strong>
         <span>
           ř. {row} · m. {seat}
@@ -227,6 +228,80 @@ function TicketCard({ ticket }) {
         </span>
       </div>
     </li>
+  );
+}
+
+/** The customer's own names on the seat tickets (empty = the reservation name). */
+function TicketNames({ reservation, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [names, setNames] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const defaultName = `${reservation.firstName} ${reservation.lastName}`;
+
+  const start = () => {
+    setNames(Object.fromEntries(reservation.tickets.map((t) => [t.seat, t.holder ?? ''])));
+    setSaved(false);
+    setOpen(true);
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      onChange(await saveTicketNames(reservation.token, names));
+      setOpen(false);
+      setSaved(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <div className="names-box">
+        <button type="button" className="btn btn-ghost" onClick={start}>
+          Jména na vstupenkách
+        </button>
+        {saved && (
+          <span className="muted small">
+            Uloženo.{reservation.status === 'paid' && ' QR kódy i PDF k tisku už jména obsahují.'}
+          </span>
+        )}
+      </div>
+    );
+  }
+  return (
+    <form className="names-form" onSubmit={submit}>
+      <strong>Jména na vstupenkách</strong>
+      <p className="muted small">Nevyplněné vstupenky ponesou jméno {defaultName}.</p>
+      {reservation.tickets.map((t) => (
+        <label key={t.seat} className="field">
+          <span>{seatLabel(t.seat)}</span>
+          <input
+            value={names[t.seat] ?? ''}
+            onChange={(e) => setNames((prev) => ({ ...prev, [t.seat]: e.target.value }))}
+            placeholder={defaultName}
+            maxLength={100}
+            disabled={busy}
+            aria-label={`Jméno na vstupence ${seatLabel(t.seat)}`}
+          />
+        </label>
+      ))}
+      {error && <p className="form-error">{error}</p>}
+      <div className="cancel-actions">
+        <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)} disabled={busy}>
+          Zpět
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? 'Ukládám…' : 'Uložit jména'}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -328,7 +403,10 @@ export default function PaymentView({ reservation, onChange, onBack }) {
           <ul className="pay-seats">
             {reservation.tickets.map((t) => (
               <li key={t.seat}>
-                <span>{seatLabel(t.seat)}</span>
+                <span>
+                  {seatLabel(t.seat)}
+                  {t.holder && <small className="muted"> · {t.holder}</small>}
+                </span>
                 <span className="muted">
                   {KIND_LABELS[t.kind]} · {t.free ? 'kód, zdarma' : formatCzk(t.price)}
                 </span>
@@ -336,6 +414,7 @@ export default function PaymentView({ reservation, onChange, onBack }) {
             ))}
           </ul>
           <p className="muted small">{reservation.email}</p>
+          {reservation.ticketNamesEditable && <TicketNames reservation={reservation} onChange={onChange} />}
 
           {status === 'paid' && <Tickets reservation={reservation} />}
           <CancellationInfo reservation={reservation} />

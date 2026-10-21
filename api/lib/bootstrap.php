@@ -238,6 +238,8 @@ function reservation_payload(array $r): array
         'email' => $r['email'],
         'seats' => $r['seats'] === '' ? [] : explode(',', $r['seats']),
         'tickets' => $tickets,
+        'ticketNamesEditable' => in_array($r['status'], ['pending', 'paid'], true)
+            && ($run = run_by_id((int) $r['run_id'])) !== null && !run_started($run),
         'amount' => (int) $r['amount'],
         'createdAt' => iso_time($r['created_at']),
         'expiresAt' => iso_time($r['expires_at']),

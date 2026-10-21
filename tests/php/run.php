@@ -384,6 +384,22 @@ test('one ticket code per seat round-trips with its kind and rejects tampering',
     same(true, count(array_unique(array_column($payload['tickets'], 'code'))) === 2, 'codes differ');
 });
 
+test('customers put names on seat tickets; the code, payload and PDF carry them', function (): void {
+    $id = reservation(['BC-3-1', 'BC-3-2'], 'paid', 1, 'Jménová');
+    same(null, save_ticket_names(row($id), ['BC-3-2' => '  Petr   Novák ', 'BC-3-1' => '']), 'saved');
+    $r = row($id);
+    same(['BC-3-2' => 'Petr Novák'], ticket_names($r), 'stored, spaces normalized');
+    same(['Test Jménová', 'Petr Novák'], [ticket_holder($r, 'BC-3-1'), ticket_holder($r, 'BC-3-2')], 'holders');
+    same('Petr Novák', parse_ticket_code(ticket_code($r, 'BC-3-2'))['name'] ?? null, 'name in the QR code');
+    same([null, 'Petr Novák'], array_column(reservation_payload($r)['tickets'], 'holder'), 'payload');
+    same('Vyberte místa z této rezervace.', save_ticket_names($r, ['ML-1-1' => 'X']), 'foreign seat');
+    same('Jméno na vstupence může mít nejvýše 100 znaků.', save_ticket_names($r, ['BC-3-1' => str_repeat('x', 101)]), 'too long');
+    save_ticket_names($r, ['BC-3-2' => '']);
+    same([], ticket_names(row($id)), 'back to the reservation name');
+    $past = reservation(['BC-3-3'], 'paid', 2);
+    same('Jména na vstupenkách už nelze měnit.', save_ticket_names(row($past), ['BC-3-3' => 'X']), 'run started');
+});
+
 test('the printable PDF holds the tickets of the current seats', function (): void {
     $r = row(reservation(['BC-1-3', 'BC-1-4', 'BC-1-5', 'BC-1-6', 'BC-1-7'], 'paid', 1, 'Tisková', ['BC-1-7']));
     $pdf = ticket_pdf($r);

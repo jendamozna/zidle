@@ -1174,7 +1174,7 @@ h2 {
 
 .pay-seats li span:first-child {
   font-weight: 600;
-  flex: none;
+  min-width: 0;
 }
 
 .pay-seats li span:last-child {
@@ -1246,6 +1246,27 @@ h2 {
 .ticket-card div {
   display: flex;
   flex-direction: column;
+}
+
+.ticket-holder {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.names-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.names-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
 }
 
 .ticket-card.is-used {
