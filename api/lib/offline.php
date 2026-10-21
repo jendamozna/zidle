@@ -74,7 +74,7 @@ function offline_scan_time(mixed $at): DateTimeImmutable
  */
 function apply_offline_scans(array $access, array $run, array $events): array
 {
-    $by = mb_substr($access['name'], 0, 100 - strlen(OFFLINE_SUFFIX)) . OFFLINE_SUFFIX;
+    $by = mb_substr($access['name'], 0, 200 - strlen(OFFLINE_SUFFIX)) . OFFLINE_SUFFIX;
     $results = [];
     $conflicts = 0;
     foreach (array_slice($events, 0, 1000) as $event) {

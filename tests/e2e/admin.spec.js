@@ -22,7 +22,6 @@ test('accountant records a partial payment and then the rest', async ({ page }) 
 test('admin invites an accountant, who sets a password, sees only reservations and signs in with the e-mail', async ({ page, browser }) => {
   await adminLogin(page);
   await page.goto('http://127.0.0.1:8000/api/admin.php?view=users');
-  await page.fill('input[name=name]', 'Jana Účetní');
   await page.fill('input[name=email]', 'jana.ucetni@example.cz');
   await page.locator('form', { hasText: 'Pozvat uživatele' }).getByLabel('Účetní').check();
   await page.getByRole('button', { name: 'Poslat pozvánku' }).click();
@@ -42,8 +41,8 @@ test('admin invites an accountant, who sets a password, sees only reservations a
   await jana.fill('input[name=password]', 'janino-heslo-1');
   await jana.fill('input[name=password_again]', 'janino-heslo-1');
   await jana.getByRole('button', { name: 'Uložit heslo a přihlásit' }).click();
-  await expect(jana.locator('.flash')).toContainText('Vítejte, Jana Účetní.');
-  await expect(jana.locator('.me')).toContainText('Jana Účetní');
+  await expect(jana.locator('.flash')).toContainText('Vítejte. Heslo je nastavené, příště se přihlásíte e-mailem jana.ucetni@example.cz.');
+  await expect(jana.locator('.me')).toContainText('jana.ucetni@example.cz');
   await expect(jana.locator('.tabs a')).toHaveText(['Rezervace']);
   await jana.goto('http://127.0.0.1:8000/api/admin.php?view=users');
   await expect(jana.locator('.tabs a.active')).toHaveText('Rezervace');

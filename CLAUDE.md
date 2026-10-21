@@ -34,8 +34,8 @@ There are exactly two documents – do not add others:
   `seats.php` / `organizer.php`). Never hard-code sections in `src/`.
 - Ticket QR format exists twice – `api/lib/ticket.php` and
   `src/scanner/ticket.js` – keep them identical.
-- Database changes: update `db/schema.sql` **and** add a new numbered,
-  re-runnable migration in `db/migrations/`.
+- Database changes: update `db/schema.sql` only. The app is not deployed yet,
+  so there are no migrations – databases are created from the schema.
 - CI (`.github/workflows/ci.yml`) must stay green: before pushing run the
   checks listed in `docs/DEVELOPER.md` §21 (lint, build, consistency,
   PHPStan, PHP integration tests, Playwright). Changed money, seat or VIP

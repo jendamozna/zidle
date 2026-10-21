@@ -57,16 +57,10 @@ jobs:
         run: find api tests -name '*.php' -not -path 'api/vendor/*' -print0 | xargs -0 -n1 php -l
       - name: PHPStan
         run: api/vendor/bin/phpstan analyse -c phpstan.neon --no-progress --error-format=github
-      - name: Schema and migrations apply cleanly (twice)
+      - name: Schema applies cleanly
         run: |
-          mysql -h127.0.0.1 -uroot -proot -e 'DROP DATABASE IF EXISTS zidle_migrate; CREATE DATABASE zidle_migrate CHARACTER SET utf8mb4'
-          mysql -h127.0.0.1 -uroot -proot zidle_migrate < db/schema.sql
-          for round in 1 2; do
-            for m in db/migrations/*.sql; do
-              echo "round $round: $m"
-              mysql -h127.0.0.1 -uroot -proot zidle_migrate < "$m"
-            done
-          done
+          mysql -h127.0.0.1 -uroot -proot -e 'DROP DATABASE IF EXISTS zidle_schema; CREATE DATABASE zidle_schema CHARACTER SET utf8mb4'
+          mysql -h127.0.0.1 -uroot -proot zidle_schema < db/schema.sql
       - name: Integration tests (payments, cancellation, discount codes, GDPR, tickets)
         run: php tests/php/run.php
 

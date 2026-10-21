@@ -114,7 +114,6 @@ test('an invited Odbavovatel sets a password and lands in the scanner; Správa i
   const admin = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   await adminLogin(admin);
   await admin.goto('http://127.0.0.1:8000/api/admin.php?view=users');
-  await admin.fill('input[name=name]', 'Vchod B');
   await admin.fill('input[name=email]', 'vchod.b@example.cz');
   await admin.locator('form', { hasText: 'Pozvat uživatele' }).getByLabel('Odbavovatel').check();
   await admin.getByRole('button', { name: 'Poslat pozvánku' }).click();
@@ -127,7 +126,7 @@ test('an invited Odbavovatel sets a password and lands in the scanner; Správa i
   await page.fill('input[name=password_again]', 'vchodove-heslo-b');
   await page.getByRole('button', { name: 'Uložit heslo a přihlásit' }).click();
   await expect(page).toHaveURL(/scanner\.html/);
-  await expect(page.locator('.scan-who')).toHaveText('Vchod B');
+  await expect(page.locator('.scan-who')).toHaveText('vchod.b@example.cz');
   await expect(page.getByRole('link', { name: 'Správa' })).toHaveCount(0);
 
   await admin.reload();
@@ -137,6 +136,6 @@ test('an invited Odbavovatel sets a password and lands in the scanner; Správa i
 test('a Správce signed in to the admin opens the scanner from the menu without signing in again', async ({ page }) => {
   await adminLogin(page);
   await page.getByRole('link', { name: 'Odbavení' }).click();
-  await expect(page.locator('.scan-who')).toHaveText('Správce E2E');
+  await expect(page.locator('.scan-who')).toHaveText('spravce@example.cz');
   await expect(page.getByRole('link', { name: 'Správa' })).toBeVisible();
 });

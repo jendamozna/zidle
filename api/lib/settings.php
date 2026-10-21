@@ -44,13 +44,10 @@ function runs(bool $fresh = false): array
     return $cache;
 }
 
-/** Rule date (payment deadlines): UTC ISO ("…Z"), or a Prague local "YYYY-MM-DD HH:MM". */
+/** Rule date (payment deadlines) stored as UTC ISO "…Z", or null. */
 function rule_from(string $value): ?DateTimeImmutable
 {
-    if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $value)) {
-        return new DateTimeImmutable($value);
-    }
-    return prague_time($value);
+    return preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $value) ? new DateTimeImmutable($value) : null;
 }
 
 /** Prague "YYYY-MM-DDTHH:MM" for <input type="datetime-local">. */

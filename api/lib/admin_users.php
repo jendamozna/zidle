@@ -3,7 +3,8 @@
 // and payments), Odbavovatel (scanner – checking tickets in); one account may have several.
 // The first Správce is created once by api/deploy.php (DEPLOY_TOKEN, only while no Správce
 // exists). A Správce invites everybody else by e-mail; the invitation link lets them set a
-// password, the e-mail is their login. "Zapomněl jsem heslo" e-mails a short-lived link.
+// password; the e-mail is the account and its login (no separate name). "Zapomněl jsem heslo"
+// e-mails a short-lived link.
 declare(strict_types=1);
 
 const USER_ROLES = ['admin' => 'Správce', 'accountant' => 'Účetní', 'scanner' => 'Odbavovatel'];
@@ -66,12 +67,11 @@ function admin_user_by_email(string $email): ?array
     return $stmt->fetch() ?: null;
 }
 
-/** Signed-in user as the app uses it: ['id', 'name', 'email', 'roles' => [...], 'pw' => password fingerprint]. */
+/** Signed-in user as the app uses it: ['id', 'email', 'roles' => [...], 'pw' => password fingerprint]. */
 function signed_in_user(array $user): array
 {
     return [
         'id' => (int) $user['id'],
-        'name' => $user['name'],
         'email' => $user['email'],
         'roles' => user_roles($user),
         'pw' => password_fingerprint((string) $user['password_hash']),
@@ -133,10 +133,9 @@ function deploy_token_ok(string $given): bool
  * Creates the first Správce (deploy.php). Only while no account has the Správce role.
  * Returns the new account row or an error message.
  */
-function create_first_admin(string $email, string $name, string $password): array|string
+function create_first_admin(string $email, string $password): array|string
 {
     $email = mb_strtolower(trim($email));
-    $name = clean_name($name) ?: 'Správce';
     if (mb_strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         return 'Neplatný e-mail.';
     }
@@ -152,8 +151,8 @@ function create_first_admin(string $email, string $name, string $password): arra
         }
         $now = db_time(now_utc());
         $pdo->prepare(
-            "INSERT INTO admin_users (email, name, roles, password_hash, invited_by, created_at, accepted_at) VALUES (?, ?, 'admin', ?, 'deploy', ?, ?)"
-        )->execute([$email, mb_substr($name, 0, 100), password_hash($password, PASSWORD_DEFAULT), $now, $now]);
+            "INSERT INTO admin_users (email, roles, password_hash, invited_by, created_at, accepted_at) VALUES (?, 'admin', ?, 'deploy', ?, ?)"
+        )->execute([$email, password_hash($password, PASSWORD_DEFAULT), $now, $now]);
         $id = (int) $pdo->lastInsertId();
     } finally {
         $pdo->query("SELECT RELEASE_LOCK('zidle_deploy')");
@@ -181,14 +180,10 @@ function admin_new_invite(int $id): string
  * Invites a new user with the given roles. Returns ['token' => string, 'user' => array]
  * or an error message for the admin.
  */
-function admin_invite(string $email, string $name, array $roles, string $invitedBy): array|string
+function admin_invite(string $email, array $roles, string $invitedBy): array|string
 {
     $email = mb_strtolower(trim($email));
-    $name = clean_name($name);
     $roles = roles_csv($roles);
-    if ($name === '' || mb_strlen($name) > 100) {
-        return 'Vyplňte jméno.';
-    }
     if (mb_strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         return 'Neplatný e-mail.';
     }
@@ -198,8 +193,8 @@ function admin_invite(string $email, string $name, array $roles, string $invited
     if (admin_user_by_email($email) !== null) {
         return 'Účet s tímto e-mailem už existuje.';
     }
-    db()->prepare('INSERT INTO admin_users (email, name, roles, invited_by, created_at) VALUES (?, ?, ?, ?, ?)')
-        ->execute([$email, $name, $roles, mb_substr($invitedBy, 0, 100), db_time(now_utc())]);
+    db()->prepare('INSERT INTO admin_users (email, roles, invited_by, created_at) VALUES (?, ?, ?, ?)')
+        ->execute([$email, $roles, mb_substr($invitedBy, 0, 200), db_time(now_utc())]);
     $id = (int) db()->lastInsertId();
     $token = admin_new_invite($id);
     return ['token' => $token, 'user' => admin_user($id)];
@@ -255,7 +250,7 @@ function send_admin_invite_email(array $user, string $token, string $invitedBy):
     }
     $roles = implode(', ', array_map(static fn ($role) => USER_ROLES[$role], user_roles($user)));
     $text = implode("\n", array_merge([
-        "Dobrý den, {$user['name']},",
+        'Dobrý den,',
         '',
         "{$invitedBy} Vás zve do systému Vstupenky na TZG 2026 – role: {$roles}.",
         '',
@@ -328,7 +323,7 @@ function request_password_reset(string $email): ?string
         ->execute([token_hash($token), db_time(now_utc()->modify('+' . PASSWORD_RESET_MINUTES . ' minutes')), $user['id']]);
     if (mail_enabled()) {
         $text = implode("\n", array_merge([
-            "Dobrý den, {$user['name']},",
+            'Dobrý den,',
             '',
             'někdo (nejspíš Vy) požádal o nové heslo do systému Vstupenky na TZG 2026.',
             'Nové heslo si nastavíte na tomto odkazu (platí ' . PASSWORD_RESET_MINUTES . ' minut):',

@@ -57,7 +57,7 @@ if ($inviteToken !== '') {
             ? admin_accept_invite($inviteToken, (string) ($_POST['password'] ?? ''), (string) ($_POST['password_again'] ?? ''))
             : 'Příliš mnoho pokusů. Zkuste to za 15 minut.';
         if (is_array($accepted)) {
-            $signIn($accepted, "Vítejte, {$accepted['name']}. Heslo je nastavené, příště se přihlásíte e-mailem {$accepted['email']}.");
+            $signIn($accepted, "Vítejte. Heslo je nastavené, příště se přihlásíte e-mailem {$accepted['email']}.");
         }
         $inviteError = $accepted;
     }
@@ -131,7 +131,7 @@ if ($canManage && $csrfOk && in_array($action, ['plan-save', 'plan-default'], tr
 if ($canManage && $csrfOk && in_array($action, ['code-create', 'code-resend', 'code-revoke'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     if ($action === 'code-create') {
-        $_SESSION['flash'] = create_discount_codes((string) ($_POST['emails'] ?? ''), $me['name']);
+        $_SESSION['flash'] = create_discount_codes((string) ($_POST['emails'] ?? ''), $me['email']);
     } elseif ($action === 'code-resend') {
         $code = discount_code_row($id);
         $_SESSION['flash'] = $code === null || $code['used_at'] !== null || $code['revoked_at'] !== null
@@ -149,7 +149,7 @@ if ($canManage && $csrfOk && in_array($action, ['user-invite', 'user-link', 'use
     $roles = array_map('strval', (array) ($_POST['roles'] ?? []));
     if ($action === 'user-invite' || $action === 'user-link') {
         if ($action === 'user-invite') {
-            $result = admin_invite((string) ($_POST['email'] ?? ''), (string) ($_POST['name'] ?? ''), $roles, $me['name']);
+            $result = admin_invite((string) ($_POST['email'] ?? ''), $roles, $me['email']);
         } else {
             $user = admin_user($id);
             $result = match (true) {
@@ -163,7 +163,7 @@ if ($canManage && $csrfOk && in_array($action, ['user-invite', 'user-link', 'use
             $_SESSION['flash'] = $result;
         } else {
             $user = $result['user'] ?? [];
-            $mailed = send_admin_invite_email($user, $result['token'], $me['name']);
+            $mailed = send_admin_invite_email($user, $result['token'], $me['email']);
             $_SESSION['flash'] = ($action === 'user-invite' ? "Pozvánka pro {$user['email']} vytvořena." : "Nová pozvánka pro {$user['email']} vytvořena, původní odkaz přestal platit.")
                 . ($mailed ? ' E-mail odeslán.' : ' E-mail se neodeslal – předejte odkaz sami.');
             $_SESSION['user_link'] = ['email' => $user['email'], 'link' => admin_invite_link($result['token'])];
@@ -348,7 +348,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   details .pay-form { margin-top:6px; }
   .error { color:#8f2a20; }
   .tabs { display:flex; gap:4px; padding:4px; border-radius:999px; background:#efe9df; margin-right:auto; }
-  .tabs a { padding:6px 16px; border-radius:999px; color:var(--ink-2); text-decoration:none; font-weight:600; }
+  .tabs a { padding:6px 14px; border-radius:999px; color:var(--ink-2); text-decoration:none; font-weight:600; }
   .tabs a.active { background:var(--surface); color:var(--ink); box-shadow:0 1px 4px rgba(60,45,25,.12); }
   .edit-email summary { cursor:pointer; font-size:.78rem; color:var(--ink-2); margin-top:2px; }
   .edit-email form { display:flex; gap:6px; margin-top:6px; }
@@ -366,7 +366,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   input:disabled { background:#efe9df; color:var(--ink-2); }
   .card.settings { margin-bottom:16px; }
   .tab-alert { display:inline-block; min-width:1.4em; padding:0 6px; margin-left:4px; border-radius:999px; background:#c0392b; color:#fff; font-size:.75rem; text-align:center; }
-  .me { color:var(--ink-2); font-size:.9rem; }
+  .me { color:var(--ink-2); font-size:.9rem; font-weight:600; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .login .hint { margin:-4px 0 0; }
   .section-title { margin:28px 0 6px; font:600 1.15rem Georgia, serif; }
   .checks { display:flex; flex-wrap:wrap; gap:6px 16px; }
@@ -428,7 +428,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   <form class="card login" method="post">
     <h1>Správa rezervací</h1>
     <?php if ($invited): ?>
-      <p>Dobrý den, <strong><?= $h($invited['name']) ?></strong>. Vytvořte si heslo – tím vznikne Váš účet
+      <p>Dobrý den, vytvořte si heslo – tím vznikne Váš účet
         (role: <?= $h(implode(', ', array_map(static fn ($r) => USER_ROLES[$r], user_roles($invited)))) ?>).
         Přihlašovací jméno je Váš e-mail <strong><?= $h($invited['email']) ?></strong>.</p>
       <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
@@ -531,7 +531,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <?php endif ?>
       <?php if ($canScan): ?><a href="<?= $h($scannerUrl) ?>">Odbavení</a><?php endif ?>
     </nav>
-    <span class="me" title="<?= $h($me['email'] . ' · ' . implode(', ', array_map(static fn ($r) => USER_ROLES[$r], $me['roles']))) ?>">Přihlášen: <strong><?= $h($me['name']) ?></strong></span>
+    <span class="me" title="<?= $h('Přihlášen: ' . $me['email'] . ' · ' . implode(', ', array_map(static fn ($r) => USER_ROLES[$r], $me['roles']))) ?>"><?= $h($me['email']) ?></span>
     <form method="post">
       <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
       <input type="hidden" name="action" value="logout">
@@ -702,7 +702,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   <?php elseif ($view === 'users'):
       $newLink = $_SESSION['user_link'] ?? null;
       unset($_SESSION['user_link']);
-      $users = db_query('SELECT * FROM admin_users ORDER BY disabled_at IS NOT NULL, name')->fetchAll();
+      $users = db_query('SELECT * FROM admin_users ORDER BY disabled_at IS NOT NULL, email')->fetchAll();
       $nowDb = db_time(now_utc());
       $roleChecks = static function (array $selected) use ($h): string {
           $out = '';
@@ -733,7 +733,6 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   <form class="card settings" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <h2>Pozvat uživatele</h2>
-    <label>Jméno<input name="name" required maxlength="100" placeholder="např. Jana Nováková"></label>
     <label>E-mail (bude přihlašovací jméno)<input type="email" name="email" required maxlength="190" placeholder="jana@example.cz"></label>
     <div class="checks"><?= $roleChecks([]) ?></div>
     <button name="action" value="user-invite">Poslat pozvánku</button>
@@ -741,7 +740,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <div class="card table">
     <table>
-      <thead><tr><th>Jméno</th><th>E-mail (login)</th><th>Role</th><th>Pozvánka</th><th>Pozval(a)</th><th>Naposledy přihlášen(a)</th><th></th></tr></thead>
+      <thead><tr><th>E-mail (login)</th><th>Role</th><th>Pozvánka</th><th>Pozval(a)</th><th>Naposledy přihlášen(a)</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($users as $u):
           $pending = $u['password_hash'] === null;
@@ -755,8 +754,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           $self = (int) $u['id'] === $me['id'];
       ?>
         <tr>
-          <td><strong><?= $h($u['name']) ?></strong><?= $self ? ' <small>(vy)</small>' : '' ?></td>
-          <td><?= $h($u['email']) ?></td>
+          <td><strong><?= $h($u['email']) ?></strong><?= $self ? ' <small>(vy)</small>' : '' ?></td>
           <td>
             <?= $h(implode(', ', array_map(static fn ($r) => USER_ROLES[$r], user_roles($u)))) ?>
             <details class="edit-email"><summary>změnit</summary>

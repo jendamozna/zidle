@@ -49,10 +49,10 @@ function scanner_cookie_for(array $me): string
     return "u:{$me['id']}:{$expiry}:" . scanner_cookie_mac($me['id'], $expiry, $me['pw']);
 }
 
-/** Scanner access of a signed-in user: ['id', 'name', 'roles', 'runIds' => null (all runs)]. */
+/** Scanner access of a signed-in user: ['id', 'name' => e-mail (recorded with check-ins and sales), 'roles', 'runIds' => null (all runs)]. */
 function scanner_access_of(array $me): array
 {
-    return ['id' => $me['id'], 'name' => $me['name'], 'roles' => $me['roles'], 'runIds' => null];
+    return ['id' => $me['id'], 'name' => $me['email'], 'roles' => $me['roles'], 'runIds' => null];
 }
 
 /** Current scanner user (cookie of this request), or null. */

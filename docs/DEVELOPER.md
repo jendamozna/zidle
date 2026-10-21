@@ -83,7 +83,6 @@ api/
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
   lib/scanner_access.php  scanner sign-in (accounts), device cookie, app_base_url()
 db/schema.sql          full schema for a new database
-db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–018)
 src/                   customer app
   App.jsx              views: run picker / map / section / reservation page; form; toasts
   hooks/useSeats.js    seat state of one run, polling, reserve()
@@ -134,7 +133,7 @@ First Správce (once, while no account has the Správce role; §12):
 
 ```bash
 curl -X POST https://example.com/zidle/api/deploy.php -H 'Content-Type: application/json' \
-  -d '{"token":"<DEPLOY_TOKEN>","email":"spravce@example.com","password":"…","name":"Jan Správce"}'
+  -d '{"token":"<DEPLOY_TOKEN>","email":"spravce@example.com","password":"…"}'
 ```
 
 Then sign in at `api/admin.php` and invite everybody else (tab *Uživatelé*).
@@ -146,19 +145,8 @@ Checks before a commit (the same as CI, §21): `npm run lint`, `npm run build`,
 `npm run test:consistency`, `api/vendor/bin/phpstan analyse -c phpstan.neon`,
 `DB_NAME=zidle_test php tests/php/run.php`, `npm run test:e2e`.
 
-Upgrading an existing database: run the not yet applied
-`db/migrations/0NN_*.sql` in order. Migration 008 moves existing data into a
-first run whose start is converted from the former event date with
-`CONVERT_TZ(…, 'Europe/Prague', 'UTC')`, falling back to UTC+1 when MariaDB
-has no time-zone tables – check that run's time in admin. Migration 013
-adds seat kinds, discount codes, per-seat check-ins and on-site sales.
-Migration 014 removes VIP guests: their held seats are released and the
-table dropped (free seats are given with discount codes, §13). Migration 017 gives
-accounts roles (existing accounts become Správce) and drops the scanner invite
-tables – organizers then need accounts with the role Odbavovatel. Migration 015
-adds `runs.reserve_seats` for the new layout (§5); seat ids of the former
-layout that no longer exist (e.g. `ML-10-1`) stay in old reservations but
-are not valid for new ones.
+Database: the app is not deployed yet, so there are no migrations – a database
+is created from `db/schema.sql`; a schema change means recreating it.
 
 Build-time option: `VITE_API_URL` (default `api`) when the API is on another
 origin; then set `CORS_ORIGIN`.
@@ -296,18 +284,16 @@ All `DATETIME` columns and JSON dates are UTC.
 | Table | Purpose / key columns |
 | --- | --- |
 | `runs` | `id`, `label`, `starts_at`, `booking_closes_at` (NULL = start), `reserve_seats` JSON `["BL-2-1", …]` (seats „Záložní“ in the run; NULL = default reserve rows) |
-| `reservations` | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `child_seats` (CSV, child tickets incl. cancelled ones), `free_seats` (CSV, paid by discount codes), `ticket_names` (JSON `{seat: name}` the customer put on the tickets, migration 016), `seat_count`, `adult_price`, `child_price` (CZK per seat when booked; migration 013 sets both to `amount / seat_count` for older rows), `amount` (price of current seats), `paid_amount` (sum of all received transfers), `variable_symbol` (unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at` / `checked_in_by` (first seat checked in), `sold_by` (organizer of an on-site sale, NULL = website), `payment_checked_at` (accountant verified an on-site payment) |
-| `ticket_checkins` | PK (`reservation_id`, `seat_id`), `checked_in_at`, `checked_in_by`; FK cascade. One row per checked-in seat ticket (migration 013 adds all seats of reservations checked in before). |
+| `reservations` | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `child_seats` (CSV, child tickets incl. cancelled ones), `free_seats` (CSV, paid by discount codes), `ticket_names` (JSON `{seat: name}` the customer put on the tickets), `seat_count`, `adult_price`, `child_price` (CZK per seat when booked), `amount` (price of current seats), `paid_amount` (sum of all received transfers), `variable_symbol` (unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at` / `checked_in_by` (first seat checked in), `sold_by` (e-mail of the account that sold it at the entrance, NULL = website), `payment_checked_at` (accountant verified an on-site payment) |
+| `ticket_checkins` | PK (`reservation_id`, `seat_id`), `checked_in_at`, `checked_in_by`; FK cascade. One row per checked-in seat ticket. |
 | `discount_codes` | `code` (8 chars, unique, shown `XXXX-XXXX`), `email`, `created_at`, `created_by`, `emailed_at`, `used_at`, `reservation_id`, `seat_id` (the seat made free), `revoked_at` |
 | `reservation_seats` | PK (`run_id`, `seat_id`), `reservation_id` (FK cascade). Prevents double booking per run. |
 | `scan_conflicts` | offline check-ins that could not be applied (§11): `run_id`, `reservation_id` (NULL when unknown), `label` (VS + name + seat), `reason` (`already_checked_in` / `not_paid` / `unknown`), `scanned_at` (device time), `scanned_by`, `other_at` / `other_by` (the check-in that won), `created_at` |
 | `rate_limits` | `bucket` (sha256 of key), `hits`, `window_start` |
 | `settings` | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8) |
-| `admin_users` | accounts (§12): `email` (unique, lower case, login), `name`, `roles` (CSV of `admin` / `accountant` / `scanner`, migration 017), `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open invitation token, unique), `invite_expires_at`, `reset_hash` (sha256 of the open forgotten-password token, unique), `reset_expires_at`, `invited_by` (name, `deploy` for the first Správce), `created_at`, `accepted_at`, `last_login_at`, `disabled_at` |
+| `admin_users` | accounts (§12): `email` (unique, lower case, login – the account has no other name), `roles` (CSV of `admin` / `accountant` / `scanner`), `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open invitation token, unique), `invite_expires_at`, `reset_hash` (sha256 of the open forgotten-password token, unique), `reset_expires_at`, `invited_by` (e-mail of the inviting Správce, `deploy` for the first one), `created_at`, `accepted_at`, `last_login_at`, `disabled_at` |
 
-Migration 018 drops `runs.storno_rules`, `reservations.cancelled_by` and
-`cancel_fee` (customers no longer cancel, §10). Schema changes: update `db/schema.sql` and add a new
-re-runnable migration.
+Schema changes: update `db/schema.sql` (no migrations, §3).
 
 ## 7. Customer app
 
@@ -550,8 +536,7 @@ and the tickets handed out; each seat is checked in separately.
 - **Code** (`ticket_code(r, seat)`): `Z26M|<reservation id>|<VS>|<seat>|<kind A/C>|<name>|<sig>`
   (kind A = adult, C = child; name = the name on the ticket, `ticket_holder()`); `sig` = first 22 chars of base64url
   HMAC-SHA256(`TICKET_SECRET`, payload). `parse_ticket_code()` →
-  `{id, variableSymbol, seat, kind, name}`; older formats (`Z26|…`, one code
-  per reservation) are no longer accepted (`invalid`). JS mirror:
+  `{id, variableSymbol, seat, kind, name}`; anything else is `invalid`. JS mirror:
   `src/scanner/ticket.js` (display/offline only).
 - **Ticket e-mail** (`send_ticket_email()`, HTML + text): run, name, summary
   (`seat_kinds_summary()`, e.g. *„2 dospělí, 1 dítě 4–17 let“*), *„Každé místo má vlastní QR kód – 1 QR kód = 1 židle.“*, then
@@ -705,7 +690,7 @@ have several; `user_can(me, what)`):
 | Účetní | `accountant` | admin tab *Rezervace* (reservations and payments, all its actions) | `reservations` |
 | Odbavovatel | `scanner` | only the scanner (check-in, on-site sale), all runs | `scan` |
 
-- **Deploy** (`POST api/deploy.php {token, email, password, name?}`, JSON or
+- **Deploy** (`POST api/deploy.php {token, email, password}`, JSON or
   form fields; rate limit 10/h per IP): `deploy_token_ok()` – `DEPLOY_TOKEN`
   ≥ `DEPLOY_TOKEN_MIN` = 32 characters and equal (`hash_equals`), else 1 s
   delay and 403 *„Neplatný token (DEPLOY_TOKEN v config.local.php, alespoň 32
@@ -713,15 +698,14 @@ have several; `user_can(me, what)`):
   state) 409 *„Správce už existuje – deploy lze použít jen jednou. Další
   uživatele pozve správce.“*; `create_first_admin()` (under `GET_LOCK`): valid
   e-mail (422 *„Neplatný e-mail.“*), password ≥ `ADMIN_PASSWORD_MIN` = 10
-  (422 *„Heslo musí mít alespoň 10 znaků.“*), name default *Správce* → account
+  (422 *„Heslo musí mít alespoň 10 znaků.“*) → account
   with role `admin`, `invited_by = deploy` → 201 `{message: "Správce <email>
   vytvořen. Přihlaste se na <app_base_url()>/api/admin.php"}`. Until then
   admin.php answers 503 *„Aplikace zatím nemá správce. Vytvořte ho jednorázově
   voláním POST api/deploy.php s tokenem DEPLOY_TOKEN z config.local.php (viz
   docs/DEVELOPER.md).“*
-- **Invitation** (Správce, tab *Uživatelé*, `user-invite {name, email,
-  roles[]}` → `admin_invite()`): name 1–100 chars after `clean_name()`
-  (*„Vyplňte jméno.“*), valid e-mail ≤ 190 (*„Neplatný e-mail.“*), at least one
+- **Invitation** (Správce, tab *Uživatelé*, `user-invite {email,
+  roles[]}` → `admin_invite()`): valid e-mail ≤ 190 (*„Neplatný e-mail.“*), at least one
   role (*„Vyberte alespoň jednu roli.“*), e-mail not used yet (*„Účet s tímto
   e-mailem už existuje.“*); creates the account without a password and a
   48-hex token (only its sha256 stored) valid `ADMIN_INVITE_DAYS` = 7 days.
@@ -731,13 +715,13 @@ have several; `user_can(me, what)`):
   odeslán.“* / *„… E-mail se neodeslal – předejte odkaz sami.“*
 - **Accepting** (`admin.php?pozvanka=<token>`, also when signed in): valid
   link (`admin_invited_user()`: hash, not expired, account not disabled) →
-  *„Dobrý den, <name>. Vytvořte si heslo – tím vznikne Váš účet (role: …).
+  *„Dobrý den, vytvořte si heslo – tím vznikne Váš účet (role: …).
   Přihlašovací jméno je Váš e-mail <email>.“*, *Nové heslo* + *Heslo znovu*,
   **Uložit heslo a přihlásit** (`accept-invite`, rate limit area
   `admin-invite`); `admin_accept_invite()`: `new_password_problem()` – ≥ 10
   chars (*„Heslo musí mít alespoň 10 znaků.“*), equal (*„Hesla se
   neshodují.“*) → password stored, link cleared, `accepted_at`, signed in with
-  *„Vítejte, <name>. Heslo je nastavené, příště se přihlásíte e-mailem
+  *„Vítejte. Heslo je nastavené, příště se přihlásíte e-mailem
   <email>.“* Invalid/used/expired link: *„Pozvánka neplatí nebo vypršela.
   Požádejte o novou.“* + link to sign-in.
 - **Sign-in** (admin.php form *E-mail* + *Heslo* + link **Zapomněl jsem
@@ -783,12 +767,11 @@ have several; `user_can(me, what)`):
   password gets 401 *„Přihlaste se svým e-mailem a heslem.“* and the scanner
   drops its offline data. The scanner header shows **Správa** (link to the
   admin) when the account also has Správce or Účetní. Check-ins and on-site
-  sales are recorded with the account name.
+  sales are recorded with the account's e-mail.
 
 ## 13. Discount codes## 13. Discount codes
 
-Free seats are given with discount codes (`lib/discounts.php`; VIP guests
-were removed by migration 014). The admin enters e-mail addresses (tab
+Free seats are given with discount codes (`lib/discounts.php`). The admin enters e-mail addresses (tab
 *Slevové kódy*, §14); each listed address gets one code by e-mail (§15), an
 address listed twice gets two. A code: 8 characters (§19), any run, used
 once (`used_at`, `reservation_id`, `seat_id`), can be revoked while unused.
@@ -801,8 +784,8 @@ used; the code also stays used when the reservation expires or is cancelled.
 ## 14. Admin
 
 `api/admin.php` (CSRF token on every POST). Sign-in, invitations and the
-forgotten password: §12. The header shows *Přihlášen: <name>* (tooltip e-mail
-and roles) and the menu by role: Správce *Rezervace*, *Plánek*, *Slevové kódy*,
+forgotten password: §12. The header shows the signed-in e-mail (shortened with … when long; tooltip *Přihlášen: <e-mail> · <roles>*)
+and the menu by role: Správce *Rezervace*, *Plánek*, *Slevové kódy*,
 *Uživatelé*, *Nastavení*, *Odbavení*; Účetní only *Rezervace* (other `view=`
 values show Rezervace, other actions are ignored); *Odbavení* (link to
 `app_base_url()/scanner.html`) for accounts with `scan`. Actions are checked
@@ -858,8 +841,8 @@ Tabs:
   rolí. … Správce může vše, Účetní vidí jen rezervace a platby, Odbavovatel jen
   odbavuje (scanner). Kdo má víc rolí, vidí všechny jejich možnosti v menu.
   Zapomenuté heslo si každý obnoví sám na přihlašovací stránce.“*; form *Pozvat
-  uživatele* (name, e-mail, role checkboxes, `user-invite`, §12); list (active
-  first, by name): name (*(vy)*), e-mail, roles with *změnit* → checkboxes +
+  uživatele* (e-mail, role checkboxes, `user-invite`, §12); list (active
+  first, by e-mail): e-mail (*(vy)*), roles with *změnit* → checkboxes +
   **Uložit role** (`user-roles` → `admin_set_roles()`: at least one role,
   *„Svou vlastní roli Správce nelze odebrat.“*, *„Role účtu X uloženy.“*),
   invitation state *Přijata <time>* / *Nepřijata (platí do …)* / *Nepřijata –
@@ -909,7 +892,7 @@ Subjects are `mail_subject()` = *„TZG 2026: <subject>“* (the sender name alr
 | Subject | Trigger |
 | --- | --- |
 | Rezervace míst | reservation created (payment details, link if `PUBLIC_URL`) |
-| Pozvánka | user invited or invitation sent again (`send_admin_invite_email()`: *„<inviter> Vás zve do systému Vstupenky na TZG 2026 – role: <roles>.“*, *„Účet vznikne, až si na tomto odkazu vytvoříte heslo (platí 7 dní):“* + link, *„Přihlašovací jméno je Váš e-mail: …“*) |
+| Pozvánka | user invited or invitation sent again (`send_admin_invite_email()`: *„Dobrý den,“*, *„<inviter e-mail> Vás zve do systému Vstupenky na TZG 2026 – role: <roles>.“*, *„Účet vznikne, až si na tomto odkazu vytvoříte heslo (platí 7 dní):“* + link, *„Přihlašovací jméno je Váš e-mail: …“*) |
 | Nové heslo | forgotten password requested for an active account (`request_password_reset()`: *„někdo (nejspíš Vy) požádal o nové heslo…“*, link valid 60 minut, *„Pokud jste o nové heslo nežádali, e-mail ignorujte – dosavadní heslo platí dál.“*) |
 | Připomínka platby | cron: pending, due within 24 h, created ≥ 24 h before due, once |
 | Rezervace zrušena | cron: expired within the last 3 days, once (refund line for money that already arrived; *„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“*) |
@@ -968,7 +951,7 @@ amounts, seats and statuses stay.
 | GET | `tickets.php?token=` | – | PDF of a paid reservation's tickets (§11), else 404 |
 | POST | `ticket-names.php` | `token, names {seat: name}` ('' = reservation name) | reservation payload; 422 *„Jména na vstupenkách už nelze měnit.“* / *„Vyberte místa z této rezervace.“* / *„Jméno na vstupence může mít nejvýše 100 znaků.“*; 60 requests/h per IP |
 | GET | `organizer.php` | – | `loggedIn, name, admin` (account may use the admin), `runs[]` (+ `scanFrom`, `scanTo`), `layout`; a signed-in admin session with `scan` signs the scanner in (§12) |
-| POST | `deploy.php` | `token, email, password, name?` | 201 `{message}`; 403 / 409 / 422 (§12) |
+| POST | `deploy.php` | `token, email, password` | 201 `{message}`; 403 / 409 / 422 (§12) |
 | POST | `organizer.php` | `action`: `login {email, password}` (§12), `logout`, `verify {code, runId, confirmOutside?}`, `snapshot {runId}`, `sync {runId, events}`, `sale-seats {runId}` → `{taken, reserveSeats, price, childPrice, maxSeats}`, `sale-create {runId, seats, children}` → 201 `{sale: {id, status, variableSymbol, amount, seats, tickets, spd, account, iban}}` (errors 422 *„Vyberte 1 až 20 volných míst.“* / *„Dětských vstupenek může být nejvýše tolik, kolik je míst.“*, 409 seats taken, 503 no IBAN), `sale-paid {runId, id}` → `{message}`, `sale-cancel {runId, id}` → `{message}` | see §9, §11, §12 |
 
 Errors: `{"error": "<Czech message>", …}` with HTTP status; uncaught
@@ -989,7 +972,7 @@ prosím znovu.`
 
 See `CLAUDE.md`: docs in sync with code, UTC in DB, mobile-first customer
 CSS / desktop-first admin / mobile-only scanner, layout only on the server,
-ticket format kept identical, schema + migration for DB changes, Czech UI.
+ticket format kept identical, DB changes only in `db/schema.sql`, Czech UI.
 
 ## 21. Tests and CI
 
@@ -999,7 +982,7 @@ service (`root`/`root`, database `zidle_test`); the php job sets `DEPLOY_TOKEN` 
 
 | Job | Steps |
 | --- | --- |
-| **php** | `composer install` (with dev: PHPStan), `composer audit`, `php -l` on `api/` and `tests/` (without vendor), PHPStan, `db/schema.sql` + all migrations applied twice to an empty database (they must stay re-runnable), `php tests/php/run.php` |
+| **php** | `composer install` (with dev: PHPStan), `composer audit`, `php -l` on `api/` and `tests/` (without vendor), PHPStan, `db/schema.sql` applied to an empty database, `php tests/php/run.php` |
 | **frontend** | `npm ci`, `npm audit --omit=dev --audit-level=high`, `npm run lint`, `npm run build`, `npm run test:consistency` |
 | **e2e** (after both) | `composer install --no-dev`, `npm ci`, Playwright Chromium, `npm run test:e2e`; on failure the HTML report and traces are uploaded as artifact `playwright-report` (7 days) |
 
@@ -1108,7 +1091,7 @@ Tests:
   deadline rule (*Nyní platí: 24 hodin*, `seats.php` `deadlineHours`, removed
   again); invite an Účetní (role checkbox, link shown in the tab, *Nepřijata*),
   in another browser context the link → mismatched passwords error → password
-  set and signed in (*Vítejte*, *Přihlášen*), the menu shows only *Rezervace*
+  set and signed in (*Vítejte*, the e-mail in the header), the menu shows only *Rezervace*
   (also for `view=users`), the admin sees *Přijata*, sign out and in with
   e-mail + password, the used link is invalid, the admin disables the account
   → signed out on the next load; *Zapomněl jsem heslo* → the same answer for

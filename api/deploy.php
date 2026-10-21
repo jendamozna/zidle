@@ -1,6 +1,6 @@
 <?php
 // One-time setup: creates the first Správce (admin account).
-//   POST deploy.php {token, email, password, name?}   (JSON or form fields)
+//   POST deploy.php {token, email, password}   (JSON or form fields; the e-mail is the account)
 //   → 201 {message}; 403 wrong/disabled token; 409 a Správce already exists; 422 invalid e-mail / short password
 // token = DEPLOY_TOKEN from config.local.php (≥ 32 characters, '' = disabled). Works only while no
 // account has the Správce role; everybody else is invited from the admin (tab Uživatelé).
@@ -23,7 +23,7 @@ run_api(function (): void {
     if (admin_exists()) {
         json_error('Správce už existuje – deploy lze použít jen jednou. Další uživatele pozve správce.', 409);
     }
-    $created = create_first_admin($field('email'), $field('name'), $field('password'));
+    $created = create_first_admin($field('email'), $field('password'));
     if (is_string($created)) {
         json_error($created, str_starts_with($created, 'Správce už') ? 409 : 422);
     }
