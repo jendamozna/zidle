@@ -241,7 +241,7 @@ unquoted value), optional `export ` prefix, `"…"` (backslash escapes) or
   | WR | Pravé křídlo (P. křídlo) | main | 4, 4, 4, 5, 5, 5, 4 (the last row set apart) | 31 |
   | BL | Balkon vlevo (Balkon L) | balcony | 12 (bench along the railing, seats 1–5 and 6–12 split by a gap); reserve rows 2–6: 5, 5, 6, 6, 6 | 40 (28 reserve) |
   | BC | Balkon střed (Balkon S) | balcony | 7, 14, 14, 7, 7 (rows 4–5 shifted by 5 seats) | 49 |
-  | BR | Balkon vpravo (Balkon P) | balcony | 6 (vertical), 5 (slanted); reserve rows 3–4: 3, 3 | 17 (6 reserve) |
+  | BR | Balkon vpravo (Balkon P) | balcony | 6, 5 (benches along the railing, mirroring the left part); reserve rows 3–4: 3, 3 | 17 (6 reserve) |
   | | total (main 195, balcony 106) | | | 301 |
 
   Seat id `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-2-14`; `is_valid_seat_id()`

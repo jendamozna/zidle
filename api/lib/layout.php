@@ -59,8 +59,9 @@ const SECTIONS = [
         [7, 45.95, 46.6, 62.15, 46.6], [7, 45.95, 49.8, 62.15, 49.8],
     ]],
     'BR' => ['name' => 'Balkon vpravo', 'short' => 'Balkon P', 'level' => 'balcony', 'label' => [66, 1.5, 'right'], 'rows' => [
-        [6, 70, 2.5, 70, 16], [5, 70, 20.5, 62.5, 30.5],
-        ['reserve' => true, 'parts' => [[3, 75, 19.5, 75, 24.9]]], ['reserve' => true, 'parts' => [[3, 78.5, 19.5, 78.5, 24.9]]],
+        // like the left part (mirrored): benches along the railing, reserve rows behind them
+        [6, 70, 2.5, 70, 16], [5, 70, 21.5, 70, 32.3],
+        ['reserve' => true, 'parts' => [[3, 74.5, 19.5, 74.5, 24.9]]], ['reserve' => true, 'parts' => [[3, 78, 19.5, 78, 24.9]]],
     ]],
 ];
 
