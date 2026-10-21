@@ -1168,17 +1168,24 @@ h2 {
 
 .pay-seats li {
   display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pay-seat-row {
+  display: flex;
   justify-content: space-between;
   gap: 1rem;
 }
 
-.pay-seats li span:first-child {
+.pay-seat-row span:first-child {
   font-weight: 600;
   min-width: 0;
 }
 
-.pay-seats li span:last-child {
+.pay-seat-row span:last-child {
   text-align: right;
+  white-space: nowrap;
 }
 
 .small {
@@ -1253,20 +1260,38 @@ h2 {
   overflow-wrap: anywhere;
 }
 
-.names-box {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
-}
-
 .names-form {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  padding: 1rem;
-  border-radius: var(--radius-sm);
-  background: var(--bg);
+}
+
+/* name on a seat ticket, edited right in the seat list */
+.seat-name {
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.6rem;
+  font: inherit;
+  font-size: 0.9rem;
+  border: 1px solid var(--wall);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.names-link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+}
+
+.names-link .link {
+  color: var(--accent);
+  font-size: inherit;
+}
+
+.names-link .link.muted {
+  color: var(--ink-2);
 }
 
 .ticket-card.is-used {

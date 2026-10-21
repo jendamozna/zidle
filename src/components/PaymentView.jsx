@@ -231,19 +231,22 @@ function TicketCard({ ticket }) {
   );
 }
 
-/** The customer's own names on the seat tickets (empty = the reservation name). */
-function TicketNames({ reservation, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [names, setNames] = useState({});
+/**
+ * Seats of the reservation with kind and price; "Jména na vstupenkách" turns the same list into
+ * name fields for the seat tickets (empty = the reservation name).
+ */
+function SeatList({ reservation, onChange }) {
+  const [names, setNames] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
   const defaultName = `${reservation.firstName} ${reservation.lastName}`;
+  const editing = names !== null;
 
   const start = () => {
     setNames(Object.fromEntries(reservation.tickets.map((t) => [t.seat, t.holder ?? ''])));
+    setError(null);
     setSaved(false);
-    setOpen(true);
   };
 
   const submit = async (e) => {
@@ -252,7 +255,7 @@ function TicketNames({ reservation, onChange }) {
     setError(null);
     try {
       onChange(await saveTicketNames(reservation.token, names));
-      setOpen(false);
+      setNames(null);
       setSaved(true);
     } catch (err) {
       setError(err.message);
@@ -261,46 +264,67 @@ function TicketNames({ reservation, onChange }) {
     }
   };
 
-  if (!open) {
+  const list = (
+    <ul className="pay-seats">
+      {reservation.tickets.map((t) => (
+        <li key={t.seat}>
+          <div className="pay-seat-row">
+            <span>
+              {seatLabel(t.seat)}
+              {!editing && t.holder && <small className="muted"> · {t.holder}</small>}
+            </span>
+            <span className="muted">
+              {KIND_LABELS[t.kind]} · {t.free ? 'kód, zdarma' : formatCzk(t.price)}
+            </span>
+          </div>
+          {editing && (
+            <input
+              className="seat-name"
+              value={names[t.seat] ?? ''}
+              onChange={(e) => setNames((prev) => ({ ...prev, [t.seat]: e.target.value }))}
+              placeholder={defaultName}
+              maxLength={100}
+              disabled={busy}
+              aria-label={`Jméno na vstupence ${seatLabel(t.seat)}`}
+            />
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+
+  if (!editing) {
     return (
-      <div className="names-box">
-        <button type="button" className="btn btn-ghost" onClick={start}>
-          Jména na vstupenkách
-        </button>
-        {saved && (
-          <span className="muted small">
-            Uloženo.{reservation.status === 'paid' && ' QR kódy i PDF k tisku už jména obsahují.'}
-          </span>
+      <>
+        {list}
+        {reservation.ticketNamesEditable && (
+          <p className="names-link small">
+            <button type="button" className="link" onClick={start}>
+              Jména na vstupenkách
+            </button>
+            {saved && (
+              <span className="muted">
+                {' '}
+                Uloženo.{reservation.status === 'paid' && ' QR kódy i PDF už jména obsahují.'}
+              </span>
+            )}
+          </p>
         )}
-      </div>
+      </>
     );
   }
   return (
     <form className="names-form" onSubmit={submit}>
-      <strong>Jména na vstupenkách</strong>
-      <p className="muted small">Nevyplněné vstupenky ponesou jméno {defaultName}.</p>
-      {reservation.tickets.map((t) => (
-        <label key={t.seat} className="field">
-          <span>{seatLabel(t.seat)}</span>
-          <input
-            value={names[t.seat] ?? ''}
-            onChange={(e) => setNames((prev) => ({ ...prev, [t.seat]: e.target.value }))}
-            placeholder={defaultName}
-            maxLength={100}
-            disabled={busy}
-            aria-label={`Jméno na vstupence ${seatLabel(t.seat)}`}
-          />
-        </label>
-      ))}
+      {list}
       {error && <p className="form-error">{error}</p>}
-      <div className="cancel-actions">
-        <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)} disabled={busy}>
-          Zpět
-        </button>
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+      <p className="names-link small">
+        <button type="submit" className="link" disabled={busy}>
           {busy ? 'Ukládám…' : 'Uložit jména'}
         </button>
-      </div>
+        <button type="button" className="link muted" onClick={() => setNames(null)} disabled={busy}>
+          Zrušit
+        </button>
+      </p>
     </form>
   );
 }
@@ -400,21 +424,8 @@ export default function PaymentView({ reservation, onChange, onBack }) {
             </>
           )}
 
-          <ul className="pay-seats">
-            {reservation.tickets.map((t) => (
-              <li key={t.seat}>
-                <span>
-                  {seatLabel(t.seat)}
-                  {t.holder && <small className="muted"> · {t.holder}</small>}
-                </span>
-                <span className="muted">
-                  {KIND_LABELS[t.kind]} · {t.free ? 'kód, zdarma' : formatCzk(t.price)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <SeatList reservation={reservation} onChange={onChange} />
           <p className="muted small">{reservation.email}</p>
-          {reservation.ticketNamesEditable && <TicketNames reservation={reservation} onChange={onChange} />}
 
           {status === 'paid' && <Tickets reservation={reservation} />}
           <CancellationInfo reservation={reservation} />

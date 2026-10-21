@@ -378,11 +378,11 @@ prosím zbývajících Z se stejným variabilním symbolem.“*; paid → sectio
 vytiskněte.“*, button **PDF k tisku** → `tickets.php`): cards two per row on
 phones (name on the ticket when set, QR, short section name, *ř. · m.*, kind,
 *odbaveno* when checked in); while `ticketNamesEditable` (pending/paid, run
-not started) **Jména na vstupenkách** opens a form with one input per seat
-(placeholder = the reservation name, max 100, hint *„Nevyplněné vstupenky
-ponesou jméno <name>.“*), **Uložit jména** → `ticket-names.php`; then
-*„Uloženo.“* (+ *„QR kódy i PDF k tisku už jména obsahují.“* when paid); the
-seat list shows the name after each seat;
+not started) the text link **Jména na vstupenkách** under the seat list
+turns the same list into a small input under each seat (placeholder = the
+reservation name, max 100) with the links **Uložit jména** →
+`ticket-names.php` and **Zrušit**; then *„Uloženo.“* (+ *„QR kódy i PDF už
+jména obsahují.“* when paid); the seat list shows the name after each seat;
 cancellation info (`CancellationInfo`: cancelled seats / fee / refund; for an
 expired reservation with money to return *„Rezervace propadla, přijatá platba
 se vrací.“*; for a paid one with a surplus *„Přišlo víc, než bylo potřeba.“*
