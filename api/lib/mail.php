@@ -130,7 +130,7 @@ function payment_lines(array $r): array
     $lines = [
         ...$lines,
         'Částka: ' . format_czk(amount_due($r)),
-        'Účet: ' . config('BANK_ACCOUNT_DISPLAY') . ' (IBAN ' . config('BANK_IBAN') . ')',
+        'Účet: ' . config('BANK_ACCOUNT_DISPLAY'), // no IBAN – it is in the QR code on the reservation page
         'Variabilní symbol: ' . $r['variable_symbol'],
     ];
     if (specific_symbol() !== '') {

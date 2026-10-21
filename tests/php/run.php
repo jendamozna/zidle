@@ -85,6 +85,9 @@ test('payment code (SPD) asks only for the missing amount', function (): void {
     contains('*AM:400.00*', spd_string(row($id)), 'SPD');
     same(400, reservation_payload(row($id))['payment']['amount'], 'payload amount');
     same(200, reservation_payload(row($id))['payment']['received'], 'payload received');
+    $lines = implode("\n", payment_lines(row($id)));
+    contains('Částka: 400 Kč', $lines, 'e-mail amount');
+    same(false, str_contains($lines, 'IBAN') || str_contains($lines, (string) config('BANK_IBAN')), 'no IBAN in the e-mail');
 });
 
 test('late payment restores an expired reservation when the seats are free', function (): void {

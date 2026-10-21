@@ -885,6 +885,9 @@ mail is sent synchronously within the request. Texts are plain
 (`send_customer_email()`) except the ticket (HTML + text alternative with one
 QR per seat as inline images `cid:ticket-qr-<n>`, `vstupenky.pdf` and the
 calendar event `udalost.ics`, §11). All reservation e-mails contain `Termín: <run>`.
+Payment details (`payment_lines()`): *Už jsme přijali X z Y* (after a partial
+payment), *Částka*, *Účet: <BANK_ACCOUNT_DISPLAY>* (no IBAN), *Variabilní
+symbol*, *Specifický symbol* (when set), *Splatnost*.
 
 Subjects are `mail_subject()` = *„TZG 2026: <subject>“* (the sender name already says
 *Koncert TZG 2026*).
