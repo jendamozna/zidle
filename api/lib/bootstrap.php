@@ -251,7 +251,6 @@ function reservation_payload(array $r): array
         'refundedAt' => iso_time($r['refunded_at']),
         'run' => ($run = run_by_id((int) $r['run_id'])) ? run_public($run) : null,
         'payment' => [
-            'iban' => (string) config('BANK_IBAN'),
             'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
             'recipient' => (string) config('PAYMENT_RECIPIENT'),
             'variableSymbol' => $r['variable_symbol'],

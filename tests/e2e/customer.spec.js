@@ -47,6 +47,7 @@ test('customer books two seats and sees the QR payment; only the admin can cance
   await expect(page.getByText('Čeká na platbu').first()).toBeVisible();
   await expect(page.locator('.payment-amount')).toContainText('600');
   await expect(page.getByText('Variabilní symbol')).toBeVisible();
+  await expect(page.getByText('IBAN')).toHaveCount(0); // the account number is enough, IBAN is in the QR code
 
   // The seats are taken for everybody else.
   const token = new URL(page.url()).searchParams.get('r');

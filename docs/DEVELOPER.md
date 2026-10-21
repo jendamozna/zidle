@@ -367,7 +367,7 @@ the form with a toast and refresh.
 
 **Reservation page** (`PaymentView.jsx`, `/?r=<token>`): header row like the
 section detail (**←**, VS + name, status chip); run, price of the seats; list
-of seats with kind and price (*„kód, zdarma“* for a seat paid by a code); pending → SPD QR + copyable account/IBAN/VS/SS/amount
+of seats with kind and price (*„kód, zdarma“* for a seat paid by a code); pending → SPD QR + copyable account (`BANK_ACCOUNT_DISPLAY`, when set)/VS/SS/amount (no IBAN – it is in the QR code)
 (amount = still to pay, `payment.amount`) + due date (red overdue notice
 after it); after a partial payment also *„Už jsme přijali X z Y. Doplaťte
 prosím zbývajících Z se stejným variabilním symbolem.“*; paid → section
@@ -947,12 +947,12 @@ amounts, seats and statuses stay.
 | GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, capacity, reserveSeats), `runId`, `taken[]`, `price` (adult seat), `childPrice`, `deadlineHours` (in effect now), `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays`, `layout` {levels, plan, sections} |
 | GET | `altcha.php` | – | `{enabled, challenge}` (ALTCHA v2 challenge: `parameters`, `signature`) |
 | POST | `reservations.php` | `runId, firstName, lastName, email, seats[], children, codes[], formToken, hp, altcha` | 201 reservation payload |
-| GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, `tickets[]` {seat, kind, price, free, holder (name on the ticket or null), code (paid only), checkedInAt}, `ticketNamesEditable`, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, refunds, `cancelledSeats`) |
+| GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, `tickets[]` {seat, kind, price, free, holder (name on the ticket or null), code (paid only), checkedInAt}, `ticketNamesEditable`, amounts, run, payment {account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, refunds, `cancelledSeats`) |
 | GET | `tickets.php?token=` | – | PDF of a paid reservation's tickets (§11), else 404 |
 | POST | `ticket-names.php` | `token, names {seat: name}` ('' = reservation name) | reservation payload; 422 *„Jména na vstupenkách už nelze měnit.“* / *„Vyberte místa z této rezervace.“* / *„Jméno na vstupence může mít nejvýše 100 znaků.“*; 60 requests/h per IP |
 | GET | `organizer.php` | – | `loggedIn, name, admin` (account may use the admin), `runs[]` (+ `scanFrom`, `scanTo`), `layout`; a signed-in admin session with `scan` signs the scanner in (§12) |
 | POST | `deploy.php` | `token, email, password` | 201 `{message}`; 403 / 409 / 422 (§12) |
-| POST | `organizer.php` | `action`: `login {email, password}` (§12), `logout`, `verify {code, runId, confirmOutside?}`, `snapshot {runId}`, `sync {runId, events}`, `sale-seats {runId}` → `{taken, reserveSeats, price, childPrice, maxSeats}`, `sale-create {runId, seats, children}` → 201 `{sale: {id, status, variableSymbol, amount, seats, tickets, spd, account, iban}}` (errors 422 *„Vyberte 1 až 20 volných míst.“* / *„Dětských vstupenek může být nejvýše tolik, kolik je míst.“*, 409 seats taken, 503 no IBAN), `sale-paid {runId, id}` → `{message}`, `sale-cancel {runId, id}` → `{message}` | see §9, §11, §12 |
+| POST | `organizer.php` | `action`: `login {email, password}` (§12), `logout`, `verify {code, runId, confirmOutside?}`, `snapshot {runId}`, `sync {runId, events}`, `sale-seats {runId}` → `{taken, reserveSeats, price, childPrice, maxSeats}`, `sale-create {runId, seats, children}` → 201 `{sale: {id, status, variableSymbol, amount, seats, tickets, spd, account}}` (errors 422 *„Vyberte 1 až 20 volných míst.“* / *„Dětských vstupenek může být nejvýše tolik, kolik je míst.“*, 409 seats taken, 503 no IBAN), `sale-paid {runId, id}` → `{message}`, `sale-cancel {runId, id}` → `{message}` | see §9, §11, §12 |
 
 Errors: `{"error": "<Czech message>", …}` with HTTP status; uncaught
 exceptions are logged (`[zidle]`) and return 500 `Chyba serveru. Zkuste to

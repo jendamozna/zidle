@@ -298,7 +298,6 @@ export default function PaymentView({ reservation, onChange, onBack }) {
             <>
               <dl className="pay-list">
                 {payment.account && <CopyValue label="Číslo účtu" value={payment.account} />}
-                <CopyValue label="IBAN" value={payment.iban} />
                 <CopyValue label="Variabilní symbol" value={payment.variableSymbol} />
                 {payment.specificSymbol && <CopyValue label="Specifický symbol" value={payment.specificSymbol} />}
                 <CopyValue label="Částka" value={String(payment.amount)} />

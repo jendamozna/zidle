@@ -54,7 +54,6 @@ function onsite_sale_payload(array $r): array
         'tickets' => reservation_seat_items($r),
         'spd' => spd_string($r),
         'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
-        'iban' => (string) config('BANK_IBAN'),
     ];
 }
 
