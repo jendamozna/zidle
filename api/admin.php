@@ -375,7 +375,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .invite-new h2 { margin:0 0 4px; font:600 1.15rem Georgia, serif; }
   .invite-new > div { display:flex; flex-direction:column; gap:8px; flex:1 1 320px; min-width:0; }
   .invite-link { width:100%; font-family:ui-monospace, monospace; font-size:.85rem; }
-  .invite-edit { display:flex; flex-direction:column; gap:8px; margin-top:8px; min-width:280px; }
+  .roles-edit { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin-top:6px; }
+  .roles-edit .checks { flex-direction:column; gap:4px; }
+  .edit-email .check input { width:auto; }
   .card.attention { background:#f6cdc6; color:#7d2117; text-decoration:none; }
   .settings { max-width:640px; display:flex; flex-direction:column; gap:12px; }
   .settings h2 { margin:8px 0 0; font:600 1.15rem Georgia, serif; }
@@ -758,7 +760,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td>
             <?= $h(implode(', ', array_map(static fn ($r) => USER_ROLES[$r], user_roles($u)))) ?>
             <details class="edit-email"><summary>změnit</summary>
-              <form method="post" class="invite-edit">
+              <form method="post" class="roles-edit">
                 <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                 <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
                 <div class="checks"><?= $roleChecks(user_roles($u)) ?></div>

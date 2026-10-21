@@ -133,31 +133,37 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
           <li>může použít slevový kód – jedno místo zdarma za každý kód</li>
           <li>dostane e-mailem vstupenky – na každou židli jednu, i k vytištění</li>
           <li>může na každou vstupenku napsat jméno toho, kdo na ní přijde</li>
-          <li>může zrušit celou rezervaci nebo jen některá místa</li>
+          <li>rezervaci sám zrušit nemůže – v případě potřeby se obrátí na pořadatele</li>
         </ul>
       </article>
       <article class="role">
-        <h3>Účetní / správce</h3>
-        <span class="where">správa · počítač · vlastní e-mail a heslo</span>
+        <h3>Správce</h3>
+        <span class="where">správa · počítač · vlastní účet (e-mail a heslo)</span>
         <ul>
-          <li>kontroluje platby ve výpisu a zapisuje, kolik skutečně přišlo</li>
-          <li>vrací peníze při zrušení</li>
-          <li>zakládá představení, storno podmínky a splatnost plateb</li>
+          <li>může vše – správu i odbavení</li>
+          <li>zakládá představení a splatnost plateb</li>
           <li>u každého představení určí, které židle jsou v prodeji a které záložní</li>
           <li>rozesílá slevové kódy na e-maily</li>
-          <li>ověřuje platby za vstupenky prodané u vchodu</li>
-          <li>posílá pozvánky pořadatelům u vchodu</li>
-          <li>zve další účetní – každý má vlastní přihlášení</li>
+          <li>zve další správce, účetní a odbavovatele zadáním jejich e-mailu a vidí, kdo pozvánku přijal</li>
+          <li>ruší rezervace nebo jednotlivá místa (zaplacená vrací v plné výši)</li>
         </ul>
       </article>
       <article class="role">
-        <h3>Pořadatel u vchodu</h3>
-        <span class="where">scanner · vlastní mobil s pozvánkou</span>
+        <h3>Účetní</h3>
+        <span class="where">správa · počítač · vidí jen rezervace a platby</span>
         <ul>
+          <li>kontroluje platby ve výpisu a zapisuje, kolik skutečně přišlo</li>
+          <li>vrací peníze a ověřuje platby za vstupenky prodané u vchodu</li>
+          <li>posílá vstupenky znovu, opravuje e-mail zákazníka</li>
+        </ul>
+      </article>
+      <article class="role">
+        <h3>Odbavovatel</h3>
+        <span class="where">scanner · vlastní mobil · jen odbavuje</span>
+        <ul>
+          <li>přihlásí se svým e-mailem a heslem (účet mu založí pozvánka od správce)</li>
           <li>načítá vstupenky kamerou telefonu – každou židli zvlášť</li>
           <li>prodává volná místa přímo u vchodu – zákazník zaplatí QR platbou</li>
-          <li>vidí jen představení, na která dostal pozvánku</li>
-          <li>při prvním otevření pozvánky si vytvoří heslo – přeposlaný odkaz bez hesla nefunguje</li>
           <li>odbavuje i při výpadku internetu (podle staženého seznamu)</li>
         </ul>
       </article>
@@ -188,8 +194,8 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <figcaption><strong>4. Rezervace</strong>Na mobilu se vejde na jednu obrazovku: kolik míst je pro děti, slevový kód, cena, jméno a e-mail.</figcaption></figure>
       <figure><div class="phone"><img src="05-platba.jpg" alt="Stránka s QR platbou" width="585" height="1770" loading="lazy"></div>
         <figcaption><strong>5. Platba</strong>QR platba a všechny platební údaje ke zkopírování, pod nimi každé místo s druhem a cenou (místo za slevový kód zdarma). Stejné údaje přijdou e-mailem.</figcaption></figure>
-      <figure><div class="phone"><img src="06-vstupenka-storno.jpg" alt="Vstupenky a zrušení míst" width="585" height="2345" loading="lazy"></div>
-        <figcaption><strong>6. Vstupenky a zrušení</strong>Po zaplacení vstupenka pro každé místo (dvě vedle sebe) a tlačítko PDF k tisku. Zde lze zrušit celou rezervaci nebo jen některá místa.</figcaption></figure>
+      <figure><div class="phone"><img src="06-vstupenky.jpg" alt="Vstupenky" width="585" height="1790" loading="lazy"></div>
+        <figcaption><strong>6. Vstupenky</strong>Po zaplacení vstupenka pro každé místo (dvě vedle sebe) a tlačítko PDF k tisku. Rezervaci sám zrušit nelze – zrušit ji může jen pořadatel.</figcaption></figure>
       <figure><div class="phone"><img src="24-jmena.jpg" alt="Jména na vstupenkách" width="585" height="1266" loading="lazy"></div>
         <figcaption><strong>Jména na vstupenkách</strong>Odkaz „Jména na vstupenkách“ pod seznamem míst: přímo v seznamu se pod každé místo dá napsat, kdo na něm bude sedět. Nevyplněné vstupenky nesou jméno z rezervace. Jde to i před zaplacením a až do začátku představení – QR kódy, PDF i scanner pak ukazují nové jméno.</figcaption></figure>
       <figure><div class="phone"><img src="07-email.jpg" alt="E-mail s potvrzením platby a vstupenkami" width="630" height="2459" loading="lazy"></div>
@@ -198,12 +204,10 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <figcaption><strong>Příloha vstupenky.pdf</strong>Stránka A4 k vytištění: vstupenky pod sebou (čtyři na stránku) s čárkovanou čarou na rozstříhání. Na každé QR kód, představení, část, řada a místo, dospělý / dítě, jméno a VS.</figcaption></figure>
     </div>
 
-    <div class="group-head"><h3>Pořadatel u vchodu</h3><span class="where">mobil · scanner</span></div>
+    <div class="group-head"><h3>Odbavovatel u vchodu</h3><span class="where">mobil · scanner</span></div>
     <div class="screens">
-      <figure><div class="phone"><img src="08-scanner-login.jpg" alt="Scanner bez pozvánky" width="585" height="1266" loading="lazy"></div>
-        <figcaption><strong>Přihlášení pozvánkou</strong>Scanner se otevře jen přes odkaz nebo QR kód od správce.</figcaption></figure>
-      <figure><div class="phone"><img src="27-scanner-pozvanka-heslo.jpg" alt="Vytvoření hesla k pozvánce" width="585" height="1266" loading="lazy"></div>
-        <figcaption><strong>Heslo k pozvánce</strong>Při prvním otevření odkazu si pořadatel vytvoří heslo (alespoň 8 znaků). Při dalším otevření, i na jiném mobilu, ho zadá. Kdo dostane jen přeposlaný odkaz, bez hesla se nepřihlásí. Zapomenuté heslo: správce vytvoří nový odkaz.</figcaption></figure>
+      <figure><div class="phone"><img src="08-scanner-login.jpg" alt="Přihlášení do scanneru" width="585" height="1266" loading="lazy"></div>
+        <figcaption><strong>Přihlášení</strong>E-mailem a heslem vlastního účtu (role Odbavovatel nebo Správce). Správce přihlášený ve správě otevře scanner z menu „Odbavení“ bez dalšího přihlašování. Odkaz „Zapomněl jsem heslo“.</figcaption></figure>
       <figure><div class="phone"><img src="09-scanner-mimo-cas.jpg" alt="Varování mimo čas odbavení" width="585" height="1266" loading="lazy"></div>
         <figcaption><strong>Hlídání času</strong>Mimo hodinu před a po začátku představení scanner varuje. Odbavit lze jen po potvrzení.</figcaption></figure>
       <figure><div class="phone"><img src="10-scanner-platna.jpg" alt="Platná vstupenka" width="585" height="1266" loading="lazy"></div>
@@ -218,22 +222,22 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
         <figcaption><strong>Platba u vchodu</strong>Zákazník naskenuje QR platbu v bankovní aplikaci a ukáže odeslanou platbu. Pořadatel klepne „Zaplaceno – vpustit“ – místa jsou rovnou odbavená.</figcaption></figure>
     </div>
 
-    <div class="group-head"><h3>Účetní / správce</h3><span class="where">počítač · správa</span></div>
+    <div class="group-head"><h3>Správce a účetní</h3><span class="where">počítač · správa</span></div>
     <div class="screens-wide">
       <figure><div class="desktop"><img src="13-admin-rezervace.jpg" alt="Seznam rezervací" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>Rezervace</strong>Obsazenost představení, vyhledávání podle VS nebo jména, zápis přijaté částky, zrušení, vracení peněz, PDF vstupenek. U každého místa je vidět dětská vstupenka, slevový kód a zda už prošlo. Červená karta upozorní na prodeje u vchodu, u kterých je třeba ověřit, že platba dorazila.</figcaption></figure>
       <figure><div class="desktop"><img src="21-admin-kody.jpg" alt="Slevové kódy" width="1360" height="860" loading="lazy"></div>
         <figcaption><strong>Slevové kódy</strong>Zadáte e-maily, každý dostane jeden kód (kdo má dostat víc, zadejte ho víckrát). Je vidět, který kód byl použit a na jaké místo. Nepoužitý kód lze poslat znovu nebo zrušit.</figcaption></figure>
-      <figure><div class="desktop"><img src="15-admin-poradatele.jpg" alt="Pozvánky pořadatelů" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>Pořadatelé</strong>Pozvánky pro mobily u vchodu, vždy jen na vybraná představení. Stav ukazuje, zda si pořadatel už vytvořil heslo („Čeká na heslo“ / „Aktivní“). Přístup lze kdykoli zrušit, nový odkaz zruší i heslo.</figcaption></figure>
       <figure><div class="desktop"><img src="18-admin-konflikty.jpg" alt="Konflikty z odbavení bez internetu" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>Konflikty z odbavení bez internetu</strong>Co scanner bez spojení pustil, ale už to neplatilo – typicky stejná vstupenka na dvou mobilech. Počet svítí červeně v záložce Pořadatelé.</figcaption></figure>
-      <figure><div class="desktop"><img src="19-admin-ucetni.jpg" alt="Účetní a jejich pozvánky" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>Účetní</strong>Pozvání další účetní e-mailem, stav pozvánek, nové heslo při zapomenutí, vypnutí účtu.</figcaption></figure>
+        <figcaption><strong>Konflikty z odbavení bez internetu</strong>Co scanner bez spojení pustil, ale už to neplatilo – typicky stejná vstupenka na dvou mobilech. Počet svítí červeně v záložce Uživatelé.</figcaption></figure>
+      <figure><div class="desktop"><img src="19-admin-uzivatele.jpg" alt="Uživatelé a jejich role" width="1360" height="1603" loading="lazy"></div>
+        <figcaption><strong>Uživatelé</strong>Jen pro správce. Pozvání dalšího správce, účetní nebo odbavovatele zadáním jména, e-mailu a rolí (může jich mít víc). U každého je vidět, zda pozvánku přijal; role lze změnit, účet vypnout, nepřijatou pozvánku poslat znovu.</figcaption></figure>
       <figure><div class="desktop"><img src="20-pozvanka-heslo.jpg" alt="Vytvoření hesla z pozvánky" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>Pozvánka pro účetní</strong>Odkaz z e-mailu: pozvaná si vytvoří heslo, přihlašovacím jménem je její e-mail.</figcaption></figure>
+        <figcaption><strong>Přijetí pozvánky</strong>Odkaz z e-mailu: pozvaný si vytvoří heslo – tím vznikne jeho účet. Přihlašovacím jménem je e-mail. Odbavovatel pak rovnou skončí ve scanneru.</figcaption></figure>
+      <figure><div class="desktop"><img src="28-zapomenute-heslo.jpg" alt="Zapomenuté heslo" width="1360" height="860" loading="lazy"></div>
+        <figcaption><strong>Zapomenuté heslo</strong>Odkaz na přihlašovací stránce. Na zadaný e-mail přijde odkaz na nové heslo (platí 60 minut) – pokud k němu existuje účet; stránka to neprozradí.</figcaption></figure>
       <figure><div class="desktop"><img src="16-admin-terminy.jpg" alt="Nastavení představení" width="1360" height="860" loading="lazy"></div>
-        <figcaption><strong>Splatnost, představení a storno</strong>Nahoře splatnost plateb: od zvoleného data a hodiny mají nové rezervace kratší (nebo delší) lhůtu na zaplacení. Pod tím datum a čas každého představení a jeho storno poplatky – po první rezervaci jsou zamčené.</figcaption></figure>
+        <figcaption><strong>Splatnost a představení</strong>Nahoře splatnost plateb: od zvoleného data a hodiny mají nové rezervace kratší (nebo delší) lhůtu na zaplacení. Pod tím datum a čas každého představení – po první rezervaci je začátek zamčený.</figcaption></figure>
       <figure><div class="desktop"><img src="25-admin-planek.jpg" alt="Plánek: židle v prodeji a záložní" width="1360" height="1766" loading="lazy"></div>
         <figcaption><strong>Plánek – v prodeji, nebo záložní</strong>Pro vybrané představení klikem přepnete kteroukoli židli mezi „v prodeji“ (zelená) a „záložní“ (šedá čárkovaná) – u každé části i najednou („vše v prodeji“ / „vše záložní“). Obsazené židle (červené) přepnout nejdou. „Uložit plánek“ změnu uloží, „Výchozí rozložení“ vrátí záložní řady na balkoně. Nahoře počet míst v prodeji, záložních a obsazených.</figcaption></figure>
     </div>
@@ -251,15 +255,15 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
       <div class="rule"><strong>Kdo nezaplatí, přijde o místa</strong><p>Na platbu jsou 3 dny (nejpozději do začátku představení). Správce může od zvoleného data a hodiny nastavit jinou splatnost v hodinách – platí pro rezervace vytvořené od té doby. Den předem přijde připomínka. Když platba nedorazí ani 2 dny po splatnosti, místa se uvolní.</p></div>
       <div class="rule"><strong>Platby potvrzuje člověk</strong><p>Aplikace není napojená na banku. Účetní páruje platby podle variabilního symbolu a zapíše, kolik skutečně přišlo. Vstupenka proto přijde až po potvrzení.</p></div>
       <div class="rule"><strong>Málo nebo moc peněz</strong><p>Když přijde méně, návštěvník dostane e-mail, kolik má doplatit, a vstupenka přijde po doplacení. Přeplatek se vrací na účet, ze kterého platba přišla.</p></div>
-      <div class="rule"><strong>Zrušení a storno</strong><p>Návštěvník ruší sám přes odkaz z e-mailu, celou rezervaci i jednotlivá místa. Poplatek podle storno podmínek představení, zbytek se do 14 dnů vrátí na účet, ze kterého platba přišla.</p></div>
-      <div class="rule"><strong>Ochrana před zneužitím</strong><p>Jedna židle jde prodat jen jednou. Z jednoho zařízení lze rezervovat nejvýše 40 míst za hodinu a 80 za den, aby jeden člověk nemohl zablokovat celé představení. Dvojí zapsání stejné platby (dvojklik) se nezapíše. Pozvánka pro pořadatele platí jen s jeho heslem.</p></div>
+      <div class="rule"><strong>Zrušení jen přes pořadatele</strong><p>Návštěvník rezervaci sám zrušit nemůže. Zrušit celou rezervaci nebo jednotlivá místa může jen správce – zaplacená místa se vracejí v plné výši (bez storno poplatku) do 14 dnů na účet, ze kterého platba přišla.</p></div>
+      <div class="rule"><strong>Ochrana před zneužitím</strong><p>Jedna židle jde prodat jen jednou. Z jednoho zařízení lze rezervovat nejvýše 40 míst za hodinu a 80 za den, aby jeden člověk nemohl zablokovat celé představení. Dvojí zapsání stejné platby (dvojklik) se nezapíše. Každý pracuje pod vlastním účtem a vidí jen to, co mu dovoluje jeho role.</p></div>
       <div class="rule"><strong>Vstupenku nejde padělat</strong><p>QR kód je elektronicky podepsaný. Pořadatel vždy vidí aktuální stav: zaplaceno, zrušeno (i jednotlivé zrušené místo) nebo už prošel.</p></div>
       <div class="rule"><strong>Vstupenka platí jen na své představení</strong><p>Kdo přijde jiný den, scanner ukáže „Jiný termín“ a dotyčného nepustí jako odbaveného.</p></div>
       <div class="rule"><strong>Bez internetu u vchodu</strong><p>Scanner si s internetem průběžně stahuje seznam vstupenek. Když spojení vypadne, ověřuje podle něj (pozná i zrušené a už použité vstupenky) a odbavení odešle, až se spojení vrátí. Mobily bez spojení o sobě navzájem nevědí – kopii stejné vstupenky na dvou vchodech zjistí systém až dodatečně.</p></div>
       <div class="rule"><strong>Odbavení jen v pravý čas</strong><p>Od hodiny před do hodiny po začátku představení. Jindy scanner varuje, aby se omylem neodbavovalo jiné představení.</p></div>
-      <div class="rule"><strong>Čas a storno podmínky se nemění</strong><p>Jakmile má představení první rezervaci, nelze už změnit jeho začátek ani storno podmínky – platí to, za co si lidé místa koupili.</p></div>
+      <div class="rule"><strong>Čas představení se nemění</strong><p>Jakmile má představení první rezervaci, nelze už změnit jeho začátek – platí čas, na který si lidé místa koupili.</p></div>
       <div class="rule"><strong>Platba, která už nejde použít</strong><p>Peníze po propadnutí rezervace ji obnoví, pokud představení ještě nezačalo a místa jsou volná. Jinak – a také u zrušené rezervace nebo platby poslané dvakrát – se peníze vrací na účet plátce a návštěvník dostane e-mail.</p></div>
-      <div class="rule"><strong>Každá účetní má vlastní přihlášení</strong><p>Správce pozve účetní e-mailem, ta si na odkazu (platí 7 dní) vytvoří heslo, přihlašuje se svým e-mailem. Kdo heslo zapomene, dostane nový odkaz. Účet lze kdykoli vypnout – dotyčná je hned odhlášená. Všichni správci mají stejná práva.</p></div>
+      <div class="rule"><strong>Účty a role</strong><p>Prvního správce založí jednorázově technik při spuštění. Další správce, účetní a odbavovatele zve správce e-mailem; účet vznikne, až si pozvaný na odkazu (platí 7 dní) vytvoří heslo. Správce může vše, účetní vidí jen rezervace a platby, odbavovatel jen odbavuje; kdo má víc rolí, vidí v menu všechny jejich možnosti. Zapomenuté heslo si každý obnoví sám. Vypnutý účet, odebraná role nebo nové heslo odhlásí i mobil se scannerem.</p></div>
       <div class="rule"><strong>Ochrana proti robotům</strong><p>Formulář chrání neviditelná kontrola – návštěvník nic nevyplňuje ani nevybírá obrázky, prohlížeč se ověří sám na pozadí.</p></div>
       <div class="rule"><strong>Ochrana osobních údajů</strong><p>Ukládá se jen jméno a e-mail. 30 dní po posledním představení se automaticky smažou – u rezervací, kde se ještě vrací peníze, až po jejich vrácení.</p></div>
     </div>
@@ -269,16 +273,16 @@ footer { color: var(--fg-2); font-size: .85rem; border-top: 1px solid var(--line
     <h2 id="launch">Co je potřeba před spuštěním</h2>
     <ul class="checklist">
       <li>Bankovní účet pro platby a specifický symbol.</li>
-      <li>Hesla a klíč do konfigurace (config.local.php): hlavní heslo správce alespoň 12 znaků a tajný klíč pro podpis vstupenek (alespoň 32 náhodných znaků). Se vzorovými hodnotami („change-me“) aplikace nefunguje.</li>
+      <li>Klíče do konfigurace (config.local.php): tajný klíč pro podpis vstupenek a jednorázový klíč pro založení prvního správce (oba alespoň 32 náhodných znaků).</li>
+      <li>Kdo bude první správce (e-mail) – technik ho založí jednorázově při spuštění, další uživatele už pak zve správce sám.</li>
       <li>Přístup k odesílání e-mailů (SMTP): server, port, e-mailová adresa odesílatele a její heslo – zapisují se do souboru config.local.php na serveru (tam je i celé ostatní nastavení).</li>
       <li>Kontaktní e-mail a telefon pořadatelů – zobrazí se na webu a v každém e-mailu, odpovědi na e-maily půjdou na tento kontakt.</li>
-      <li>Data a časy všech představení a jejich storno podmínky – musí být hotové před spuštěním prodeje, po první rezervaci je už nelze změnit.</li>
+      <li>Data a časy všech představení – musí být hotové před spuštěním prodeje, po první rezervaci už začátek nelze změnit.</li>
       <li>Adresa místa konání a přibližná délka představení – objeví se v události v kalendáři.</li>
       <li>Seznam e-mailů, kam poslat slevové kódy (místo dřívějších VIP hostů).</li>
       <li>Ověřit plánek v kostele: počet míst v každé řadě (celkem 301 – dole 195, na balkoně 106, z toho 34 záložních); lavice na balkoně jsou rozdělené vlevo na místa 1–5 a 6–12, vpravo 1–6 a 7–11; záložní řady vlevo za lavicí na 1–5 a 6–11.</li>
       <li>Od kdy zkrátit splatnost plateb (např. poslední týden před představením 24 hodin).</li>
-      <li>Jména pořadatelů u vchodu a na která představení přijdou (dostanou pozvánku).</li>
-      <li>Kdo bude potvrzovat platby a vracet peníze – jména a e-maily účetních, kterým přijde pozvánka. Po jejich pozvání lze hlavní heslo z konfigurace smazat.</li>
+      <li>Jména a e-maily všech uživatelů a jejich role: kdo bude potvrzovat platby a vracet peníze (účetní), kdo bude odbavovat u vchodu (odbavovatelé) a kdo bude spravovat (správci). Každému přijde pozvánka.</li>
       <li>Vyzkoušet signál a Wi-Fi přímo v kostele. Před představením otevřít scanner na každém mobilu s internetem – stáhne si seznam vstupenek pro případ výpadku.</li>
       <li>Zkušební rezervace „naostro“: rezervace → platba → vstupenky → vytištění PDF → načtení u vchodu; a zkušební prodej u vchodu s QR platbou.</li>
     </ul>
