@@ -209,10 +209,11 @@ name override them (local file wins).
   „Záložní“ in this run). Seats, reservations, check-in and scanner
   invites are per run.
 - **Section / seat** – fixed layout, defined only in `api/lib/layout.php`
-  after the hand-drawn plan of the church: `LEVELS` (main *Hlavní loď* /
+  after the hand-drawn plan of the church: `LEVELS` (main *Hlavní sál* /
   balcony *Balkon*), `PLAN` (per level a map 100 units wide, `height` units
-  tall, with decorations `items`: main – *Pódium* on top, *Kapela* box above
-  the left wing; balcony – the open middle `void` drawn as a U with *↑ k
+  tall, with decorations `items`: main – *Pódium* on top as wide as both main
+  sections, *Kapela* box above the left wing with its top level with the first
+  rows of the main sections and the right wing; balcony – the open middle `void` drawn as a U with *↑ k
   pódiu*) and `SECTIONS` id → name, short name, level, `label` [x, y, align]
   (where the name stands on the map) and `rows`: one `[seats, x1, y1, x2, y2]`
   per row (row 1 first – nearest the stage or the balcony railing; the first
@@ -235,13 +236,13 @@ name override them (local file wins).
 
   | Id | Name (short) | Level | Seats per row (row 1 first) | Capacity |
   | --- | --- | --- | --- | --- |
-  | WL | Levé křídlo (L. křídlo) – below the band | main | 5, 5, 5, 5 | 20 |
-  | ML | Levá hlavní (L. hlavní) | main | 9 × 8 | 72 |
+  | WL | Levé křídlo (L. křídlo) – below the band, its name above it | main | 5, 5, 5, 5 | 20 |
+  | ML | Levá hlavní (L. hlavní) – a narrow aisle to MR | main | 9 × 8 | 72 |
   | MR | Pravá hlavní (P. hlavní) | main | 9 × 8 | 72 |
   | WR | Pravé křídlo (P. křídlo) | main | 4, 4, 4, 5, 5, 5, 4 (the last row set apart) | 31 |
-  | BL | Balkon vlevo (Balkon L) | balcony | 12 (bench along the railing, seats 1–5 and 6–12 split by a gap); reserve rows 2–6: 5, 5, 6, 6, 6 | 40 (28 reserve) |
+  | BL | Balkon vlevo (Balkon L) | balcony | 12 (bench along the railing, seats 1–5 and 6–12 split by a gap); reserve rows 2–4: 11, 11, 6 (rows 2 and 3 split 1–5 | 6–11 like the bench) | 40 (28 reserve) |
   | BC | Balkon střed (Balkon S) | balcony | 7, 14, 14, 7, 7 (rows 4–5 shifted by 5 seats) | 49 |
-  | BR | Balkon vpravo (Balkon P) | balcony | 6, 5 (benches along the railing, mirroring the left part); reserve rows 3–4: 3, 3 | 17 (6 reserve) |
+  | BR | Balkon vpravo (Balkon P) | balcony | 11 (bench along the railing, seats 1–6 and 7–11 split by a gap, mirroring the left part); reserve rows 2–3: 3, 3 | 17 (6 reserve) |
   | | total (main 195, balcony 106) | | | 301 |
 
   Seat id `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-2-14`; `is_valid_seat_id()`
@@ -989,7 +990,8 @@ duplicate and invalid e-mail, new link = new password while the old one
 works until then, expired link, disabled account cannot sign in and loses
 its session, nobody disables themselves, master password with an empty
 e-mail); layout (order, seats per row of the
-wings, main sections and balcony, the bench split 5 | 7, 195 + 106 = 301
+wings, main sections and balcony, the benches split 5 | 7 and 6 | 5, the
+left reserve rows 5 | 6, 195 + 106 = 301
 seats, reserve rows, a plan per level, last seat of each section valid, one more
 invalid); „Záložní“ seats (the 34 reserve-row seats by default, 267 for
 sale, booking refused, the bench of the same section bookable; any seats

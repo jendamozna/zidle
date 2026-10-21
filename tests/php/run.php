@@ -438,9 +438,11 @@ test('the layout matches the plan: seats per row, capacities, reserve balcony se
     same(array_fill(0, 9, 8), $sizes['ML'], 'left main');
     same([4, 4, 4, 5, 5, 5, 4], $sizes['WR'], 'right wing');
     same([7, 14, 14, 7, 7], $sizes['BC'], 'balcony centre');
-    same([12, 5, 5, 6, 6, 6], $sizes['BL'], 'balcony left: bench + reserve rows');
+    same([12, 11, 11, 6], $sizes['BL'], 'balcony left: bench + reserve rows');
     same([5, 7], array_column(section_rows(SECTIONS['BL'])[0]['parts'], 0), 'bench split 1–5 | 6–12');
-    same([6, 5, 3, 3], $sizes['BR'], 'balcony right');
+    same([[5, 6], [5, 6]], [array_column(section_rows(SECTIONS['BL'])[1]['parts'], 0), array_column(section_rows(SECTIONS['BL'])[2]['parts'], 0)], 'reserve rows 2 and 3 split 1–5 | 6–11');
+    same([11, 3, 3], $sizes['BR'], 'balcony right');
+    same([6, 5], array_column(section_rows(SECTIONS['BR'])[0]['parts'], 0), 'right bench split 1–6 | 7–11');
     same([195, 106, 301], [
         array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'main'))),
         array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'balcony'))),
@@ -448,7 +450,7 @@ test('the layout matches the plan: seats per row, capacities, reserve balcony se
     ], 'capacities');
     $default = default_reserve_seats();
     same([34, true, false, true, false], [count($default), in_array('BL-2-1', $default, true), in_array('BL-1-12', $default, true),
-        in_array('BR-4-3', $default, true), in_array('BR-2-5', $default, true)], 'default reserve rows');
+        in_array('BR-3-3', $default, true), in_array('BR-1-11', $default, true)], 'default reserve rows');
     same(array_keys(LEVELS), array_keys($layout['plan']), 'a plan per level');
     foreach ($layout['sections'] as $section) {
         $rows = count($section['rows']);
@@ -593,11 +595,11 @@ test('offline scans of unpaid, unknown or other-run tickets become conflicts', f
 });
 
 test('device time is limited to the last 48 hours and never in the future', function (): void {
-    $future = reservation(['BR-2-2'], 'paid');
-    $old = reservation(['BR-2-3'], 'paid');
+    $future = reservation(['BR-1-8'], 'paid');
+    $old = reservation(['BR-1-9'], 'paid');
     apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [
-        ['type' => 'ticket', 'id' => $future, 'variableSymbol' => row($future)['variable_symbol'], 'seat' => 'BR-2-2', 'at' => iso_utc(now_utc()->modify('+3 hours'))],
-        ['type' => 'ticket', 'id' => $old, 'variableSymbol' => row($old)['variable_symbol'], 'seat' => 'BR-2-3', 'at' => '2001-01-01T00:00:00Z'],
+        ['type' => 'ticket', 'id' => $future, 'variableSymbol' => row($future)['variable_symbol'], 'seat' => 'BR-1-8', 'at' => iso_utc(now_utc()->modify('+3 hours'))],
+        ['type' => 'ticket', 'id' => $old, 'variableSymbol' => row($old)['variable_symbol'], 'seat' => 'BR-1-9', 'at' => '2001-01-01T00:00:00Z'],
     ]);
     same(true, row($future)['checked_in_at'] <= db_time(now_utc()), 'not in the future');
     same(true, row($old)['checked_in_at'] >= db_time(now_utc()->modify('-49 hours')), 'not older than 48 h');

@@ -11,7 +11,7 @@
 //           (x2, y2), the others evenly between (plan units); numbering goes on across parts
 //   reserve – reserve row: "Záložní" in a new run by default (the run's seats come in run.reserveSeats)
 
-/** Level names, e.g. {main: 'Hlavní loď', balcony: 'Balkon'}. */
+/** Level names, e.g. {main: 'Hlavní sál', balcony: 'Balkon'}. */
 export let LEVELS = {};
 export let PLAN = {};
 export let SECTIONS = [];
