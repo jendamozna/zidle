@@ -21,7 +21,6 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
   const storno = stornoText(run?.stornoRules);
   const [values, setValues] = useState({ firstName: '', lastName: '', email: '', hp: '' });
   const [children, setChildren] = useState(0);
-  const [infants, setInfants] = useState(0);
   const [codes, setCodes] = useState([]);
   const [codeInput, setCodeInput] = useState('');
   const seatCount = stats.selectedCount;
@@ -52,7 +51,7 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
     let error;
     if (!isCodeFormat(code)) error = 'Kód má 8 znaků, např. ABCD-EFGH.';
     else if (codes.includes(code)) error = 'Tento kód už je zadaný.';
-    else if (codes.length >= seatCount) error = 'Každý kód platí na jedno místo – víc kódů než míst nelze použít.';
+    else if (codes.length >= seatCount) error = 'Víc kódů než míst nelze použít.';
     setErrors((errs) => ({ ...errs, codes: error }));
     if (error) return;
     setCodes((prev) => [...prev, code]);
@@ -71,7 +70,6 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
       email: values.email.trim(),
       hp: values.hp,
       children,
-      infants,
       codes,
     };
     const send = async (payload) => onSubmit({ ...customer, altcha: payload });
@@ -128,15 +126,13 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
         </div>
 
         <p className="modal-run">
-          Termín <strong>{runLabel(run)}</strong>
+          <strong>{runLabel(run)}</strong> · {seatsLabel(seatCount)}
         </p>
 
-        <fieldset className="tickets" disabled={submitting}>
-          <legend>Vstupenky ({seatsLabel(seatCount)})</legend>
-          <div className="stepper">
-            <span className="stepper-label">
-              Dospělí
-              <small>od 18 let · {formatCzk(stats.price)}</small>
+        <div className="tickets">
+          <div className="ticket-row">
+            <span>
+              Dospělí <span className="muted">· {formatCzk(stats.price)}</span>
             </span>
             <output className="stepper-fixed">{seatCount - children}</output>
           </div>
@@ -146,18 +142,13 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
             value={children}
             max={seatCount}
             onChange={setChildren}
+            disabled={submitting}
           />
-          <Stepper
-            label="Děti do 3 let na klíně"
-            hint="zdarma, bez vlastního místa a vstupenky"
-            value={infants}
-            max={seatCount}
-            onChange={setInfants}
-          />
-        </fieldset>
+          <p className="muted small">Děti do 3 let mohou sedět zdarma na klíně dospělého.</p>
+        </div>
 
         <div className={`field codes ${errors.codes ? 'has-error' : ''}`}>
-          <label htmlFor="discount-code">Slevové kódy</label>
+          <label htmlFor="discount-code">Slevový kód</label>
           <div className="code-entry">
             <input
               id="discount-code"
@@ -183,35 +174,30 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
             </button>
           </div>
           {codes.length > 0 && (
-            <div className="code-chips">
+            <ul className="code-list">
               {codes.map((code) => (
-                <button
-                  key={code}
-                  type="button"
-                  className="seat-chip"
-                  onClick={() => setCodes((prev) => prev.filter((c) => c !== code))}
-                  aria-label={`Odebrat kód ${formatCode(code)}`}
-                  disabled={submitting}
-                >
-                  {formatCode(code)}
-                  <span aria-hidden="true">×</span>
-                </button>
+                <li key={code}>
+                  <span>
+                    <strong>{formatCode(code)}</strong> · místo zdarma
+                  </span>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => setCodes((prev) => prev.filter((c) => c !== code))}
+                    aria-label={`Odebrat kód ${formatCode(code)}`}
+                    disabled={submitting}
+                  >
+                    ×
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
-          {errors.codes ? <small>{errors.codes}</small> : <span className="hint">Každý kód = jedno místo zdarma (nejdražší).</span>}
+          {errors.codes && <small>{errors.codes}</small>}
         </div>
 
         <div className="modal-summary">
-          <span>
-            {[
-              prices.adults && `${prices.adults} × ${formatCzk(stats.price)}`,
-              prices.children && `${prices.children} × ${formatCzk(stats.childPrice)}`,
-              prices.discount && `sleva −${formatCzk(prices.discount)}`,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
+          <span>Celkem</span>
           <strong>{formatCzk(prices.total)}</strong>
         </div>
 
@@ -230,14 +216,11 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
         </div>
 
         <div className="modal-notes">
-          {deadlineHours && prices.total > 0 ? (
-            <p>Splatnost {deadlineHours} hodin (nejpozději do začátku termínu), poté se místa uvolní.</p>
-          ) : null}
-          <p>Po zaplacení přijde e-mailem vstupenka pro každé místo zvlášť (1 QR kód = 1 židle), i k vytištění.</p>
+          {deadlineHours && prices.total > 0 ? <p>Zaplaťte do {deadlineHours} hodin, jinak se místa uvolní.</p> : null}
+          <p>Vstupenky přijdou e-mailem, na každé místo jedna.</p>
           {storno && <p>Storno: {storno}.</p>}
           <p>
-            Jméno a e-mail použijeme jen pro vyřízení této rezervace a
-            {dataRetentionDays ? ` do ${dataRetentionDays} dnů` : ''} po posledním představení je smažeme.
+            Jméno a e-mail smažeme{dataRetentionDays ? ` ${dataRetentionDays} dnů` : ''} po posledním představení.
           </p>
         </div>
         {formError && <p className="form-error" role="alert">{formError}</p>}

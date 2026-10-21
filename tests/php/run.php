@@ -201,9 +201,9 @@ function new_code(string $email = 'kod@example.com'): string
     return (string) db_query('SELECT code FROM discount_codes ORDER BY id DESC LIMIT 1')->fetchColumn();
 }
 
-function book(array $seats, int $children = 0, array $codes = [], int $infants = 0): array
+function book(array $seats, int $children = 0, array $codes = []): array
 {
-    return book_reservation(run_by_id(1) ?? [], 'Jana', 'Kódová', 'kody@example.com', $seats, $children, $infants, $codes);
+    return book_reservation(run_by_id(1) ?? [], 'Jana', 'Kódová', 'kody@example.com', $seats, $children, $codes);
 }
 
 test('child seats are the last seats, codes free the most expensive seats first', function (): void {
@@ -216,17 +216,17 @@ test('child seats are the last seats, codes free the most expensive seats first'
     same([], assign_free_seats($seats, $children, 0, 300, 150), 'no code');
 });
 
-test('a reservation with child seats, infants and a code costs adult + child − the adult seat', function (): void {
+test('a reservation with a child seat and a code costs adult + child − the adult seat', function (): void {
     $code = new_code();
-    $booked = book(['MR-1-1', 'MR-1-2', 'MR-1-3'], 1, [$code], 2);
+    $booked = book(['MR-1-1', 'MR-1-2', 'MR-1-3'], 1, [$code]);
     $r = $booked['reservation'] ?? [];
-    same(['pending', 'MR-1-3', 'MR-1-1', 2, 450], [$r['status'], $r['child_seats'], $r['free_seats'], (int) $r['infants'], (int) $r['amount']], 'reservation');
+    same(['pending', 'MR-1-3', 'MR-1-1', 450], [$r['status'], $r['child_seats'], $r['free_seats'], (int) $r['amount']], 'reservation');
     $used = db()->prepare('SELECT used_at IS NOT NULL, reservation_id, seat_id FROM discount_codes WHERE code = ?');
     $used->execute([$code]);
     same([1, (int) $r['id'], 'MR-1-1'], array_map(fn ($v) => is_numeric($v) ? (int) $v : $v, $used->fetch(PDO::FETCH_NUM) ?: []), 'code used for the seat');
     same([['MR-1-1', 'adult', 0, true], ['MR-1-2', 'adult', 300, false], ['MR-1-3', 'child', 150, false]],
         array_map(fn ($t) => [$t['seat'], $t['kind'], $t['price'], $t['free']], reservation_payload($r)['tickets']), 'tickets in the payload');
-    same('2 dospělí, 1 dítě 4–17 let, 2 děti do 3 let na klíně', seat_kinds_summary($r), 'summary');
+    same('2 dospělí, 1 dítě 4–17 let', seat_kinds_summary($r), 'summary');
 });
 
 test('a discount code works only once and not after it was revoked', function (): void {
@@ -332,19 +332,19 @@ test('offline: seats of one reservation are checked in separately', function ():
 
 test('on-site sale: QR payment, then paid and every seat checked in; the accountant verifies it', function (): void {
     $run = run_by_id(2) ?? [];
-    same(422, onsite_sale_create(device('Vchod A'), $run, ['XX-1-1'], 0, 0)['status'] ?? null, 'invalid seat');
-    $sold = onsite_sale_create(device('Vchod A'), $run, ['WR-5-2', 'WR-5-1'], 1, 1);
+    same(422, onsite_sale_create(device('Vchod A'), $run, ['XX-1-1'], 0)['status'] ?? null, 'invalid seat');
+    $sold = onsite_sale_create(device('Vchod A'), $run, ['WR-5-2', 'WR-5-1'], 1);
     $sale = $sold['sale'] ?? [];
-    same([450, ['WR-5-1', 'WR-5-2'], 1], [$sale['amount'], $sale['seats'], $sale['infants']], 'sale');
+    same([450, ['WR-5-1', 'WR-5-2']], [$sale['amount'], $sale['seats']], 'sale');
     contains('*AM:450.00*', $sale['spd'], 'QR payment');
-    same(409, onsite_sale_create(device('Vchod B'), $run, ['WR-5-1'], 0, 0)['status'] ?? null, 'seat held by the open sale');
+    same(409, onsite_sale_create(device('Vchod B'), $run, ['WR-5-1'], 0)['status'] ?? null, 'seat held by the open sale');
     contains('2 místa odbavena', (string) onsite_sale_paid(device('Vchod A'), $run, (int) $sale['id']), 'paid');
     $r = row((int) $sale['id']);
     same(['paid', 450, 'Vchod A', null], [$r['status'], (int) $r['paid_amount'], $r['sold_by'], $r['payment_checked_at']], 'reservation');
     same(['WR-5-1', 'WR-5-2'], array_keys(reservation_checkins((int) $r['id'])), 'checked in');
     same(null, onsite_sale_paid(device('Vchod A'), $run, (int) $sale['id']), 'only once');
 
-    $other = onsite_sale_create(device('Vchod A'), $run, ['WR-5-3'], 0, 0)['sale'] ?? [];
+    $other = onsite_sale_create(device('Vchod A'), $run, ['WR-5-3'], 0)['sale'] ?? [];
     same(true, onsite_sale_cancel($run, (int) $other['id']), 'cancelled');
     same([false, 'cancelled'], [isset(held(2)['WR-5-3']), row((int) $other['id'])['status']], 'seat free again');
 });

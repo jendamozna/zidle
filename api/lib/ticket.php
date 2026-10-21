@@ -107,7 +107,6 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
     $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     $items = reservation_seat_items($r);
     $count = count($items);
-    $infants = (int) $r['infants'];
     $printNote = 'V příloze je soubor vstupenky.pdf k vytištění – vstupenky rozstříhejte, každá platí pro jedno místo.'
         . ' Při vstupu můžete QR kódy ukázat i na mobilu.';
 
@@ -123,7 +122,6 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         'Variabilní symbol: ' . $r['variable_symbol'],
         '',
         'Každé místo má vlastní QR kód (1 QR kód = 1 židle). ' . $printNote,
-        ...($infants > 0 ? ['Děti do 3 let na klíně vstupenku nepotřebují.'] : []),
         ...(contact_line() !== '' ? ['', contact_line()] : []),
     ]);
 
@@ -152,7 +150,6 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         . $tickets
         . '</div>'
         . '<p style="text-align:center;color:#6b6256;font-size:13px;line-height:1.5">' . $h($printNote)
-        . ($infants > 0 ? '<br>Děti do 3 let na klíně vstupenku nepotřebují.' : '')
         . (contact_line() !== '' ? '<br>' . $h(contact_line()) : '') . '</p>'
         . '</div></body></html>';
 

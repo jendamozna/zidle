@@ -65,19 +65,16 @@ export default function SectionDetail({ section, seats, onBack }) {
   return (
     <div className="detail">
       <div className="detail-head">
-        <button type="button" className="btn btn-ghost" onClick={onBack}>
-          ← Zpět na mapu
+        <button type="button" className="btn btn-ghost btn-back" onClick={onBack} aria-label="Zpět na mapu">
+          ←<span className="wide-only"> Zpět na mapu</span>
         </button>
         <div className="detail-title">
           <span className="detail-level">{LEVELS[section.level]}</span>
           <h2>{section.name}</h2>
         </div>
         <div className="detail-stats">
-          <div className="chip">
-            <strong>{seats.loading ? '–' : stat.free}</strong> volných
-          </div>
           <div className={`chip chip-occ occ-${occupancyLevel(stat.pct)}`}>
-            <strong>{stat.pct} %</strong> obsazeno
+            <strong>{seats.loading ? '–' : stat.free}</strong> volných
           </div>
         </div>
       </div>

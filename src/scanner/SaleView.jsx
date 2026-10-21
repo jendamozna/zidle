@@ -8,7 +8,7 @@ import { saleCancel, saleCreate, salePaid, saleSeats } from './api.js';
 
 const shortSeat = (id) => {
   const { sectionId, row, seat } = parseSeatId(id);
-  return `${SECTIONS.find((s) => s.id === sectionId)?.short ?? sectionId} ř. ${row} · ${seat}`;
+  return `${SECTIONS.find((s) => s.id === sectionId)?.short ?? sectionId} ř. ${row} m. ${seat}`;
 };
 
 /** Grid of one section: free seats can be picked, held ones are disabled. */
@@ -49,8 +49,6 @@ function SalePayment({ sale, busy, onPaid, onCancel }) {
   }, [sale.spd]);
   return (
     <section className="sale-pay">
-      <h2>Zaplaťte QR kódem</h2>
-      <p className="muted small">Zákazník naskenuje QR kód v bankovní aplikaci a ukáže Vám odeslanou platbu.</p>
       {qr ? <img src={qr} alt="QR kód pro platbu" width="280" height="280" /> : <div className="qr-placeholder" />}
       <p className="sale-amount">{formatCzk(sale.amount)}</p>
       <p className="small">
@@ -63,7 +61,6 @@ function SalePayment({ sale, busy, onPaid, onCancel }) {
             {shortSeat(t.seat)} – {KIND_LABELS[t.kind]} {formatCzk(t.price)}
           </li>
         ))}
-        {sale.infants > 0 && <li>Děti do 3 let na klíně: {sale.infants} – zdarma</li>}
       </ul>
       <button type="button" className="btn btn-primary btn-block btn-large" disabled={busy} onClick={onPaid}>
         Zaplaceno – vpustit
@@ -86,7 +83,6 @@ export default function SaleView({ runId, onUnauthorized }) {
   const [sectionId, setSectionId] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [children, setChildren] = useState(0);
-  const [infants, setInfants] = useState(0);
   const [sale, setSale] = useState(null);
   const [done, setDone] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -115,7 +111,6 @@ export default function SaleView({ runId, onUnauthorized }) {
   const reset = () => {
     setSelected(new Set());
     setChildren(0);
-    setInfants(0);
     setSale(null);
     load();
   };
@@ -126,7 +121,6 @@ export default function SaleView({ runId, onUnauthorized }) {
     else if (next.size < (info?.maxSeats ?? 20)) next.add(id);
     setSelected(next);
     setChildren((c) => Math.min(c, next.size));
-    setInfants((c) => Math.min(c, next.size));
   };
 
   const run = async (request) => {
@@ -144,7 +138,7 @@ export default function SaleView({ runId, onUnauthorized }) {
   };
 
   const create = async () => {
-    const res = await run(() => saleCreate(runId, [...selected].sort(compareSeatIds), children, infants));
+    const res = await run(() => saleCreate(runId, [...selected].sort(compareSeatIds), children));
     if (res) {
       setDone(null);
       setSale(res.sale);
@@ -190,7 +184,6 @@ export default function SaleView({ runId, onUnauthorized }) {
         </p>
       )}
       {error && <p className="form-error">{error}</p>}
-      <p className="muted small">Volná místa lze prodat přímo u vchodu – zákazník zaplatí QR platbou.</p>
       <div className="sale-sections">
         {SECTIONS.map((s) => (
           <button
@@ -208,16 +201,13 @@ export default function SaleView({ runId, onUnauthorized }) {
 
       {selected.size > 0 && (
         <div className="sale-summary">
-          <p className="small">{[...selected].sort(compareSeatIds).map(shortSeat).join(', ')}</p>
-          <div className="stepper">
-            <span className="stepper-label">
-              Dospělí
-              <small>od 18 let · {formatCzk(info.price)}</small>
+          <div className="ticket-row">
+            <span>
+              Dospělí <span className="muted">· {formatCzk(info.price)}</span>
             </span>
             <output className="stepper-fixed">{selected.size - children}</output>
           </div>
           <Stepper label="Děti 4–17 let" hint={formatCzk(info.childPrice)} value={children} max={selected.size} onChange={setChildren} />
-          <Stepper label="Děti do 3 let na klíně" hint="zdarma" value={infants} max={selected.size} onChange={setInfants} />
           <button type="button" className="btn btn-primary btn-block btn-large" disabled={busy} onClick={create}>
             QR platba {formatCzk(prices.total)} · {seatsLabel(selected.size)}
           </button>

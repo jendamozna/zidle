@@ -10,7 +10,7 @@
 //   POST organizer.php {action: "snapshot", runId}          → list for checking tickets offline (scanner_snapshot())
 //   POST organizer.php {action: "sync", runId, events}      → check-ins made offline (apply_offline_scans())
 //   POST organizer.php {action: "sale-seats", runId}        → {taken, price, childPrice, maxSeats} for selling on site
-//   POST organizer.php {action: "sale-create", runId, seats, children, infants} → {sale} with the QR payment (onsite.php)
+//   POST organizer.php {action: "sale-create", runId, seats, children} → {sale} with the QR payment (onsite.php)
 //   POST organizer.php {action: "sale-paid", runId, id}     → paid and checked in
 //   POST organizer.php {action: "sale-cancel", runId, id}   → seats free again
 // Outside the run's check-in window (SCAN_WINDOW_*), check-ins happen only with
@@ -92,7 +92,7 @@ run_api(function (): void {
         case 'sale-create':
             $access = require_organizer();
             $run = require_run($access, (int) ($body['runId'] ?? 0));
-            $sold = onsite_sale_create($access, $run, $body['seats'] ?? null, $body['children'] ?? 0, $body['infants'] ?? 0);
+            $sold = onsite_sale_create($access, $run, $body['seats'] ?? null, $body['children'] ?? 0);
             if (isset($sold['error'])) {
                 json_error($sold['error'], $sold['status'], $sold['extra']);
             }

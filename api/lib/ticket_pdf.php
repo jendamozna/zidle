@@ -19,7 +19,6 @@ function ticket_pdf(array $r): string
     $run = run_by_id((int) $r['run_id']);
     $runText = $run ? run_label($run) : '–';
     $name = trim($r['first_name'] . ' ' . $r['last_name']);
-    $infants = (int) $r['infants'];
 
     $tickets = '';
     foreach ($items as $n => $item) {
@@ -35,7 +34,6 @@ function ticket_pdf(array $r): string
             . '<div class="place">řada <b>' . $h($row) . '</b> &nbsp; místo <b>' . $h($seat) . '</b></div>'
             . '<div class="kind">' . $h(SEAT_KIND_LABELS[$item['kind']]) . '</div>'
             . '<div class="meta">' . $h($name) . ' · VS ' . $h($r['variable_symbol']) . ' · vstupenka ' . ($n + 1) . ' z ' . $count . '</div>'
-            . ($infants > 0 ? '<div class="meta">V rezervaci také ' . $h(infants_label($infants)) . ' (bez vstupenky).</div>' : '')
             . '</td></tr></table>';
     }
 

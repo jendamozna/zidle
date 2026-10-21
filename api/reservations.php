@@ -1,6 +1,6 @@
 <?php
 // POST api/reservations.php        – create a reservation
-//      body: {runId, firstName, lastName, email, seats: ["ML-1-1", ...], children, infants, codes: ["ABCD-EFGH"],
+//      body: {runId, firstName, lastName, email, seats: ["ML-1-1", ...], children, codes: ["ABCD-EFGH"],
 //             formToken, hp, altcha}
 // GET  api/reservations.php?token= – reservation status and payment details
 declare(strict_types=1);
@@ -63,7 +63,6 @@ function create_reservation(): void
     $email = trim((string) ($body['email'] ?? ''));
     $seats = $body['seats'] ?? null;
     $children = $body['children'] ?? 0;
-    $infants = $body['infants'] ?? 0;
     $codes = $body['codes'] ?? [];
 
     $errors = [];
@@ -93,9 +92,6 @@ function create_reservation(): void
     if (!is_int($children) || $children < 0 || $children > count($seats)) {
         $errors['children'] = 'Dětských vstupenek může být nejvýše tolik, kolik je míst.';
     }
-    if (!is_int($infants) || $infants < 0 || $infants > count($seats)) {
-        $errors['infants'] = 'Dětí do 3 let na klíně může být nejvýše tolik, kolik je míst.';
-    }
     $codes = is_array($codes) ? array_values(array_filter(array_map(static fn ($c) => normalize_discount_code((string) $c), $codes))) : null;
     if ($codes === null) {
         $errors['codes'] = 'Neplatné slevové kódy.';
@@ -112,7 +108,7 @@ function create_reservation(): void
         }
     }
     if ($errors) {
-        json_error($errors['seats'] ?? $errors['codes'] ?? $errors['children'] ?? $errors['infants'] ?? 'Zkontrolujte zadané údaje.', 422, ['fields' => $errors]);
+        json_error($errors['seats'] ?? $errors['codes'] ?? $errors['children'] ?? 'Zkontrolujte zadané údaje.', 422, ['fields' => $errors]);
     }
     // Counted only for well-formed requests, so a visitor's own typos don't use up the limit.
     // With ALTCHA every reservation costs proof-of-work, so a higher limit lets several
@@ -124,7 +120,7 @@ function create_reservation(): void
 
     expire_reservations();
 
-    $booked = book_reservation($run, $firstName, $lastName, $email, $seats, (int) $children, (int) $infants, (array) $codes);
+    $booked = book_reservation($run, $firstName, $lastName, $email, $seats, (int) $children, (array) $codes);
     if (isset($booked['error'])) {
         json_error($booked['error'], $booked['status'], $booked['extra']);
     }

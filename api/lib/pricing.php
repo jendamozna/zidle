@@ -1,6 +1,6 @@
 <?php
-// Seat prices: adult (from 18 years) and child (4–17 years) seats, children up to
-// 3 years sit on a lap for free (no seat, no ticket). A discount code makes one seat
+// Seat prices: adult (from 18 years) and child (4–17 years) seats; children up to
+// 3 years may sit on an adult's lap for free (not recorded). A discount code makes one seat
 // free – the most expensive one (adult seats first, then child seats).
 //
 // A reservation keeps the prices it was made with (adult_price, child_price) and the
@@ -83,13 +83,12 @@ function reservation_seat_items(array $r): array
     ], $seats);
 }
 
-/** "2 dospělí, 1 dítě 4–17 let, 1 dítě do 3 let na klíně" for e-mails and admin. */
+/** "2 dospělí, 1 dítě 4–17 let" for e-mails. */
 function seat_kinds_summary(array $r): string
 {
     $seats = seat_list((string) $r['seats']);
     $children = count(array_filter($seats, static fn ($s) => seat_kind($r, $s) === 'child'));
     $adults = count($seats) - $children;
-    $infants = (int) $r['infants'];
     $parts = [];
     if ($adults > 0) {
         $parts[] = $adults . ' ' . ($adults === 1 ? 'dospělý' : 'dospělí');
@@ -97,14 +96,5 @@ function seat_kinds_summary(array $r): string
     if ($children > 0) {
         $parts[] = $children . ' ' . ($children === 1 ? 'dítě' : ($children < 5 ? 'děti' : 'dětí')) . ' 4–17 let';
     }
-    if ($infants > 0) {
-        $parts[] = infants_label($infants);
-    }
     return implode(', ', $parts);
-}
-
-/** "1 dítě do 3 let na klíně" */
-function infants_label(int $infants): string
-{
-    return $infants . ' ' . ($infants === 1 ? 'dítě' : ($infants < 5 ? 'děti' : 'dětí')) . ' do 3 let na klíně';
 }

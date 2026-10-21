@@ -172,7 +172,7 @@ function CancelPanel({ reservation, onCancelled }) {
             !whole &&
             `Nová částka k úhradě: ${formatCzk(Math.max(0, sum(seats.filter((id) => !selected.has(id))) - received))}.`}
           {isPaid && percent === 0 && refund > 0 && `Částku ${formatCzk(refund)} pošleme zpět na účet, ze kterého platba přišla.`}
-          {isPaid && value === 0 && 'Místa zdarma se slevovým kódem se nevracejí – kód zůstává použitý.'}
+          {isPaid && value === 0 && 'Za místo se slevovým kódem se nic nevrací.'}
           {isPaid &&
             percent > 0 &&
             percent < 100 &&
@@ -210,19 +210,19 @@ function useQrImage(text, width) {
   return qr;
 }
 
-function TicketCard({ ticket, index, count }) {
+function TicketCard({ ticket }) {
   const qr = useQrImage(ticket.code, 400);
   const { sectionId, row, seat } = parseSeatId(ticket.seat);
   return (
     <li className={`ticket-card ${ticket.checkedInAt ? 'is-used' : ''}`}>
       {qr ? <img src={qr} alt={`QR kód vstupenky ${ticket.seat}`} width="200" height="200" /> : <div className="qr-placeholder" />}
       <div>
-        <strong>{SECTION_BY_ID[sectionId]?.name ?? sectionId}</strong>
+        <strong>{SECTION_BY_ID[sectionId]?.short ?? sectionId}</strong>
         <span>
-          řada {row} · místo {seat}
+          ř. {row} · m. {seat}
         </span>
         <span className="muted small">
-          {KIND_LABELS[ticket.kind]} · {index + 1} z {count}
+          {KIND_LABELS[ticket.kind]}
           {ticket.checkedInAt && ' · odbaveno'}
         </span>
       </div>
@@ -239,15 +239,15 @@ function Tickets({ reservation }) {
       <div className="tickets-head">
         <div>
           <h3 id="tickets-title">Vstupenky</h3>
-          <p className="muted small">Každé místo má vlastní QR kód – 1 QR kód = 1 židle. Ukažte je u vchodu na mobilu, nebo si je vytiskněte a rozstříhejte.</p>
+          <p className="muted small">1 QR kód = 1 židle. Ukažte je u vchodu v mobilu, nebo vytiskněte.</p>
         </div>
         <a className="btn btn-primary" href={ticketsPdfUrl(reservation.token)} download>
-          Stáhnout PDF k tisku
+          PDF k tisku
         </a>
       </div>
       <ul className="ticket-grid">
-        {tickets.map((ticket, i) => (
-          <TicketCard key={ticket.seat} ticket={ticket} index={i} count={tickets.length} />
+        {tickets.map((ticket) => (
+          <TicketCard key={ticket.seat} ticket={ticket} />
         ))}
       </ul>
     </section>
@@ -260,12 +260,11 @@ export default function PaymentView({ reservation, onChange, onBack }) {
   // Pending: bank payment QR. Paid: the tickets below, one QR per seat.
   const qr = useQrImage(isPending ? payment.spd : null, 520);
 
-
   return (
     <div className="detail">
       <div className="detail-head">
-        <button type="button" className="btn btn-ghost" onClick={onBack}>
-          ← Zpět na mapu
+        <button type="button" className="btn btn-ghost btn-back" aria-label="Zpět na mapu" onClick={onBack}>
+          ←<span className="wide-only"> Zpět na mapu</span>
         </button>
         <div className="detail-title">
           <span className="detail-level">Rezervace {payment.variableSymbol}</span>
@@ -331,16 +330,10 @@ export default function PaymentView({ reservation, onChange, onBack }) {
               <li key={t.seat}>
                 <span>{seatLabel(t.seat)}</span>
                 <span className="muted">
-                  {KIND_LABELS[t.kind]} · {t.free ? 'zdarma (slevový kód)' : formatCzk(t.price)}
+                  {KIND_LABELS[t.kind]} · {t.free ? 'kód, zdarma' : formatCzk(t.price)}
                 </span>
               </li>
             ))}
-            {reservation.infants > 0 && (
-              <li>
-                <span>Děti do 3 let na klíně</span>
-                <span className="muted">{reservation.infants} · zdarma, bez vstupenky</span>
-              </li>
-            )}
           </ul>
           <p className="muted small">{reservation.email}</p>
 

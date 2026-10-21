@@ -11,7 +11,7 @@ declare(strict_types=1);
  * reservations, due at once.
  * Returns ['reservation' => row] or ['error' => message, 'status' => HTTP status, 'extra' => array].
  */
-function book_reservation(array $run, string $firstName, string $lastName, string $email, array $seats, int $children, int $infants, array $codes, ?string $soldBy = null): array
+function book_reservation(array $run, string $firstName, string $lastName, string $email, array $seats, int $children, array $codes, ?string $soldBy = null): array
 {
     $childSeats = assign_child_seats($seats, $children);
     $freeSeats = assign_free_seats($seats, $childSeats, count($codes), adult_price(), child_price());
@@ -53,12 +53,12 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
 
         $pdo->prepare(
             'INSERT INTO reservations
-               (token, run_id, first_name, last_name, email, seats, child_seats, free_seats, infants, seat_count,
+               (token, run_id, first_name, last_name, email, seats, child_seats, free_seats, seat_count,
                 adult_price, child_price, amount, status, created_at, expires_at, paid_at, sold_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $token, $run['id'], $firstName, $lastName, $email, implode(',', $seats), implode(',', $childSeats),
-            implode(',', $freeSeats), $infants, count($seats), adult_price(), child_price(), $amount,
+            implode(',', $freeSeats), count($seats), adult_price(), child_price(), $amount,
             $free ? 'paid' : 'pending', db_time($now), db_time($expires), $free ? db_time($now) : null, $soldBy,
         ]);
         $id = (int) $pdo->lastInsertId();

@@ -1,8 +1,7 @@
--- Adult / child seats, infants on a lap, discount codes, one ticket (QR code) per seat and on-site sales.
+-- Adult / child seats, discount codes, one ticket (QR code) per seat and on-site sales.
 ALTER TABLE reservations
   ADD COLUMN IF NOT EXISTS child_seats TEXT NOT NULL DEFAULT '' COMMENT 'Seats with a child ticket (4–17 years), comma separated; the others are adult' AFTER cancelled_seats,
   ADD COLUMN IF NOT EXISTS free_seats  TEXT NOT NULL DEFAULT '' COMMENT 'Seats paid by a discount code (price 0), comma separated' AFTER child_seats,
-  ADD COLUMN IF NOT EXISTS infants     TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Children up to 3 years on a lap: no seat, no ticket, free' AFTER free_seats,
   ADD COLUMN IF NOT EXISTS adult_price INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK per adult seat when the reservation was made' AFTER seat_count,
   ADD COLUMN IF NOT EXISTS child_price INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK per child seat when the reservation was made' AFTER adult_price,
   ADD COLUMN IF NOT EXISTS sold_by     VARCHAR(100) NULL COMMENT 'Sold at the entrance by this organizer (scanner); NULL = booked on the website' AFTER checked_in_by,

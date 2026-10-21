@@ -73,7 +73,6 @@ function verify_ticket(string $code, array $run, array $access, bool $confirmOut
             'seats' => $seats,
             'count' => count($seats),
             'checkedIn' => count(array_intersect(array_keys($checkins), $seats)),
-            'infants' => (int) $r['infants'],
         ],
         'checkedInAt' => $checkins[$seat]['at'] ?? null,
         'checkedInBy' => $checkins[$seat]['by'] ?? null,

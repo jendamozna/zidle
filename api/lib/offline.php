@@ -19,7 +19,7 @@ const OFFLINE_MAX_AGE_HOURS = 48;
 function scanner_snapshot(array $run): array
 {
     $stmt = db()->prepare(
-        'SELECT id, variable_symbol, first_name, last_name, seats, child_seats, infants, status
+        'SELECT id, variable_symbol, first_name, last_name, seats, child_seats, status
          FROM reservations WHERE run_id = ? ORDER BY id'
     );
     $stmt->execute([$run['id']]);
@@ -39,7 +39,6 @@ function scanner_snapshot(array $run): array
         'name' => trim($r['first_name'] . ' ' . $r['last_name']),
         'seats' => seat_list((string) $r['seats']),
         'childSeats' => seat_list((string) $r['child_seats']),
-        'infants' => (int) $r['infants'],
         'status' => $r['status'],
         'checkedIn' => (object) ($byReservation[(int) $r['id']] ?? []),
     ], $rows);

@@ -21,22 +21,22 @@ function run_taken_seats(int $runId): array
  * Creates the on-site sale (pending reservation sold by the organizer).
  * Returns ['sale' => onsite_sale_payload()] or ['error' => message, 'status' => HTTP status, 'extra' => array].
  */
-function onsite_sale_create(array $access, array $run, mixed $seats, mixed $children, mixed $infants): array
+function onsite_sale_create(array $access, array $run, mixed $seats, mixed $children): array
 {
     $max = (int) config('MAX_SEATS_PER_RESERVATION');
     $seats = is_array($seats) ? array_values(array_unique(array_map('strval', $seats))) : [];
     if (!$seats || count($seats) > $max || array_filter($seats, static fn ($id) => !is_valid_seat_id($id))) {
         return ['error' => "Vyberte 1 až {$max} volných míst.", 'status' => 422, 'extra' => []];
     }
-    if (!is_int($children) || $children < 0 || $children > count($seats) || !is_int($infants) || $infants < 0 || $infants > count($seats)) {
-        return ['error' => 'Dětí může být nejvýše tolik, kolik je míst.', 'status' => 422, 'extra' => []];
+    if (!is_int($children) || $children < 0 || $children > count($seats)) {
+        return ['error' => 'Dětských vstupenek může být nejvýše tolik, kolik je míst.', 'status' => 422, 'extra' => []];
     }
     if (trim((string) config('BANK_IBAN')) === '') {
         return ['error' => 'Platby nejsou nastaveny (BANK_IBAN).', 'status' => 503, 'extra' => []];
     }
     usort($seats, 'compare_seat_ids');
     expire_reservations();
-    $booked = book_reservation($run, '', ONSITE_NAME, '', $seats, $children, $infants, [], $access['name']);
+    $booked = book_reservation($run, '', ONSITE_NAME, '', $seats, $children, [], $access['name']);
     if (isset($booked['error'])) {
         return $booked;
     }
@@ -52,7 +52,6 @@ function onsite_sale_payload(array $r): array
         'amount' => (int) $r['amount'],
         'seats' => seat_list((string) $r['seats']),
         'tickets' => reservation_seat_items($r),
-        'infants' => (int) $r['infants'],
         'spd' => spd_string($r),
         'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
         'iban' => (string) config('BANK_IBAN'),

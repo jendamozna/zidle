@@ -116,7 +116,6 @@ export function verifyOffline(decoded, snapshot, queue) {
     seats: found.seats,
     count: found.seats.length,
     checkedIn: found.seats.filter(checkedIn).length,
-    infants: found.infants ?? 0,
   };
   if (found.status === 'pending') return { result: 'unpaid', ticket };
   if (found.status !== 'paid') return { result: 'cancelled', ticket };

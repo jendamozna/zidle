@@ -148,10 +148,11 @@ export default function App() {
           {!reservation && seats.run && (
             <div className="run-bar">
               <span>
-                <span className="muted">Termín</span> <strong>{runLabel(seats.run)}</strong>
+                <span className="muted wide-only">Termín </span>
+                <strong>{runLabel(seats.run)}</strong>
               </span>
               <button type="button" className="link" onClick={() => chooseRun(null)}>
-                Změnit termín
+                Změnit<span className="wide-only"> termín</span>
               </button>
             </div>
           )}

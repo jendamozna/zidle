@@ -65,32 +65,30 @@ test('the footer and the run picker show without horizontal scroll on a phone', 
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
-test('child ticket, infant and a discount code: 2 adults + 1 child − 1 adult = 450 Kč', async ({ page }) => {
+test('child ticket and a discount code: 2 adults + 1 child − 1 adult = 450 Kč', async ({ page }) => {
   const form = await pickSeats(page, 3);
   await fillCustomer(form);
   await form.getByRole('button', { name: 'Děti 4–17 let: více' }).click();
-  await form.getByRole('button', { name: 'Děti do 3 let na klíně: více' }).click();
-  await form.getByLabel('Slevové kódy').fill('nesmysl');
+  await expect(form.getByText('Děti do 3 let mohou sedět zdarma na klíně dospělého.')).toBeVisible();
+  await form.getByLabel('Slevový kód').fill('nesmysl');
   await form.getByRole('button', { name: 'Použít' }).click();
   await expect(form.getByText('Kód má 8 znaků, např. ABCD-EFGH.')).toBeVisible();
-  await form.getByLabel('Slevové kódy').fill(seed().codes[0].toLowerCase());
+  await form.getByLabel('Slevový kód').fill(seed().codes[0].toLowerCase());
   await form.getByRole('button', { name: 'Použít' }).click();
-  await expect(form.locator('.code-chips')).toContainText(seed().codes[0]);
-  await expect(form.locator('.modal-summary')).toContainText('2 × 300 Kč · 1 × 150 Kč · sleva −300 Kč');
+  await expect(form.locator('.code-list')).toContainText(`${seed().codes[0]} · místo zdarma`);
   await expect(form.locator('.modal-summary strong')).toHaveText('450 Kč');
   await page.waitForTimeout(3200); // FORM_MIN_SECONDS
   await form.locator('button[type=submit]').click();
 
   await expect(page.locator('.payment-qr img')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.payment-amount')).toContainText('450');
-  await expect(page.locator('.pay-seats')).toContainText('zdarma (slevový kód)');
+  await expect(page.locator('.pay-seats')).toContainText('kód, zdarma');
   await expect(page.locator('.pay-seats')).toContainText('Dítě 4–17 let · 150 Kč');
-  await expect(page.locator('.pay-seats')).toContainText('Děti do 3 let na klíně');
 
   // The code is used up: the same code is refused for the next reservation.
   const again = await pickSeats(page, 1);
   await fillCustomer(again);
-  await again.getByLabel('Slevové kódy').fill(seed().codes[0]);
+  await again.getByLabel('Slevový kód').fill(seed().codes[0]);
   await again.getByRole('button', { name: 'Použít' }).click();
   await page.waitForTimeout(3200);
   await again.locator('button[type=submit]').click();
@@ -101,7 +99,7 @@ test('a reservation paid by discount codes is confirmed at once with one ticket 
   const form = await pickSeats(page, 2);
   await fillCustomer(form);
   for (const code of seed().codes.slice(1, 3)) {
-    await form.getByLabel('Slevové kódy').fill(code);
+    await form.getByLabel('Slevový kód').fill(code);
     await form.getByRole('button', { name: 'Použít' }).click();
   }
   await expect(form.locator('.modal-summary strong')).toHaveText('0 Kč');
@@ -110,7 +108,7 @@ test('a reservation paid by discount codes is confirmed at once with one ticket 
 
   await expect(page.getByText('Zaplaceno').first()).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.ticket-card img')).toHaveCount(2);
-  const pdf = await request.get(await page.getByRole('link', { name: 'Stáhnout PDF k tisku' }).getAttribute('href'));
+  const pdf = await request.get(await page.getByRole('link', { name: 'PDF k tisku' }).getAttribute('href'));
   expect(pdf.headers()['content-type']).toBe('application/pdf');
   expect((await pdf.body()).subarray(0, 5).toString()).toBe('%PDF-');
 });

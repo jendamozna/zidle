@@ -176,11 +176,6 @@ function ResultCard({ scan, onNext }) {
               </span>
             )}
           </div>
-          {ticket.infants > 0 && (
-            <p className="small">
-              + {ticket.infants === 1 ? '1 dítě' : `${ticket.infants} děti`} do 3 let na klíně (bez vstupenky)
-            </p>
-          )}
           {result === 'seat_cancelled' && <p className="small">Toto místo bylo z rezervace zrušeno, ostatní místa platí.</p>}
           {result === 'unknown' && (
             <p className="small">Vstupenka není v seznamu tohoto termínu – může být na jiný termín, nebo neplatná.</p>

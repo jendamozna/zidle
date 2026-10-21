@@ -238,7 +238,6 @@ function reservation_payload(array $r): array
         'email' => $r['email'],
         'seats' => $r['seats'] === '' ? [] : explode(',', $r['seats']),
         'tickets' => $tickets,
-        'infants' => (int) $r['infants'],
         'amount' => (int) $r['amount'],
         'createdAt' => iso_time($r['created_at']),
         'expiresAt' => iso_time($r['expires_at']),

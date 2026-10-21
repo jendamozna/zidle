@@ -4,7 +4,7 @@ export default function Stepper({ label, hint, value, max, onChange, disabled })
     <div className="stepper">
       <span className="stepper-label">
         {label}
-        {hint && <small>{hint}</small>}
+        {hint && <span className="muted"> · {hint}</span>}
       </span>
       <span className="stepper-controls">
         <button type="button" onClick={() => onChange(value - 1)} disabled={disabled || value <= 0} aria-label={`${label}: méně`}>
