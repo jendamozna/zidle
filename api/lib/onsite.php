@@ -104,6 +104,6 @@ function onsite_sale_cancel(array $run, int $id): bool
     if (onsite_sale($run, $id) === null) {
         return false;
     }
-    cancel_seats($id, null, 'admin');
+    cancel_seats($id, null);
     return true;
 }

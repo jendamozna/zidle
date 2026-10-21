@@ -214,15 +214,14 @@ if ($canManage && $csrfOk && in_array($action, ['run-save', 'run-delete'], true)
             $_SESSION['flash'] = 'Termín smazán.';
         }
     } else {
-        // Once a run has reservations, its start and storno rules are fixed:
-        // customers booked under them. Only the label and the booking cut-off change.
+        // Once a run has reservations, its start is fixed: customers booked for that time.
+        // Only the label and the booking cut-off change.
         $existing = $id > 0 ? run_by_id($id) : null;
         $locked = $existing !== null && run_has_reservations($id);
         $label = trim((string) ($_POST['label'] ?? ''));
         $starts = $locked ? run_starts($existing) : prague_time((string) ($_POST['starts_at'] ?? ''));
         $closesRaw = trim((string) ($_POST['booking_closes_at'] ?? ''));
         $closes = $closesRaw === '' ? null : prague_time($closesRaw);
-        $rules = [];
         $errors = [];
         if ($starts === null) {
             $errors[] = 'Zadejte datum a čas začátku.';
@@ -233,31 +232,18 @@ if ($canManage && $csrfOk && in_array($action, ['run-save', 'run-delete'], true)
         if (mb_strlen($label) > 100) {
             $errors[] = 'Název je příliš dlouhý.';
         }
-        if ($locked && (isset($_POST['starts_at']) || isset($_POST['rule_from']))) {
-            $errors[] = 'Představení už má rezervace – začátek a storno podmínky nelze měnit.';
+        if ($locked && isset($_POST['starts_at'])) {
+            $errors[] = 'Představení už má rezervace – začátek nelze měnit.';
         }
-        foreach ($locked ? [] : (array) ($_POST['rule_from'] ?? []) as $i => $from) {
-            $from = trim((string) $from);
-            $percent = trim((string) ($_POST['rule_percent'][$i] ?? ''));
-            if ($from === '' && $percent === '') {
-                continue;
-            }
-            if (prague_time($from) === null || !ctype_digit($percent) || (int) $percent > 100) {
-                $errors[] = 'Storno pravidlo ' . ($i + 1) . ': zadejte datum a procento 0–100.';
-                continue;
-            }
-            $rules[] = ['from' => iso_utc(prague_time($from)), 'percent' => (int) $percent]; // stored in UTC
-        }
-        if ($errors || $starts === null) {
+        if ($errors) {
             $_SESSION['flash'] = implode(' ', $errors);
         } else {
-            $rulesJson = $locked ? json_encode($existing['storno_rules']) : json_encode(normalize_storno_rules($rules), JSON_UNESCAPED_UNICODE);
-            $values = [$label, db_time($starts), $closes ? db_time($closes) : null, $rulesJson];
+            $values = [$label, db_time($starts), $closes ? db_time($closes) : null];
             if ($id > 0) {
-                db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ?, storno_rules = ? WHERE id = ?')
+                db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ? WHERE id = ?')
                     ->execute([...$values, $id]);
             } else {
-                db()->prepare('INSERT INTO runs (label, starts_at, booking_closes_at, storno_rules) VALUES (?, ?, ?, ?)')
+                db()->prepare('INSERT INTO runs (label, starts_at, booking_closes_at) VALUES (?, ?, ?)')
                     ->execute($values);
             }
             $_SESSION['flash'] = $id > 0 ? 'Termín uložen.' : 'Termín přidán.';
@@ -294,7 +280,7 @@ if ($canReservations && $csrfOk && in_array($action, ['payment', 'cancel', 'canc
         // Cancelled by the organizers: paid seats are refunded in full, the customer is e-mailed.
         $seats = $action === 'cancel-seats' ? (array) ($_POST['seats'] ?? []) : null;
         try {
-            $r = cancel_seats($id, $seats, 'admin');
+            $r = cancel_seats($id, $seats);
             $flash = $r['status'] === 'cancelled' ? 'Rezervace zrušena, místa uvolněna.' : 'Vybraná místa zrušena a uvolněna.';
             if ($r['refund_amount'] > $r['refunded_amount']) {
                 $flash .= ' K vrácení: ' . format_czk((int) $r['refund_amount'] - (int) $r['refunded_amount']) . '.';
@@ -843,10 +829,11 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $deleteAt = data_deletion_at();
       $local = static fn (?string $utc) => $utc ? utc_time($utc)->setTimezone(new DateTimeZone(PRAGUE))->format('Y-m-d\TH:i') : '';
       $runForms = array_values(runs());
-      $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null, 'storno_rules' => []];
+      $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null];
   ?>
-  <p class="hint settings-intro">Každý termín má vlastní plánek míst, rezervace a storno podmínky.
-    Rezervace a rušení zákazníkem končí začátkem termínu (nebo dříve, je-li vyplněn konec rezervací).
+  <p class="hint settings-intro">Každý termín má vlastní plánek míst a rezervace. Zákazníci rezervace sami rušit
+    nemohou – zrušit je může jen správce (zaplacená místa se vracejí v plné výši).
+    Rezervace končí začátkem termínu (nebo dříve, je-li vyplněn konec rezervací).
     <?php if ($deleteAt): ?>Osobní údaje budou smazány <?= $h($deleteAt->format('j. n. Y')) ?> (<?= (int) config('DATA_RETENTION_DAYS') ?> dní po posledním termínu).<?php endif ?></p>
 
   <?php $deadlineRules = payment_deadline_rules();
@@ -860,7 +847,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <div class="rules">
       <?php foreach ($deadlineRows as $rule): ?>
         <div class="rule">
-          <label>Rezervace od<input type="datetime-local" name="deadline_from[]" value="<?= $h($rule['from'] === '' ? '' : prague_input(storno_from($rule['from']))) ?>"></label>
+          <label>Rezervace od<input type="datetime-local" name="deadline_from[]" value="<?= $h($rule['from'] === '' ? '' : prague_input(rule_from($rule['from']))) ?>"></label>
           <label>Splatnost (hodin)<input type="number" name="deadline_hours[]" min="1" max="720" value="<?= $h($rule['hours']) ?>"></label>
         </div>
       <?php endforeach ?>
@@ -870,7 +857,6 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <?php foreach ($runForms as $run):
       $locked = $run['id'] && run_has_reservations($run['id']);
-      $rows = $locked ? $run['storno_rules'] : array_pad($run['storno_rules'], max(3, count($run['storno_rules']) + 1), ['from' => '', 'percent' => '']);
       $dis = $locked ? ' disabled' : '';
   ?>
   <form class="card settings" method="post">
@@ -883,17 +869,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <label>Konec rezervací (nepovinný)<input type="datetime-local" name="booking_closes_at" value="<?= $h($local($run['booking_closes_at'])) ?>"></label>
     </div>
     <?php if ($locked): ?>
-      <p class="hint locked">Představení už má rezervace – začátek a storno podmínky nelze měnit (zákazníci rezervovali za těchto podmínek).</p>
+      <p class="hint locked">Představení už má rezervace – začátek nelze měnit (zákazníci rezervovali na tento čas).</p>
     <?php endif ?>
-    <p class="hint">Storno poplatky zaplacených rezervací tohoto termínu. Před prvním datem je storno zdarma.<?= $locked && !$rows ? ' Storno podmínky nejsou nastavené – zrušení je zdarma.' : '' ?></p>
-    <div class="rules">
-      <?php foreach ($rows as $rule): ?>
-        <div class="rule">
-          <label>Od<input type="datetime-local" name="rule_from[]" value="<?= $h($rule['from'] === '' ? '' : prague_input(storno_from($rule['from']))) ?>"<?= $dis ?>></label>
-          <label>Poplatek %<input type="number" name="rule_percent[]" min="0" max="100" value="<?= $h($rule['percent']) ?>"<?= $dis ?>></label>
-        </div>
-      <?php endforeach ?>
-    </div>
     <div class="actions">
       <button name="action" value="run-save"><?= $run['id'] ? 'Uložit termín' : 'Přidat termín' ?></button>
       <?php if ($run['id']): ?>
@@ -992,8 +969,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
             <?php if ($r['sold_by'] !== null && $r['status'] === 'paid'): ?><br><small class="<?= $r['payment_checked_at'] ? '' : 'overdue' ?>"><?= $r['payment_checked_at'] ? 'platba ověřena ' . $h($fmt($r['payment_checked_at'])) : 'na místě – ověřte, že platba dorazila' ?></small><?php endif ?>
             <?php if ($r['ticket_sent_at']): ?><br><small>vstupenka <?= $h($fmt($r['ticket_sent_at'])) ?></small><?php endif ?>
             <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= count($checkedIn) ?> z <?= (int) $r['seat_count'] ?> míst, poprvé <?= $h($fmt($r['checked_in_at'])) ?><?= $r['checked_in_by'] ? ' (' . $h($r['checked_in_by']) . ')' : '' ?></small><?php endif ?>
-            <?php if ($r['status'] === 'cancelled'): ?><br><small><?= $r['cancelled_by'] === 'customer' ? 'zrušil zákazník' : 'zrušeno správcem' ?> <?= $h($fmt($r['cancelled_at'])) ?></small><?php endif ?>
-            <?php if ($r['cancel_fee'] > 0): ?><br><small>storno <?= $kc($r['cancel_fee']) ?></small><?php endif ?>
+            <?php if ($r['status'] === 'cancelled'): ?><br><small>zrušeno <?= $h($fmt($r['cancelled_at'])) ?></small><?php endif ?>
             <?php if ($r['refunded_amount'] > 0): ?><br><small>vráceno <?= $kc($r['refunded_amount']) ?> (<?= $h($fmt($r['refunded_at'])) ?>)</small><?php endif ?>
             <?php if ($r['refund_amount'] > $r['refunded_amount']): ?>
               <br><small class="overdue">vrátit: <?= $kc($r['refund_amount'] - $r['refunded_amount']) ?>

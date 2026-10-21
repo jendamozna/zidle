@@ -17,7 +17,7 @@ https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV.
 7. [Customer app](#7-customer-app)
 8. [Reservation lifecycle](#8-reservation-lifecycle)
 9. [Payments](#9-payments)
-10. [Cancellation and refunds](#10-cancellation-and-refunds)
+10. [Cancellation (admin) and refunds](#10-cancellation-admin-and-refunds)
 11. [Tickets and check-in](#11-tickets-and-check-in)
 12. [Accounts, roles and sign-in](#12-accounts-roles-and-sign-in)
 13. [Discount codes](#13-discount-codes)
@@ -57,7 +57,6 @@ api/
   tickets.php          GET printable tickets (PDF) of a paid reservation
   altcha.php           GET invisible ALTCHA challenge
   reservations.php     POST create reservation, GET reservation by token
-  cancel.php           POST customer cancellation
   ticket-names.php     POST names on the seat tickets
   organizer.php        scanner API (access, verify, offline, on-site sale)
   cron.php             scheduled jobs (CLI only); cron-expire.php = alias
@@ -66,14 +65,14 @@ api/
   lib/layout.php       LEVELS, PLAN, SECTIONS (the only layout definition), layout_public(), total_capacity(),
                        section_rows(), section_capacity(), section_seat_ids(), default_reserve_seats(), section_name(),
                        is_valid_seat_id(), compare_seat_ids()
-  lib/settings.php     runs: loading, times, storno rules, open sections (run_capacity()), check-in window,
+  lib/settings.php     runs: loading, times, open sections (run_capacity()), check-in window,
                        run_public(); payment deadline rules
   lib/pricing.php      adult / child seats, discount-free seats, seat_value(), reservation_seat_items()
   lib/discounts.php    discount codes: create + e-mail, revoke, lock for a reservation
   lib/booking.php      book_reservation() (prices, codes, seats, VS, first e-mail), generate_variable_symbol()
   lib/checkin.php      verify_ticket() – online check-in of one seat ticket
   lib/onsite.php       selling at the entrance (scanner tab Prodej)
-  lib/cancellation.php cancellation_terms(), cancel_seats(), notices, reminders, GDPR purge
+  lib/cancellation.php cancel_seats() (admin), notices, reminders, GDPR purge
   lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
   lib/offline.php      scanning without a connection: scanner_snapshot(), apply_offline_scans(), conflicts
   lib/admin_users.php  accounts and roles: user_can(), admin_login(), create_first_admin(), admin_invite(), admin_accept_invite(), request_password_reset(), reset_password()
@@ -84,7 +83,7 @@ api/
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
   lib/scanner_access.php  scanner sign-in (accounts), device cookie, app_base_url()
 db/schema.sql          full schema for a new database
-db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–017)
+db/migrations/0NN_*.sql  re-runnable upgrades of existing databases (002–018)
 src/                   customer app
   App.jsx              views: run picker / map / section / reservation page; form; toasts
   hooks/useSeats.js    seat state of one run, polling, reserve()
@@ -94,7 +93,7 @@ src/                   customer app
                        scanner), ReservationPanel, ReservationForm, PaymentView, Stepper
   pricing.js           seat prices / discount preview (mirror of lib/pricing.php), code formatting
   altcha.js            invisible ALTCHA solver (altcha-lib, WebCrypto PBKDF2)
-  runs.js, storno.js, plural.js   formatting helpers
+  runs.js, plural.js   formatting helpers
 src/scanner/           organizer scanner (ScannerApp, SaleView, useQrCamera, ticket.js, api.js,
                        offline.js + useOffline.js = offline mode)
 public/sw.js           service worker: keeps the scanner on the device for offline start
@@ -217,7 +216,7 @@ name override them (local file wins).
 ## 5. Domain model
 
 - **Run** (`runs`) – one performance. `starts_at`, optional `label`, optional
-  `booking_closes_at`, `storno_rules` (JSON), `reserve_seats` (seats that are
+  `booking_closes_at`, `reserve_seats` (seats that are
   „Záložní“ in this run). Seats, reservations and check-in are per run.
 - **Section / seat** – fixed layout, defined only in `api/lib/layout.php`
   after the hand-drawn plan of the church: `LEVELS` (main *Hlavní sál* /
@@ -296,8 +295,8 @@ All `DATETIME` columns and JSON dates are UTC.
 
 | Table | Purpose / key columns |
 | --- | --- |
-| `runs` | `id`, `label`, `starts_at`, `booking_closes_at` (NULL = start), `storno_rules` JSON `[{"from":"YYYY-MM-DDTHH:MM:SSZ","percent":50}]`, `reserve_seats` JSON `["BL-2-1", …]` (seats „Záložní“ in the run; NULL = default reserve rows) |
-| `reservations` | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `child_seats` (CSV, child tickets incl. cancelled ones), `free_seats` (CSV, paid by discount codes), `ticket_names` (JSON `{seat: name}` the customer put on the tickets, migration 016), `seat_count`, `adult_price`, `child_price` (CZK per seat when booked; migration 013 sets both to `amount / seat_count` for older rows), `amount` (price of current seats), `paid_amount` (sum of all received transfers), `variable_symbol` (unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `cancelled_by` (`customer`/`admin`), `cancel_fee`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at` / `checked_in_by` (first seat checked in), `sold_by` (organizer of an on-site sale, NULL = website), `payment_checked_at` (accountant verified an on-site payment) |
+| `runs` | `id`, `label`, `starts_at`, `booking_closes_at` (NULL = start), `reserve_seats` JSON `["BL-2-1", …]` (seats „Záložní“ in the run; NULL = default reserve rows) |
+| `reservations` | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `child_seats` (CSV, child tickets incl. cancelled ones), `free_seats` (CSV, paid by discount codes), `ticket_names` (JSON `{seat: name}` the customer put on the tickets, migration 016), `seat_count`, `adult_price`, `child_price` (CZK per seat when booked; migration 013 sets both to `amount / seat_count` for older rows), `amount` (price of current seats), `paid_amount` (sum of all received transfers), `variable_symbol` (unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at` / `checked_in_by` (first seat checked in), `sold_by` (organizer of an on-site sale, NULL = website), `payment_checked_at` (accountant verified an on-site payment) |
 | `ticket_checkins` | PK (`reservation_id`, `seat_id`), `checked_in_at`, `checked_in_by`; FK cascade. One row per checked-in seat ticket (migration 013 adds all seats of reservations checked in before). |
 | `discount_codes` | `code` (8 chars, unique, shown `XXXX-XXXX`), `email`, `created_at`, `created_by`, `emailed_at`, `used_at`, `reservation_id`, `seat_id` (the seat made free), `revoked_at` |
 | `reservation_seats` | PK (`run_id`, `seat_id`), `reservation_id` (FK cascade). Prevents double booking per run. |
@@ -306,8 +305,8 @@ All `DATETIME` columns and JSON dates are UTC.
 | `settings` | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8) |
 | `admin_users` | accounts (§12): `email` (unique, lower case, login), `name`, `roles` (CSV of `admin` / `accountant` / `scanner`, migration 017), `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open invitation token, unique), `invite_expires_at`, `reset_hash` (sha256 of the open forgotten-password token, unique), `reset_expires_at`, `invited_by` (name, `deploy` for the first Správce), `created_at`, `accepted_at`, `last_login_at`, `disabled_at` |
 
-`runs()` rewrites legacy storno rule dates (Prague local `YYYY-MM-DD HH:MM`)
-to UTC on load. Schema changes: update `db/schema.sql` and add a new
+Migration 018 drops `runs.storno_rules`, `reservations.cancelled_by` and
+`cancel_fee` (customers no longer cancel, §10). Schema changes: update `db/schema.sql` and add a new
 re-runnable migration.
 
 ## 7. Customer app
@@ -374,7 +373,7 @@ starts when the form opens; submit waits for it with the button text
 *Ověřuji…*; on an `altcha` error it solves a new challenge and retries once),
 notes (*„Zaplaťte do N hodin, jinak se místa uvolní.“* with the hours in
 effect now – only when there is something to pay, *„Vstupenky přijdou
-e-mailem, na každé místo jedna.“*, storno text from `stornoText()`, *„Jméno a
+e-mailem, na každé místo jedna.“*, *„Jméno a
 e-mail smažeme N dnů po posledním představení.“*), submit **Rezervovat a
 zaplatit** (total 0: **Rezervovat zdarma**). Sent as `children`, `codes`.
 Server field errors (incl. `codes`) are shown at the fields. 409/403 close
@@ -395,15 +394,12 @@ turns the same list into a small input under each seat (placeholder = the
 reservation name, max 100) with the links **Uložit jména** →
 `ticket-names.php` and **Zrušit**; then *„Uloženo.“* (+ *„QR kódy i PDF už
 jména obsahují.“* when paid); the seat list shows the name after each seat;
-cancellation info (`CancellationInfo`: cancelled seats / fee / refund; for an
-expired reservation with money to return *„Rezervace propadla, přijatá platba
-se vrací.“*; for a paid one with a surplus *„Přišlo víc, než bylo potřeba.“*
-+ refund line) and cancel panel (`CancelPanel`, §10; pending whole
-cancellation says *„Už přijatých X pošleme zpět…“* when something arrived,
-partial shows the new amount to pay minus what arrived; prices per seat from
-`cancellation.seatPrices`; for seats worth 0 *„Za místo se slevovým kódem se
-nic nevrací.“*; paid partial *„Na e-mail přijdou nové
-vstupenky.“*).
+cancellation info after the organizers cancelled (`CancellationInfo`:
+*„Rezervace byla zrušena.“* / *„Zrušená místa: …“*, *Vráceno X* and the refund
+line; for an expired reservation with money to return *„Rezervace propadla,
+přijatá platba se vrací.“*; for a paid one with a surplus *„Přišlo víc, než
+bylo potřeba.“* + refund line). Customers cannot cancel – there is no cancel
+button and no endpoint (§10).
 
 ## 8. Reservation lifecycle
 
@@ -509,37 +505,25 @@ made from then on (existing ones keep their due date); `seats.php`
   ověřena.“*) instead of *přišla platba*. A sale left pending (neither
   button) expires like any reservation.
 
-## 10. Cancellation and refunds
+## 10. Cancellation (admin) and refunds
 
-`cancellation_terms($r)` (in every reservation payload): `allowed` false
-(`inactive`, `checked_in`, `event_started` = run started); else `percent`
-(`storno_percent(run, now)` for paid, 0 for pending), `seatPrices`, `fee`,
-`refund` for all seats (pending: the part of the price that already arrived).
+Customers cannot cancel reservations or seats themselves (no storno rules or
+fees). The admin cancels a whole reservation or single seats (tab
+*Rezervace*), an organizer cancels an open on-site sale (§9).
 
-Storno rules (per run): before the first rule 0 %; from each rule's `from`
-its percent applies, the highest started rule wins.
-
-Money is per seat: `fee = round(value × percent / 100)` where value is the
-sum of `seat_value()` of the cancelled seats – a seat paid by a discount code
-is worth 0, so nothing is refunded for it and the code stays used.
-`cancellation_terms()` also returns `seatPrices` (current seat → value) for
-the frontend.
-
-`cancel_seats(id, seatIds|null, by)`:
-
-| | customer (`cancel.php`) | admin |
-| --- | --- | --- |
-| allowed when | `cancellation_terms().allowed` | status pending/paid |
-| fee | storno percent | 0 |
-| refund | value − fee | full value |
+`cancel_seats(id, seatIds|null)` – status pending/paid (else *„Rezervaci už
+nelze zrušit.“*):
 
 - seats must belong to the reservation (`Vyberte místa z této rezervace.`);
-- all remaining seats → status `cancelled`, `cancelled_by`, seats deleted;
+- refund `cancellation_refund()`: paid → the value of the cancelled seats
+  (`seat_value()`; a seat paid by a discount code is worth 0, so nothing comes
+  back for it and the code stays used); pending, all seats → the part of the
+  price that already arrived; pending, part → 0;
+- all remaining seats → status `cancelled`, `cancelled_at`, seats deleted;
 - part → `seats`, `seat_count`, `amount` (= value of the remaining seats)
   reduced, `cancelled_seats` appended;
-- paid: `cancel_fee` and `refund_amount` accumulate; refunds go to the
-  paying account (no account is collected);
-- pending, whole: a part of the price that already arrived → `refund_amount`;
+- `refund_amount` accumulates; refunds go to the paying account (no account
+  is collected);
 - pending, part: when what already arrived covers the lower price the
   reservation becomes `paid` (`complete_if_covered()`, surplus refunded; a
   remaining price of 0 – only seats paid by codes – counts as covered);
@@ -547,13 +531,13 @@ the frontend.
   due = `refund_amount − refunded_amount`.
 
 E-mails (`send_cancellation_notice()`): paid part → *Nové vstupenky* (ticket
-e-mail with intro: cancelled seats, fee, refund line, *„Posíláme novou
+e-mail with intro: cancelled seats, refund line, *„Posíláme novou
 vstupenku na zbývající místa. Původní vstupenka už neplatí.“* – the tickets of
 the cancelled seats stop working, §11); pending part now fully paid → *Platba přijata – Vaše vstupenky* (intro: cancelled
 seats, *„Platba za zbývající místa je kompletní, rezervace je potvrzena.“*,
 surplus refund line); other pending part → *Změna rezervace* (new payment
-details); whole → *Rezervace zrušena* with fee/refund line; pending whole
-(customer or admin) additionally *„Pokud jste platbu už odeslali, pošleme Vám
+details); whole → *Rezervace zrušena* with the refund line; pending whole
+additionally *„Pokud jste platbu už odeslali, pošleme Vám
 ji po připsání zpět na účet, ze kterého přišla.“*
 Refund line: *„Částku X Kč Vám do 14 dnů pošleme zpět na účet, ze kterého
 platba přišla.“*
@@ -811,7 +795,7 @@ once (`used_at`, `reservation_id`, `seat_id`), can be revoked while unused.
 In a reservation each code makes one seat free – the most expensive one,
 adult seats first, then child seats (§8). Several codes can be used in one
 reservation (at most one per seat); a reservation paid fully by codes is
-confirmed at once. Storno of a free seat returns nothing and the code stays
+confirmed at once. Cancelling a free seat (admin) returns nothing and the code stays
 used; the code also stays used when the reservation expires or is cancelled.
 
 ## 14. Admin
@@ -892,16 +876,15 @@ Tabs:
   *„Splatnost N: zadejte datum a počet hodin 1–720.“*, success *„Splatnost
   uložena. Platí pro nové rezervace, už vytvořené si splatnost ponechají.“*;
   shows *„Nyní platí: N hodin“*); runs: `run-save` (start required, label, booking cut-off
-  before start, storno rows), `run-delete` (only without reservations, else *„Termín má rezervace, nelze ho smazat.“*;
+  before start), `run-delete` (only without reservations, else *„Termín má rezervace, nelze ho smazat.“*;
   removes offline scan conflicts of the run). Shows the GDPR deletion date.
-  **Lock:** once a run has any reservation (`run_has_reservations()`, any
-  status), its start and storno rules can no longer be changed – the form
-  shows them disabled with *„Představení už má rezervace – začátek a storno
-  podmínky nelze měnit (zákazníci rezervovali za těchto podmínek).“*; a POST
-  containing `starts_at` or `rule_from` is rejected with *„Představení už má
-  rezervace – začátek a storno podmínky nelze měnit.“* Label and booking
-  cut-off stay editable. Hence storno terms and the run time never change for
-  existing customers.
+  The intro says that customers cannot cancel themselves – only the Správce,
+  with paid seats refunded in full. **Lock:** once a run has any reservation
+  (`run_has_reservations()`, any status), its start can no longer be changed –
+  the input is disabled with *„Představení už má rezervace – začátek nelze
+  měnit (zákazníci rezervovali na tento čas).“*; a POST containing `starts_at`
+  is rejected with *„Představení už má rezervace – začátek nelze měnit.“*
+  Label and booking cut-off stay editable.
 
 `expire_reservations()` runs on every admin render.
 
@@ -938,7 +921,7 @@ Subjects are `mail_subject()` = *„TZG 2026: <subject>“* (the sender name alr
 | Vrácení platby | recorded payment that can't be used (§9 reasons) |
 | Nové vstupenky | partial cancellation of a paid reservation |
 | Změna rezervace | partial cancellation of a pending reservation |
-| Rezervace zrušena | whole cancellation (customer or admin) |
+| Rezervace zrušena | whole cancellation by the admin |
 
 ## 16. Scheduled jobs and GDPR
 
@@ -966,7 +949,7 @@ amounts, seats and statuses stay.
 - Form token from `seats.php`: `<unix time>.<hmac>` (secret derived from
   `TICKET_SECRET`), valid from `FORM_MIN_SECONDS` to 12 h.
 - `rate_limit(key, max, window)` fixed windows in `rate_limits` (keys
-  hashed): cancellations 20/h per IP, ticket names 60/h, logins, invitations
+  hashed): ticket names 60/h per IP, logins, invitations
   and forgotten passwords per IP and area (+ 3 reset e-mails per account and
   hour), deploy 10/h; `rate_limit_add()` counts reserved seats per IP
   (`seat_quota_take()`, §8).
@@ -978,12 +961,11 @@ amounts, seats and statuses stay.
 
 | Method | Endpoint | Body / query | Response |
 | --- | --- | --- | --- |
-| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, capacity, stornoRules, reserveSeats), `runId`, `taken[]`, `price` (adult seat), `childPrice`, `deadlineHours` (in effect now), `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays`, `layout` {levels, plan, sections} |
+| GET | `seats.php?run=<id>` | – | `runs[]` (id, label, startsAt, bookingClosesAt, bookingOpen, free, capacity, reserveSeats), `runId`, `taken[]`, `price` (adult seat), `childPrice`, `deadlineHours` (in effect now), `maxSeats`, `bookingOpen`, `formToken`, `contact` {email, phone}, `dataRetentionDays`, `layout` {levels, plan, sections} |
 | GET | `altcha.php` | – | `{enabled, challenge}` (ALTCHA v2 challenge: `parameters`, `signature`) |
 | POST | `reservations.php` | `runId, firstName, lastName, email, seats[], children, codes[], formToken, hp, altcha` | 201 reservation payload |
-| GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, `tickets[]` {seat, kind, price, free, holder (name on the ticket or null), code (paid only), checkedInAt}, `ticketNamesEditable`, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, cancellation (+ `seatPrices`), refunds) |
+| GET | `reservations.php?token=` | – | reservation payload (see `reservation_payload()`: status, seats, `tickets[]` {seat, kind, price, free, holder (name on the ticket or null), code (paid only), checkedInAt}, `ticketNamesEditable`, amounts, run, payment {iban, account, recipient, variableSymbol, specificSymbol, amount (still to pay), received (kept so far), spd}, refunds, `cancelledSeats`) |
 | GET | `tickets.php?token=` | – | PDF of a paid reservation's tickets (§11), else 404 |
-| POST | `cancel.php` | `token, seats?` | reservation payload |
 | POST | `ticket-names.php` | `token, names {seat: name}` ('' = reservation name) | reservation payload; 422 *„Jména na vstupenkách už nelze měnit.“* / *„Vyberte místa z této rezervace.“* / *„Jméno na vstupence může mít nejvýše 100 znaků.“*; 60 requests/h per IP |
 | GET | `organizer.php` | – | `loggedIn, name, admin` (account may use the admin), `runs[]` (+ `scanFrom`, `scanTo`), `layout`; a signed-in admin session with `scan` signs the scanner in (§12) |
 | POST | `deploy.php` | `token, email, password, name?` | 201 `{message}`; 403 / 409 / 422 (§12) |
@@ -1034,15 +1016,15 @@ browser globals.
 **PHP integration tests** (`tests/php/run.php`, no framework: `test()`,
 `same()`, `contains()`; exit code 1 on failure). `tests/php/fixtures.php`
 refuses to run unless `DB_NAME` ends with `_test`, recreates all tables from
-`db/schema.sql` (`reset_database()`: run 1 in 30 days with a 50 % storno rule
-from yesterday, run 2 started an hour ago) and creates reservations directly
+`db/schema.sql` (`reset_database()`: run 1 in 30 days, run 2 started an hour ago) and creates reservations directly
 (`reservation()`: adult seats 300 Kč, optional child seats 150 Kč and seats
 free by a code). Covered: partial payment → paid with surplus refund; SPD
 and payload ask for the missing amount; late payment restoring an expired
 reservation / refunded when seats are taken, after the run, or short;
 expiry refunding a partial payment and a later full payment restoring it;
 payment for cancelled and already paid reservations; invalid amount;
-customer storno fee; admin full refund; cancelling a partly paid pending
+admin cancellation of single seats (full refund, seat freed, foreign seat
+refused) and of a whole paid reservation; cancelling a partly paid pending
 reservation; partial cancellation completing a covered reservation; double
 booking rejected by the primary key; GDPR purge keeping contacts while a refund is due; ticket code
 round trip per seat with its kind, tamper detection and one ticket per seat
@@ -1052,8 +1034,8 @@ by the code, payload and PDF, locked once the run started); child seats and free
 seats (most expensive first); booking with a child seat and a code
 (450 Kč, code marked used for the seat); a code used once, revoked and
 unknown codes refused; a reservation paid fully by codes is paid at once;
-codes per listed e-mail, invalid address creates nothing; storno of a free
-seat returns nothing, of a child seat its price minus the fee; pending with
+codes per listed e-mail, invalid address creates nothing; cancelling a free
+seat returns nothing, a child seat its price; pending with
 only free seats left becomes paid; payment deadline rules by booking time;
 online check-in per seat (outside window, used, child kind, cancelled seat,
 other run, old format); offline check-in of separate seats; on-site sale
@@ -1111,8 +1093,9 @@ Tests:
   (`.plan-hit`) as the server layout, all reserve seats shown as reserve, and its balcony
   heading, two seats, form (waits for
   `FORM_MIN_SECONDS`, real invisible ALTCHA), payment page with QR, 600 Kč
-  and VS, seats taken in `seats.php`, cancel all → *Rezervaci jste zrušili.*
-  and seats free; run picker without horizontal scroll; three seats with one
+  and VS, seats taken in `seats.php`, no *Zrušit* button and `cancel.php`
+  404, the admin cancels the reservation → the page shows *Rezervace byla
+  zrušena.*; run picker without horizontal scroll; three seats with one
   child (the lap note shown) and a seeded discount code (bad format message,
   *„<code> · místo zdarma“*, 450 Kč on the payment page with the seat kinds) and the used code refused next time; two seats paid by two
   codes → *Rezervovat zdarma*, *Zaplaceno*, two ticket QR codes and the PDF

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seed } from './helpers.js';
+import { adminLogin, seed } from './helpers.js';
 
 /** Opens Premiéra, picks `count` free seats in the first section and opens the reservation form. */
 async function pickSeats(page, count) {
@@ -19,7 +19,7 @@ async function fillCustomer(form) {
   await form.locator('input[name=email]').fill('jana.testova@example.com');
 }
 
-test('customer books two seats, sees the QR payment and cancels', async ({ page, request }) => {
+test('customer books two seats and sees the QR payment; only the admin can cancel', async ({ page, request, browser }) => {
   await page.goto('/');
   await page.locator('.run-card', { hasText: 'Premiéra' }).click();
   // The plan is drawn from the layout the server sends.
@@ -54,9 +54,18 @@ test('customer books two seats, sees the QR payment and cancels', async ({ page,
   const map = await (await request.get('/api/seats.php?run=1')).json();
   expect(reservation.seats.every((s) => map.taken.includes(s))).toBe(true);
 
-  await page.getByRole('button', { name: 'Zrušit rezervaci nebo jednotlivá místa' }).click();
-  await page.locator('.cancel-panel').getByRole('button', { name: 'Zrušit rezervaci' }).click();
-  await expect(page.getByText('Rezervaci jste zrušili.')).toBeVisible();
+  // Customers can't cancel: no button, no endpoint.
+  await expect(page.getByRole('button', { name: /Zrušit/ })).toHaveCount(0);
+  expect((await request.post('/api/cancel.php', { data: { token } })).status()).toBe(404);
+
+  // The admin cancels it; the customer sees it on the reservation page.
+  const admin = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+  await adminLogin(admin);
+  admin.once('dialog', (d) => d.accept());
+  await admin.locator('tr', { hasText: reservation.payment.variableSymbol }).getByRole('button', { name: 'Zrušit', exact: true }).click();
+  await expect(admin.locator('.flash')).toContainText('Rezervace zrušena, místa uvolněna.');
+  await page.reload();
+  await expect(page.getByText('Rezervace byla zrušena.')).toBeVisible();
   const after = await (await request.get('/api/seats.php?run=1')).json();
   expect(reservation.seats.some((s) => after.taken.includes(s))).toBe(false);
 });

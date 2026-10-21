@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatCzk } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
-import { stornoText } from '../storno.js';
 import { runLabel } from '../runs.js';
 import { createAltcha } from '../altcha.js';
 import { formatCode, isCodeFormat, normalizeCode, priceSeats } from '../pricing.js';
@@ -18,7 +17,6 @@ function validate(values) {
 }
 
 export default function ReservationForm({ stats, deadlineHours, run, dataRetentionDays, submitting, onSubmit, onClose }) {
-  const storno = stornoText(run?.stornoRules);
   const [values, setValues] = useState({ firstName: '', lastName: '', email: '', hp: '' });
   const [children, setChildren] = useState(0);
   const [codes, setCodes] = useState([]);
@@ -218,7 +216,6 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
         <div className="modal-notes">
           {deadlineHours && prices.total > 0 ? <p>Zaplaťte do {deadlineHours} hodin, jinak se místa uvolní.</p> : null}
           <p>Vstupenky přijdou e-mailem, na každé místo jedna.</p>
-          {storno && <p>Storno: {storno}.</p>}
           <p>
             Jméno a e-mail smažeme{dataRetentionDays ? ` ${dataRetentionDays} dnů` : ''} po posledním představení.
           </p>

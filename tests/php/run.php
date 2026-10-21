@@ -130,7 +130,7 @@ test('expiry refunds a partial payment; paying the rest later restores the reser
 
 test('payment for a cancelled reservation is refunded', function (): void {
     $id = reservation(['WL-2-5']);
-    cancel_seats($id, null, 'customer');
+    cancel_seats($id, null);
     contains('rezervace už byla zrušená', record_payment($id, 300), 'message');
     same(['cancelled', 300, 300, 300], money($id), 'refund');
 });
@@ -157,35 +157,40 @@ test('invalid amounts are rejected', function (): void {
 
 // ------------------------------------------------------------ cancellation
 
-test('customer storno fee applies to a paid reservation', function (): void {
+test('admin cancellation of single seats refunds them in full and frees them', function (): void {
     $id = reservation(['WL-3-2', 'WL-3-3'], 'paid');
-    $terms = cancellation_terms(row($id));
-    same([true, 50, 300, 300], [$terms['allowed'], $terms['percent'], $terms['fee'], $terms['refund']], 'terms');
-    cancel_seats($id, ['WL-3-3'], 'customer');
+    cancel_seats($id, ['WL-3-3']);
     $r = row($id);
-    same(['paid', 'WL-3-2', 300, 150, 150], [$r['status'], $r['seats'], (int) $r['amount'], (int) $r['cancel_fee'], (int) $r['refund_amount']], 'after one seat');
+    same(['paid', 'WL-3-2', 300, 300], [$r['status'], $r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'after one seat');
     same(false, isset(held(1)['WL-3-3']), 'seat freed');
+    same('Vyberte místa z této rezervace.', (function () use ($id) {
+        try {
+            cancel_seats($id, ['ML-1-1']);
+            return '';
+        } catch (InvalidArgumentException $e) {
+            return $e->getMessage();
+        }
+    })(), 'foreign seat');
 });
 
 test('admin cancellation refunds a paid reservation in full', function (): void {
     $id = reservation(['WL-3-4'], 'paid');
-    cancel_seats($id, null, 'admin');
+    cancel_seats($id, null);
     $r = row($id);
-    same(['cancelled', 0, 300], [$r['status'], (int) $r['cancel_fee'], (int) $r['refund_amount']], 'refund');
+    same(['cancelled', 300], [$r['status'], (int) $r['refund_amount']], 'refund');
 });
 
 test('cancelling a partly paid pending reservation refunds what arrived', function (): void {
     $id = reservation(['WL-3-5', 'WL-3-6']);
     record_payment($id, 200);
-    same(200, cancellation_terms(row($id))['refund'], 'terms refund');
-    cancel_seats($id, null, 'customer');
+    cancel_seats($id, null);
     same(['cancelled', 200, 200, 600], money($id), 'refund');
 });
 
 test('cancelling seats of a pending reservation completes it when the payment now covers it', function (): void {
     $id = reservation(['WL-4-1', 'WL-4-2', 'WL-4-3']);
     record_payment($id, 600);
-    cancel_seats($id, ['WL-4-3'], 'customer');
+    cancel_seats($id, ['WL-4-3']);
     same(['paid', 600, null, 0], money($id), 'completed');
 });
 
@@ -264,22 +269,21 @@ test('codes are created per listed e-mail; an invalid address creates nothing', 
     same('ABCDEFGH', normalize_discount_code(' abcd-efgh '), 'normalized input');
 });
 
-test('storno of a seat paid by a code returns nothing; a child seat returns its price minus the fee', function (): void {
+test('cancelling a seat paid by a code returns nothing; a child seat returns its price', function (): void {
     $id = reservation(['MR-4-1', 'MR-4-2', 'MR-4-3'], 'paid', 1, '', ['MR-4-3'], ['MR-4-1']);
     same(450, (int) row($id)['amount'], 'price');
-    same(['MR-4-1' => 0, 'MR-4-2' => 300, 'MR-4-3' => 150], cancellation_terms(row($id))['seatPrices'], 'seat prices');
-    cancel_seats($id, ['MR-4-1'], 'customer');
-    same([450, 0, 0], [(int) row($id)['amount'], (int) row($id)['cancel_fee'], (int) row($id)['refund_amount']], 'free seat: nothing back');
-    cancel_seats($id, ['MR-4-3'], 'customer'); // 50 % storno rule in run 1
+    cancel_seats($id, ['MR-4-1']);
+    same([450, 0], [(int) row($id)['amount'], (int) row($id)['refund_amount']], 'free seat: nothing back');
+    cancel_seats($id, ['MR-4-3']);
     $r = row($id);
-    same(['MR-4-2', 300, 75, 75], [$r['seats'], (int) $r['amount'], (int) $r['cancel_fee'], (int) $r['refund_amount']], 'child seat');
-    cancel_seats($id, null, 'admin');
-    same(['cancelled', 375], [row($id)['status'], (int) row($id)['refund_amount']], 'admin refunds the adult seat in full');
+    same(['MR-4-2', 300, 150], [$r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'child seat');
+    cancel_seats($id, null);
+    same(['cancelled', 450], [row($id)['status'], (int) row($id)['refund_amount']], 'the adult seat in full');
 });
 
 test('cancelling the paid seats of a pending reservation leaves the free seats confirmed', function (): void {
     $id = reservation(['MR-5-1', 'MR-5-2'], 'pending', 1, '', [], ['MR-5-1']);
-    cancel_seats($id, ['MR-5-2'], 'customer');
+    cancel_seats($id, ['MR-5-2']);
     same(['paid', 0], [row($id)['status'], (int) row($id)['amount']], 'confirmed');
 });
 
@@ -307,7 +311,7 @@ test('the payment deadline follows the rule in effect when the reservation is ma
 
 test('each seat ticket is checked in once; cancelled seats and other runs are refused', function (): void {
     $id = reservation(['MR-6-1', 'MR-6-2', 'MR-6-3'], 'paid', 2, 'Vstupní', ['MR-6-2']);
-    cancel_seats($id, ['MR-6-3'], 'admin');
+    cancel_seats($id, ['MR-6-3']);
     $r = row($id);
     $run = run_by_id(2) ?? [];
     // Run 2 started an hour ago – checked in with the organizer's confirmation outside the window.
@@ -320,7 +324,7 @@ test('each seat ticket is checked in once; cancelled seats and other runs are re
     same('seat_cancelled', verify_ticket(ticket_code($r, 'MR-6-3'), $run, device('Vchod A'), true)['result'], 'cancelled seat');
     same('wrong_run', verify_ticket(ticket_code($r, 'MR-6-2'), run_by_id(1) ?? [], device('Vchod A'), false)['result'], 'other run');
     same('invalid', verify_ticket('Z26|1|2|3|x|y|z', $run, device('Vchod A'), false)['result'], 'old format');
-    same(['Vchod A', false], [row($id)['checked_in_by'], cancellation_terms(row($id))['allowed']], 'reservation checked in');
+    same('Vchod A', row($id)['checked_in_by'], 'reservation checked in');
 });
 
 test('offline: seats of one reservation are checked in separately', function (): void {

@@ -1,9 +1,8 @@
 <?php
 // Runs (dates) of the event, managed in admin → Nastavení.
 // All times are stored in UTC; Europe/Prague is used only for input and display.
-//   starts_at          – UTC; bookings and customer cancellations close then
+//   starts_at          – UTC; bookings close then
 //   booking_closes_at  – optional earlier end of bookings (UTC)
-//   storno_rules       – [{"from": "YYYY-MM-DDTHH:MM:SSZ" (UTC), "percent": 50}, ...]
 //   reserve_seats      – seat ids that are "Záložní" (not for sale) in this run; NULL = default_reserve_seats()
 declare(strict_types=1);
 
@@ -28,7 +27,7 @@ function utc_time(string $dbTime): DateTimeImmutable
     return new DateTimeImmutable($dbTime, new DateTimeZone('UTC'));
 }
 
-/** All runs ordered by start, with decoded storno rules. */
+/** All runs ordered by start, with decoded reserve seats. */
 function runs(bool $fresh = false): array
 {
     static $cache = null;
@@ -36,24 +35,17 @@ function runs(bool $fresh = false): array
         $cache = [];
         foreach (db_query('SELECT * FROM runs ORDER BY starts_at, id')->fetchAll() as $run) {
             $run['id'] = (int) $run['id'];
-            $raw = $run['storno_rules'];
-            $run['storno_rules'] = normalize_storno_rules((array) json_decode($raw, true));
             $run['reserve_seats'] = ($run['reserve_seats'] ?? null) === null
                 ? default_reserve_seats()
                 : array_values(array_filter((array) json_decode((string) $run['reserve_seats'], true), static fn ($id) => is_string($id) && is_valid_seat_id($id)));
-            // Older rows stored rule dates in Prague local time: rewrite them in UTC once.
-            $encoded = json_encode($run['storno_rules']);
-            if ($encoded !== $raw) {
-                db()->prepare('UPDATE runs SET storno_rules = ? WHERE id = ?')->execute([$encoded, $run['id']]);
-            }
             $cache[$run['id']] = $run;
         }
     }
     return $cache;
 }
 
-/** Storno rule date: UTC ISO ("…Z"), or the older Prague local "YYYY-MM-DD HH:MM". */
-function storno_from(string $value): ?DateTimeImmutable
+/** Rule date (payment deadlines): UTC ISO ("…Z"), or a Prague local "YYYY-MM-DD HH:MM". */
+function rule_from(string $value): ?DateTimeImmutable
 {
     if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $value)) {
         return new DateTimeImmutable($value);
@@ -70,20 +62,6 @@ function prague_input(?DateTimeImmutable $t): string
 function run_by_id(int $id): ?array
 {
     return runs()[$id] ?? null;
-}
-
-/** @return array<int, array{from: string, percent: int}> valid rules, dates in UTC ISO, sorted */
-function normalize_storno_rules(array $rules): array
-{
-    $out = [];
-    foreach ($rules as $r) {
-        $from = storno_from((string) ($r['from'] ?? ''));
-        if ($from !== null) {
-            $out[] = ['from' => iso_utc($from), 'percent' => (int) ($r['percent'] ?? 0)];
-        }
-    }
-    usort($out, static fn ($a, $b) => strcmp($a['from'], $b['from']));
-    return $out;
 }
 
 function run_starts(array $run): DateTimeImmutable
@@ -104,18 +82,6 @@ function run_booking_open(array $run): bool
 function run_started(array $run): bool
 {
     return now_utc() >= run_starts($run);
-}
-
-/** Storno percentage of the run at the given moment (0 before its first rule). */
-function storno_percent(array $run, DateTimeImmutable $at): int
-{
-    $percent = 0;
-    foreach ($run['storno_rules'] as $rule) {
-        if (storno_from($rule['from']) <= $at) {
-            $percent = max($percent, (int) $rule['percent']);
-        }
-    }
-    return $percent;
 }
 
 /** "so 19. 12. 2026 18:00" (+ " · Premiéra") */
@@ -176,7 +142,6 @@ function run_public(array $run, ?int $free = null): array
         'bookingOpen' => run_booking_open($run),
         'free' => $free,
         'capacity' => run_capacity($run),
-        'stornoRules' => $run['storno_rules'],
         'reserveSeats' => $run['reserve_seats'],
     ];
 }
@@ -217,7 +182,7 @@ function payment_deadline_rules(): array
     $stmt->execute(['payment_deadlines']);
     $rules = [];
     foreach ((array) json_decode((string) $stmt->fetchColumn(), true) as $r) {
-        $from = is_array($r) ? storno_from((string) ($r['from'] ?? '')) : null;
+        $from = is_array($r) ? rule_from((string) ($r['from'] ?? '')) : null;
         if ($from !== null && (int) ($r['hours'] ?? 0) > 0) {
             $rules[] = ['from' => iso_utc($from), 'hours' => (int) $r['hours']];
         }

@@ -27,7 +27,7 @@ async function request(path, options = {}) {
 }
 
 /**
- * { runs: [{id, label, startsAt, bookingOpen, free, stornoRules}], runId, taken: string[] (of runId),
+ * { runs: [{id, label, startsAt, bookingOpen, free}], runId, taken: string[] (of runId),
  *   price (adult seat), childPrice, deadlineHours, maxSeats, bookingOpen (of runId), formToken, contact {email, phone}, dataRetentionDays }
  */
 export const fetchSeats = (runId) => request(runId ? `seats.php?run=${encodeURIComponent(runId)}` : 'seats.php');
@@ -53,6 +53,3 @@ export const fetchReservation = (token) => request(`reservations.php?token=${enc
 export const saveTicketNames = (token, names) =>
   request('ticket-names.php', { method: 'POST', body: JSON.stringify({ token, names }) });
 
-/** Customer cancellation of the given seats (null = whole reservation). */
-export const cancelReservation = (token, seats = null) =>
-  request('cancel.php', { method: 'POST', body: JSON.stringify({ token, seats }) });

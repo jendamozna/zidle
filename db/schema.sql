@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS runs (
   label             VARCHAR(100) NOT NULL DEFAULT '' COMMENT 'Optional name, e.g. Premiéra',
   starts_at         DATETIME     NOT NULL COMMENT 'UTC',
   booking_closes_at DATETIME     NULL COMMENT 'UTC; NULL = at the start',
-  storno_rules      TEXT         NOT NULL DEFAULT '[]' COMMENT 'JSON [{"from": "YYYY-MM-DDTHH:MM:SSZ" (UTC), "percent": 50}]',
   reserve_seats     TEXT         NULL COMMENT 'JSON seat ids that are "Záložní" (not for sale); NULL = the reserve rows of the layout',
   PRIMARY KEY (id),
   KEY idx_starts (starts_at)
@@ -36,8 +35,6 @@ CREATE TABLE IF NOT EXISTS reservations (
   expires_at      DATETIME     NOT NULL,
   paid_at         DATETIME     NULL,
   cancelled_at    DATETIME     NULL,
-  cancelled_by    ENUM('customer', 'admin') NULL,
-  cancel_fee      INT UNSIGNED NULL COMMENT 'CZK kept as storno fee',
   refund_amount   INT UNSIGNED NULL COMMENT 'CZK to return to the paying account in total (refund due = refund_amount - refunded_amount)',
   refunded_amount INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK already returned',
   refunded_at     DATETIME     NULL,
@@ -105,7 +102,7 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   KEY idx_window (window_start)
 ) ENGINE=InnoDB DEFAULT CHARSET=ascii;
 
--- Admin-editable settings (JSON values); currently unused, runs hold dates and storno rules.
+-- Admin-editable settings (JSON values): payment_deadlines.
 CREATE TABLE IF NOT EXISTS settings (
   name  VARCHAR(64) NOT NULL,
   value TEXT        NOT NULL,

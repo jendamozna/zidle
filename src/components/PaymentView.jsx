@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { SECTION_BY_ID, compareSeatIds, formatCzk, parseSeatId } from '../data/layout.js';
-import { cancelReservation, saveTicketNames, ticketsPdfUrl } from '../data/seatService.js';
+import { SECTION_BY_ID, formatCzk, parseSeatId } from '../data/layout.js';
+import { saveTicketNames, ticketsPdfUrl } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
 import { KIND_LABELS } from '../pricing.js';
-import { stornoText } from '../storno.js';
 import { runLabel } from '../runs.js';
 
 const STATUS = {
@@ -53,9 +52,9 @@ const seatLabel = (id) => {
   return `${SECTION_BY_ID[sectionId]?.short ?? sectionId} ř. ${row} · ${seat}`;
 };
 
-/** Fee/refund summary after a cancellation (whole reservation or single seats). */
+/** Refund summary after the organizers cancelled the reservation or some seats (customers can't cancel). */
 function CancellationInfo({ reservation }) {
-  const { status, cancelFee, refundAmount, refundedAmount, cancelledBy, cancelledSeats } = reservation;
+  const { status, refundAmount, refundedAmount, cancelledSeats } = reservation;
   const due = (refundAmount ?? 0) - (refundedAmount ?? 0);
   const whole = status === 'cancelled';
   if (status === 'expired' && refundAmount > 0) {
@@ -83,115 +82,15 @@ function CancellationInfo({ reservation }) {
   return (
     <div className="cancel-info">
       {whole ? (
-        <strong>{cancelledBy === 'customer' ? 'Rezervaci jste zrušili.' : 'Rezervace byla zrušena.'}</strong>
+        <strong>Rezervace byla zrušena.</strong>
       ) : (
         <strong>Zrušená místa: {cancelledSeats.map(seatLabel).join(', ')}</strong>
       )}
-      {cancelFee > 0 && <span>Storno poplatek {formatCzk(cancelFee)}.</span>}
       {refundedAmount > 0 && <span>Vráceno {formatCzk(refundedAmount)}.</span>}
       {due > 0 && (
         <span>Částku {formatCzk(due)} pošleme zpět na účet, ze kterého platba přišla.</span>
       )}
     </div>
-  );
-}
-
-function CancelPanel({ reservation, onCancelled }) {
-  const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState(() => new Set(reservation.seats));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const { percent, seatPrices } = reservation.cancellation;
-  const isPaid = reservation.status === 'paid';
-  const seats = [...reservation.seats].sort(compareSeatIds);
-  const count = selected.size;
-  const whole = count === seats.length;
-  const sum = (ids) => ids.reduce((total, id) => total + (seatPrices[id] ?? 0), 0);
-  // Same calculation as the server (cancellation_money); the server's result is authoritative.
-  // A seat paid by a discount code is worth 0 – nothing comes back for it.
-  const value = isPaid ? sum([...selected]) : 0;
-  const received = reservation.payment.received;
-  const fee = Math.round((value * percent) / 100);
-  const refund = value - fee;
-
-  const toggle = (id) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!count) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await cancelReservation(reservation.token, whole ? null : [...selected]);
-      onCancelled(updated);
-      setOpen(false);
-      setBusy(false);
-      setSelected(new Set(updated.seats));
-    } catch (err) {
-      setError(err.message);
-      setBusy(false);
-    }
-  };
-
-  if (!open) {
-    return (
-      <button type="button" className="btn btn-danger-ghost" onClick={() => setOpen(true)}>
-        {seats.length > 1 ? 'Zrušit rezervaci nebo jednotlivá místa' : 'Zrušit rezervaci'}
-      </button>
-    );
-  }
-
-  return (
-    <form className="cancel-panel" onSubmit={submit}>
-      <strong>{seats.length > 1 ? 'Která místa chcete zrušit?' : 'Opravdu zrušit rezervaci?'}</strong>
-      {seats.length > 1 && (
-        <div className="cancel-seats">
-          {seats.map((id) => (
-            <label key={id} className={`cancel-seat ${selected.has(id) ? 'is-on' : ''}`}>
-              <input type="checkbox" checked={selected.has(id)} onChange={() => toggle(id)} disabled={busy} />
-              {seatLabel(id)}
-            </label>
-          ))}
-        </div>
-      )}
-      {count > 0 && (
-        <p>
-          {whole ? 'Zrušíte celou rezervaci, místa se uvolní.' : `Zrušíte ${seatsLabel(count)}, zbytek rezervace zůstane.`}{' '}
-          {!isPaid &&
-            whole &&
-            (received > 0
-              ? `Už přijatých ${formatCzk(received)} pošleme zpět na účet, ze kterého platba přišla.`
-              : 'Nic neplatíte.')}
-          {!isPaid &&
-            !whole &&
-            `Nová částka k úhradě: ${formatCzk(Math.max(0, sum(seats.filter((id) => !selected.has(id))) - received))}.`}
-          {isPaid && percent === 0 && refund > 0 && `Částku ${formatCzk(refund)} pošleme zpět na účet, ze kterého platba přišla.`}
-          {isPaid && value === 0 && 'Za místo se slevovým kódem se nic nevrací.'}
-          {isPaid &&
-            percent > 0 &&
-            percent < 100 &&
-            value > 0 &&
-            `Storno poplatek ${percent} % (${formatCzk(fee)}). Zbylých ${formatCzk(refund)} pošleme zpět na účet, ze kterého platba přišla.`}
-          {isPaid && percent >= 100 && value > 0 && 'Storno poplatek je 100 %, peníze se nevracejí.'}
-          {isPaid && !whole && ' Na e-mail přijdou nové vstupenky.'}
-        </p>
-      )}
-      {error && <p className="form-error">{error}</p>}
-      <div className="cancel-actions">
-        <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)} disabled={busy}>
-          Ponechat
-        </button>
-        <button type="submit" className="btn btn-danger" disabled={busy || !count}>
-          {busy ? 'Ruším…' : whole ? 'Zrušit rezervaci' : `Zrušit ${seatsLabel(count)}`}
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -429,14 +328,6 @@ export default function PaymentView({ reservation, onChange, onBack }) {
 
           {status === 'paid' && <Tickets reservation={reservation} />}
           <CancellationInfo reservation={reservation} />
-          {reservation.cancellation?.allowed && (
-            <div className="cancel-box">
-              {status === 'paid' && stornoText(reservation.run?.stornoRules) && (
-                <p className="muted small">Storno: {stornoText(reservation.run.stornoRules)}.</p>
-              )}
-              <CancelPanel reservation={reservation} onCancelled={onChange} />
-            </div>
-          )}
         </div>
       </div>
     </div>

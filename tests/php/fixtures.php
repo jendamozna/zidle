@@ -11,7 +11,7 @@ if (!str_ends_with((string) config('DB_NAME'), '_test')) {
 
 /**
  * Recreates all tables from db/schema.sql with two runs:
- * run 1 in a month (50 % storno from yesterday), run 2 started an hour ago.
+ * run 1 in a month, run 2 started an hour ago.
  */
 function reset_database(): void
 {
@@ -25,10 +25,9 @@ function reset_database(): void
     foreach (array_filter(array_map('trim', explode(";\n", $schema))) as $statement) {
         $pdo->exec($statement);
     }
-    $rules = json_encode([['from' => iso_utc(now_utc()->modify('-1 day')), 'percent' => 50]]);
-    $pdo->prepare('INSERT INTO runs (id, label, starts_at, storno_rules) VALUES (1, ?, ?, ?), (2, ?, ?, ?)')->execute([
-        'Budoucí', db_time(now_utc()->modify('+30 days')), $rules,
-        'Proběhlé', db_time(now_utc()->modify('-1 hour')), '[]',
+    $pdo->prepare('INSERT INTO runs (id, label, starts_at) VALUES (1, ?, ?), (2, ?, ?)')->execute([
+        'Budoucí', db_time(now_utc()->modify('+30 days')),
+        'Proběhlé', db_time(now_utc()->modify('-1 hour')),
     ]);
     runs(true);
 }

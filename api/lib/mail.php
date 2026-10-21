@@ -166,7 +166,7 @@ function send_payment_email(array $r): void
         ['děkujeme za rezervaci míst: ' . implode('; ', seat_labels($r['seats'])) . '.', run_line($r), '', 'Platební údaje:'],
         payment_lines($r),
         ['', 'Pokud platba nedorazí, rezervace bude zrušena a místa uvolněna.'],
-        $link ? ['', "QR kód pro platbu a zrušení rezervace: {$link}"] : []
+        $link ? ['', "QR kód pro platbu: {$link}"] : []
     ));
 }
 
