@@ -6,7 +6,7 @@ declare(strict_types=1);
 use PHPMailer\PHPMailer\Exception as MailerException;
 use PHPMailer\PHPMailer\PHPMailer;
 
-const MAIL_FROM_NAME = 'Moje židle 2026';
+const MAIL_FROM_NAME = 'Vstupenky na TZG 2026';
 
 /**
  * Sends one e-mail. $html is optional (multipart/alternative with $text);
@@ -143,10 +143,10 @@ function send_customer_email(array $r, string $subject, array $lines): bool
     $body = implode("\n", array_merge(
         ["Dobrý den, {$r['first_name']} {$r['last_name']},", ''],
         $lines,
-        ['', 'Moje židle 2026'],
+        ['', 'Vstupenky na TZG 2026'],
         contact_line() !== '' ? [contact_line()] : []
     ));
-    $ok = deliver_mail($r['email'], $subject . ' – Moje židle 2026', $body);
+    $ok = deliver_mail($r['email'], $subject . ' – Vstupenky na TZG 2026', $body);
     if (!$ok) {
         error_log("[zidle] Failed to send '{$subject}' for reservation {$r['id']}");
     }

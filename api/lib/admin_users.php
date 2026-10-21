@@ -180,14 +180,14 @@ function send_admin_invite_email(array $user, string $token, string $invitedBy):
     $text = implode("\n", array_merge([
         "Dobrý den, {$user['name']},",
         '',
-        "{$who} Vás zve ke správě rezervací Moje židle 2026 (potvrzování plateb, vracení peněz, slevové kódy).",
+        "{$who} Vás zve ke správě vstupenek na TZG 2026 (potvrzování plateb, vracení peněz, slevové kódy).",
         '',
         'Heslo si vytvoříte na tomto odkazu (platí ' . ADMIN_INVITE_DAYS . ' dní):',
         admin_invite_link($token),
         '',
         "Přihlašovací jméno je Váš e-mail: {$user['email']}",
         '',
-        'Moje židle 2026',
+        'Vstupenky na TZG 2026',
     ], contact_line() !== '' ? [contact_line()] : []));
-    return deliver_mail($user['email'], 'Pozvánka do správy rezervací – Moje židle 2026', $text);
+    return deliver_mail($user['email'], 'Pozvánka do správy rezervací – Vstupenky na TZG 2026', $text);
 }

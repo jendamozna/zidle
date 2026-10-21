@@ -1,4 +1,4 @@
-# Moje židle 2026
+# Vstupenky na TZG 2026
 
 Church seat reservation app – React (Vite) frontend, PHP 8 API, MariaDB.
 

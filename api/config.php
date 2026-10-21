@@ -40,7 +40,7 @@ return (static function (): array {
         'BANK_BIC' => '',
         'BANK_ACCOUNT_DISPLAY' => '',   // e.g. 19-2000145399/0800
         'PAYMENT_RECIPIENT' => 'Farnost',
-        'PAYMENT_MESSAGE' => 'Moje zidle 2026',
+        'PAYMENT_MESSAGE' => 'Vstupenky TZG 2026',
         'PAYMENT_SPECIFIC_SYMBOL' => '', // specific symbol (SS) used for all payments, max 10 digits
 
         // Admin page (admin.php): accountants sign in with their e-mail and password

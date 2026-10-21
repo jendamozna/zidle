@@ -403,7 +403,7 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
     contains('UID:zidle-' . $r['id'] . '@', $ics, 'uid');
     contains('SEQUENCE:' . $now->getTimestamp(), $ics, 'sequence');
     contains('ATTENDEE;CN="Test Nováková, Jana";', $unfolded, 'attendee');
-    contains('SUMMARY:Moje židle 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels($r['seats']))), $unfolded, 'summary');
+    contains('SUMMARY:TZG 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels($r['seats']))), $unfolded, 'summary');
     contains('Variabilní symbol: ' . $r['variable_symbol'], $unfolded, 'description');
     same(true, str_ends_with($ics, "END:VCALENDAR\r\n"), 'CRLF');
     foreach (explode("\r\n", $ics) as $line) {

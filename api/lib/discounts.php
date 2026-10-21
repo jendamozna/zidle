@@ -86,7 +86,7 @@ function send_discount_code_email(int $id): bool
     $body = implode("\n", [
         'Dobrý den,',
         '',
-        'posíláme Vám slevový kód na jedno místo zdarma na představení Moje židle 2026:',
+        'posíláme Vám slevový kód na jedno místo zdarma na představení TZG 2026:',
         '',
         '    ' . format_discount_code($c['code']),
         '',
@@ -94,10 +94,10 @@ function send_discount_code_email(int $id): bool
         'Platí na libovolný termín a lze ho použít jednou. Z rezervace se odečte cena jednoho místa'
             . ' (nejdražšího – nejdřív dospělého, pak dětského).',
         '',
-        'Moje židle 2026',
+        'Vstupenky na TZG 2026',
         ...(contact_line() !== '' ? [contact_line()] : []),
     ]);
-    $ok = deliver_mail($c['email'], 'Slevový kód – Moje židle 2026', $body);
+    $ok = deliver_mail($c['email'], 'Slevový kód – Vstupenky na TZG 2026', $body);
     if ($ok) {
         db()->prepare('UPDATE discount_codes SET emailed_at = ? WHERE id = ?')->execute([db_time(now_utc()), $id]);
     } else {

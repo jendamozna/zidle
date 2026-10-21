@@ -1,4 +1,4 @@
-# Moje židle 2026 – developer documentation
+# Vstupenky na TZG 2026 – developer documentation
 
 Technical reference of the application. It describes the code **1:1** –
 every change of behaviour, texts, limits, API, database or formats must
@@ -184,7 +184,7 @@ unquoted value), optional `export ` prefix, `"…"` (backslash escapes) or
 | `BANK_BIC` | `''` | appended to SPD `ACC` |
 | `BANK_ACCOUNT_DISPLAY` | `''` | Czech account number shown to customers |
 | `PAYMENT_RECIPIENT` | `Farnost` | SPD `RN` |
-| `PAYMENT_MESSAGE` | `Moje zidle 2026` | SPD `MSG` prefix (+ last name) |
+| `PAYMENT_MESSAGE` | `Vstupenky TZG 2026` | SPD `MSG` prefix (+ last name) |
 | `PAYMENT_SPECIFIC_SYMBOL` | `''` | SPD `X-SS`, digits only, max 10 |
 | `ADMIN_PASSWORD` | `''` | master admin login (empty e-mail); needed for the first sign-in – admin.php returns 503 *„Nastavte ADMIN_PASSWORD v config.local.php.“* while it is empty and no active account has a password; can be removed once accountants are invited |
 | `ORGANIZER_PASSWORD` | `''` | optional scanner master password (all runs); `''` = disabled |
@@ -195,7 +195,7 @@ unquoted value), optional `export ` prefix, `"…"` (backslash escapes) or
 | `SMTP_HOST` | `''` | SMTP server; `''` = send with PHP `mail()` |
 | `SMTP_PORT` | 587 | 465 = implicit TLS (SMTPS); other ports use STARTTLS when the server offers it |
 | `SMTP_AUTH` | `true` | log in with `SMTP_USER` (or `SMTP_SENDER`) / `SMTP_PASSWORD` |
-| `SMTP_SENDER` | `''` | sender address (`From`, name *Moje židle 2026*) |
+| `SMTP_SENDER` | `''` | sender address (`From`, name *Vstupenky na TZG 2026*) |
 | `SMTP_USER` | `''` | SMTP login when it differs from the sender (e.g. `apikey`); `''` = `SMTP_SENDER` |
 | `SMTP_PASSWORD` | `''` | SMTP password |
 | `CONTACT_EMAIL` | `''` | organizers' contact: website footer, last line of every e-mail, `Reply-To` of e-mails |
@@ -557,7 +557,7 @@ and the tickets handed out; each seat is checked in separately.
   *„Rozstříhejte podle čárkované čáry. Každá vstupenka platí pro jedno místo –
   při vstupu se načte její QR kód.“*, then the current seats in seat order,
   `TICKETS_PER_PAGE` = 4 per page, each 60 mm high with a dashed cut line:
-  QR, *Moje židle 2026*, run, section, *řada / místo*, kind, *„<name> · VS … ·
+  QR, *Vstupenky na TZG 2026*, run, section, *řada / místo*, kind, *„<name> · VS … ·
   vstupenka n z N“*. `GET tickets.php?token=` downloads it
   (`vstupenky-<VS>.pdf`) for paid reservations, else 404 *„Vstupenky nejsou
   k dispozici – rezervace není zaplacená.“*
@@ -569,7 +569,7 @@ and the tickets handed out; each seat is checked in separately.
   id>@<host of PUBLIC_URL, else of the sender, else moje-zidle>` (stable, so a
   new ticket after a partial cancellation updates the same event),
   `SEQUENCE` = current Unix time, `DTSTART` = run start, `DTEND` = start +
-  `EVENT_DURATION_MINUTES` (both UTC `…Z`), `SUMMARY` *„Moje židle 2026[ · <run
+  `EVENT_DURATION_MINUTES` (both UTC `…Z`), `SUMMARY` *„TZG 2026[ · <run
   label>] – <seat labels>“*, `DESCRIPTION` *„Místa: …“*, *„Variabilní symbol:
   …“*, *„Při vstupu prosím ukažte QR kódy vstupenek z e-mailu (1 QR kód = 1
   místo).“*,
@@ -822,7 +822,7 @@ Only when `MAIL_ENABLED`. All mail goes through `deliver_mail(to, subject,
 text, html?, inline[], attachments[])` (PHPMailer, UTF-8; attachments base64): with `SMTP_HOST` via SMTP
 (`SMTP_PORT`, `SMTP_AUTH`, login `SMTP_USER` or `SMTP_SENDER` / `SMTP_PASSWORD`; port 465 =
 SMTPS, otherwise opportunistic STARTTLS; connect timeout and per-reply limit
-15 s), otherwise PHP `mail()` from `MAIL_FROM` (`mail_sender()`). Sender name *Moje židle 2026*;
+15 s), otherwise PHP `mail()` from `MAIL_FROM` (`mail_sender()`). Sender name *Vstupenky na TZG 2026*;
 `Reply-To` = `CONTACT_EMAIL` when set. Every e-mail ends with *„Kontakt: <e-mail> ·
 <phone>“* (`contact_line()`) when a contact is configured.
 Failures return false and are logged as `[zidle] Mail to … failed: <reason>`;
@@ -834,12 +834,12 @@ calendar event `udalost.ics`, §11). All reservation e-mails contain `Termín: <
 | Subject | Trigger |
 | --- | --- |
 | Rezervace míst | reservation created (payment details, link if `PUBLIC_URL`) |
-| Pozvánka do správy rezervací | accountant invited or new link (`send_admin_invite_email()`: *„<inviter or Správce rezervací> Vás zve ke správě rezervací Moje židle 2026 (potvrzování plateb, vracení peněz, slevové kódy).“*, link valid 7 days, *„Přihlašovací jméno je Váš e-mail: …“*) |
+| Pozvánka do správy rezervací | accountant invited or new link (`send_admin_invite_email()`: *„<inviter or Správce rezervací> Vás zve ke správě vstupenek na TZG 2026 (potvrzování plateb, vracení peněz, slevové kódy).“*, link valid 7 days, *„Přihlašovací jméno je Váš e-mail: …“*) |
 | Připomínka platby | cron: pending, due within 24 h, created ≥ 24 h before due, once |
 | Rezervace zrušena | cron: expired within the last 3 days, once (refund line for money that already arrived; *„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“*) |
 | Vstupenka | recorded payment completes the price / expired restored / pending partial cancellation now covered / resend |
 | Vstupenky | new reservation paid fully by discount codes |
-| Slevový kód | admin created or resent a code (`send_discount_code_email()`: *„posíláme Vám slevový kód na jedno místo zdarma na představení Moje židle 2026: XXXX-XXXX“*, where to enter it, *„Platí na libovolný termín a lze ho použít jednou. Z rezervace se odečte cena jednoho místa (nejdražšího – nejdřív dospělého, pak dětského).“*); `emailed_at` set |
+| Slevový kód | admin created or resent a code (`send_discount_code_email()`: *„posíláme Vám slevový kód na jedno místo zdarma na představení TZG 2026: XXXX-XXXX“*, where to enter it, *„Platí na libovolný termín a lze ho použít jednou. Z rezervace se odečte cena jednoho místa (nejdražšího – nejdřív dospělého, pak dětského).“*); `emailed_at` set |
 | Přijata část platby | recorded payment below the price |
 | Vrácení platby | recorded payment that can't be used (§9 reasons) |
 | Nová vstupenka | partial cancellation of a paid reservation |

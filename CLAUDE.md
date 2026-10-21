@@ -1,4 +1,4 @@
-# Moje židle 2026 – project rules
+# Vstupenky na TZG 2026 – project rules
 
 ## Documentation (mandatory)
 

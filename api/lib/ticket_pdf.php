@@ -28,7 +28,7 @@ function ticket_pdf(array $r): string
         $tickets .= '<table class="ticket' . ($breakBefore ? ' page' : '') . '"><tr>'
             . '<td class="qr"><img src="data:image/png;base64,' . $qr . '" width="170" height="170"></td>'
             . '<td class="info">'
-            . '<div class="brand">Moje židle <span>2026</span></div>'
+            . '<div class="brand">Vstupenky na TZG <span>2026</span></div>'
             . '<div class="run">' . $h($runText) . '</div>'
             . '<div class="seat">' . $h(section_name($section)) . '</div>'
             . '<div class="place">řada <b>' . $h($row) . '</b> &nbsp; místo <b>' . $h($seat) . '</b></div>'

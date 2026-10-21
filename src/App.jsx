@@ -114,7 +114,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-inner">
           <h1 className="brand">
-            Moje židle <span>2026</span>
+            Vstupenky na TZG <span>2026</span>
           </h1>
           {!section && !reservation && !choosing && (
             <div className="summary">

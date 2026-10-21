@@ -104,7 +104,7 @@ function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
   return (
     <form className="scan-login" onSubmit={submit}>
       <h1 className="brand">
-        Moje židle <span>2026</span>
+        Vstupenky na TZG <span>2026</span>
       </h1>
       <p className="muted">Odbavení vstupenek</p>
       {inviteError && <p className="form-error">{inviteError}</p>}

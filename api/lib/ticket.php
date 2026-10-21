@@ -140,7 +140,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
     $html = '<!doctype html><html><body style="margin:0;background:#f5f1ea;font-family:Arial,sans-serif;color:#2b2620">'
         . '<div style="max-width:480px;margin:0 auto;padding:24px 16px">'
         . '<div style="background:#fffdf9;border-radius:18px;padding:24px;text-align:center">'
-        . '<h1 style="margin:0 0 4px;font-family:Georgia,serif;font-size:24px">Moje židle <span style="color:#8a5a2b">2026</span></h1>'
+        . '<h1 style="margin:0 0 4px;font-family:Georgia,serif;font-size:24px">Vstupenky na TZG <span style="color:#8a5a2b">2026</span></h1>'
         . '<p style="margin:0 0 20px;color:#6b6256">Vstupenky · VS ' . $h($r['variable_symbol']) . '</p>'
         . ($intro ? '<p style="margin:0 0 20px;text-align:left;line-height:1.5">' . implode('<br>', array_map($h, $intro)) . '</p>' : '')
         . '<p style="margin:0 0 8px;font-size:20px;font-weight:bold;color:#8a5a2b">' . $h(preg_replace('/^Termín: /', '', run_line($r))) . '</p>'
@@ -153,7 +153,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         . (contact_line() !== '' ? '<br>' . $h(contact_line()) : '') . '</p>'
         . '</div></body></html>';
 
-    $subject = ($subject ?? ($intro ? 'Nová vstupenka' : 'Vstupenka')) . ' – Moje židle 2026';
+    $subject = ($subject ?? ($intro ? 'Nová vstupenka' : 'Vstupenka')) . ' – Vstupenky na TZG 2026';
     $attachments = [['data' => ticket_pdf($r), 'name' => 'vstupenky.pdf', 'type' => 'application/pdf']];
     $ics = ticket_ics($r);
     if ($ics !== null) {
@@ -197,7 +197,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
     $lines = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
-        'PRODID:-//Moje zidle 2026//Rezervace//CS',
+        'PRODID:-//Vstupenky TZG 2026//Rezervace//CS',
         'CALSCALE:GREGORIAN',
         'METHOD:REQUEST',
         'BEGIN:VEVENT',
@@ -206,7 +206,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
         'DTSTAMP:' . $utc($now),
         'DTSTART:' . $utc($start),
         'DTEND:' . $utc($end),
-        'SUMMARY:' . ics_text('Moje židle 2026' . ($run['label'] !== '' ? ' · ' . $run['label'] : '') . ' – ' . implode('; ', $seats)),
+        'SUMMARY:' . ics_text('TZG 2026' . ($run['label'] !== '' ? ' · ' . $run['label'] : '') . ' – ' . implode('; ', $seats)),
         'DESCRIPTION:' . ics_text($description),
         ...($location !== '' ? ['LOCATION:' . ics_text($location)] : []),
         'ORGANIZER;CN=' . ics_param(MAIL_FROM_NAME) . ':mailto:' . mail_sender(),

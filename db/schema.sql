@@ -1,4 +1,4 @@
--- Moje židle 2026 – MariaDB schema
+-- Vstupenky na TZG 2026 – MariaDB schema
 -- All timestamps (DATETIME columns and JSON dates) are stored in UTC.
 
 -- Runs (dates) of the event. Seats and reservations belong to a run.
