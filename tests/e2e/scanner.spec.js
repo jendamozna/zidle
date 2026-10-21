@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import QRCode from 'qrcode';
-import { ENV, seed } from './helpers.js';
+import { SCANNER, adminLogin, seed } from './helpers.js';
 
 /**
  * Replaces the camera with a canvas stream that shows the given QR code
@@ -35,26 +35,21 @@ const snapshotLoaded = (page) =>
 
 async function login(page) {
   await page.goto('/scanner.html');
-  await page.locator('input[type=password]').fill(ENV.ORGANIZER_PASSWORD);
+  await page.getByLabel('E-mail').fill(SCANNER.email);
+  await page.getByLabel('Heslo').fill(SCANNER.password);
   await page.getByRole('button', { name: /Přihlásit/ }).click();
 }
 
-test('scanner checks a ticket in and warns on the second scan', async ({ page }) => {
+test('scanner checks a seat ticket in and warns on the second scan', async ({ page }) => {
   await fakeCamera(page, seed().ticket);
   await login(page);
   await expect(page.locator('.scan-result h2')).toHaveText('Platná vstupenka', { timeout: 20_000 });
   await expect(page.locator('.scan-ticket')).toContainText('Test Vstupenka');
+  await expect(page.locator('.scan-seat-big')).toContainText('řada 1 · místo 1');
+  await expect(page.locator('.scan-kind')).toHaveText('Dospělý');
+  await expect(page.locator('.scan-count')).toHaveText('rezervace 2 místa · odbaveno 1 z 2');
   await page.getByRole('button', { name: 'Skenovat další' }).click();
   await expect(page.locator('.scan-result h2')).toHaveText('Už odbaveno', { timeout: 20_000 });
-});
-
-test('scanner lets a VIP guest in and shows the seats', async ({ page }) => {
-  await login(page);
-  await page.getByRole('tab', { name: 'VIP' }).click();
-  const card = page.locator('.vip-card', { hasText: 'Mons. Testovací' });
-  await expect(card).toContainText('ř. 1 m. 1, 2');
-  await card.getByRole('button', { name: 'Vpustit' }).click();
-  await expect(card.locator('.vip-arrived')).toBeVisible();
 });
 
 test('without a connection the scanner checks tickets against the downloaded list and sends the check-ins later', async ({
@@ -73,19 +68,13 @@ test('without a connection the scanner checks tickets against the downloaded lis
   await expect(page.locator('.offline-strip')).toContainText('k odeslání: 1');
   await page.getByRole('button', { name: 'Skenovat další' }).click();
   await expect(page.locator('.scan-result h2')).toHaveText('Už odbaveno', { timeout: 20_000 });
-
-  await page.getByRole('tab', { name: 'VIP' }).click();
-  const card = page.locator('.vip-card', { hasText: 'Paní Offline' });
-  await card.getByRole('button', { name: 'Vpustit' }).click();
-  await expect(card.locator('.vip-arrived')).toBeVisible();
-  await expect(page.locator('.offline-strip')).toContainText('k odeslání: 2');
+  await expect(page.locator('.offline-strip')).toContainText('k odeslání: 1');
 
   await context.setOffline(false);
-  await expect(page.locator('.offline-strip')).toContainText('Odesláno 2 odbavení bez spojení.', { timeout: 20_000 });
+  await expect(page.locator('.offline-strip')).toContainText('Odesláno 1 odbavení bez spojení.', { timeout: 20_000 });
 
   const snapshot = await (await page.request.post('/api/organizer.php', { data: { action: 'snapshot', runId: 2 } })).json();
-  expect(snapshot.tickets.find((t) => t.name === 'Test Offline').checkedInBy).toContain('(offline)');
-  expect(snapshot.vips.find((v) => v.name === 'Paní Offline').checkedInAt).not.toBeNull();
+  expect(snapshot.tickets.find((t) => t.name === 'Test Offline').checkedIn['BC-2-1'].by).toContain('(offline)');
 });
 
 test('the scanner opens without a connection after it was used online once', async ({ page, context }) => {
@@ -102,4 +91,51 @@ test('the scanner opens without a connection after it was used online once', asy
   await expect(page.locator('.run-select select')).toBeVisible();
   await expect(page.locator('.offline-strip')).toContainText('Bez spojení');
   await context.setOffline(false);
+});
+
+test('organizer sells free seats at the entrance: QR payment, then the seats are checked in', async ({ page }) => {
+  await login(page);
+  await page.getByRole('tab', { name: 'Prodej' }).click();
+  await page.locator('.sale-sections button').first().click();
+  await page.getByRole('button', { name: 'Řada 4, místo 4' }).click();
+  await page.getByRole('button', { name: 'Řada 4, místo 5' }).click();
+  await page.getByRole('button', { name: 'Děti 4–17 let: více' }).click();
+  await page.getByRole('button', { name: /QR platba 450 Kč/ }).click();
+  await expect(page.locator('.sale-pay img')).toBeVisible();
+  await expect(page.locator('.sale-amount')).toHaveText('450 Kč');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Zaplaceno – vpustit' }).click();
+  await expect(page.locator('.sale-done')).toHaveText('Zaplaceno 450 Kč – 2 místa odbavena.');
+  // The section stays open; the sold seats are taken now.
+  await expect(page.getByRole('button', { name: /Řada 4, místo 5/ })).toBeDisabled();
+});
+
+test('an invited Odbavovatel sets a password and lands in the scanner; Správa is not for them', async ({ page, browser }) => {
+  const admin = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+  await adminLogin(admin);
+  await admin.goto('http://127.0.0.1:8000/api/admin.php?view=users');
+  await admin.fill('input[name=email]', 'vchod.b@example.cz');
+  await admin.locator('form', { hasText: 'Pozvat uživatele' }).getByLabel('Odbavovatel').check();
+  await admin.getByRole('button', { name: 'Poslat pozvánku' }).click();
+  const link = await admin.locator('.invite-link').inputValue();
+  await expect(admin.locator('tr', { hasText: 'vchod.b@example.cz' })).toContainText('Nepřijata');
+
+  // On the organizer's phone.
+  await page.goto(link);
+  await page.fill('input[name=password]', 'vchodove-heslo-b');
+  await page.fill('input[name=password_again]', 'vchodove-heslo-b');
+  await page.getByRole('button', { name: 'Uložit heslo a přihlásit' }).click();
+  await expect(page).toHaveURL(/scanner\.html/);
+  await expect(page.locator('.scan-who')).toHaveText('vchod.b@example.cz');
+  await expect(page.getByRole('link', { name: 'Správa' })).toHaveCount(0);
+
+  await admin.reload();
+  await expect(admin.locator('tr', { hasText: 'vchod.b@example.cz' })).toContainText('Přijata');
+});
+
+test('a Správce signed in to the admin opens the scanner from the menu without signing in again', async ({ page }) => {
+  await adminLogin(page);
+  await page.getByRole('link', { name: 'Odbavení' }).click();
+  await expect(page.locator('.scan-who')).toHaveText('spravce@example.cz');
+  await expect(page.getByRole('link', { name: 'Správa' })).toBeVisible();
 });

@@ -1,7 +1,7 @@
 <?php
-// Integration tests of the money, seat and VIP logic against a real MariaDB.
+// Integration tests of the money, seat, discount code and ticket logic against a real MariaDB.
 //
-//   DB_NAME=zidle_test MAIL_ENABLED=0 TICKET_SECRET=test-secret-0123456789 php tests/php/run.php
+//   DB_NAME=zidle_test MAIL_ENABLED=0 TICKET_SECRET=test-secret-0123456789-abcdefghijklmn BANK_IBAN=CZ6508000000192000145399 php tests/php/run.php
 //
 // The database is wiped and recreated from db/schema.sql, so DB_NAME must end with "_test".
 declare(strict_types=1);
@@ -55,10 +55,10 @@ function expire(int $id): void
     expire_reservations();
 }
 
-/** Seat ids held in the run, with the holder ("r<id>" or "v<id>"). */
+/** Seat ids held in the run, with the holder ("r<id>"). */
 function held(int $run): array
 {
-    $stmt = db()->prepare('SELECT seat_id, COALESCE(CONCAT("r", reservation_id), CONCAT("v", vip_guest_id)) FROM reservation_seats WHERE run_id = ?');
+    $stmt = db()->prepare('SELECT seat_id, CONCAT("r", reservation_id) FROM reservation_seats WHERE run_id = ?');
     $stmt->execute([$run]);
     return $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 }
@@ -130,7 +130,7 @@ test('expiry refunds a partial payment; paying the rest later restores the reser
 
 test('payment for a cancelled reservation is refunded', function (): void {
     $id = reservation(['WL-2-5']);
-    cancel_seats($id, null, 'customer');
+    cancel_seats($id, null);
     contains('rezervace už byla zrušená', record_payment($id, 300), 'message');
     same(['cancelled', 300, 300, 300], money($id), 'refund');
 });
@@ -141,6 +141,14 @@ test('a second payment for a paid reservation is refunded', function (): void {
     same(['paid', 600, 300, 0], money($id), 'refund');
 });
 
+test('the same payment submitted twice (double click) is recorded once', function (): void {
+    $id = reservation(['WR-7-3']);
+    contains('zaplaceno', record_payment($id, 300, 0), 'first submit');
+    same('Platba u této rezervace už byla mezitím zapsána – nic dalšího se nezapsalo. Zkontrolujte stav rezervace.',
+        record_payment($id, 300, 0), 'second submit');
+    same(['paid', 300, null, 0], money($id), 'no refund for money that never arrived');
+});
+
 test('invalid amounts are rejected', function (): void {
     $id = reservation(['WL-3-1']);
     same('Zadejte přijatou částku v Kč.', record_payment($id, 0), 'zero');
@@ -149,35 +157,40 @@ test('invalid amounts are rejected', function (): void {
 
 // ------------------------------------------------------------ cancellation
 
-test('customer storno fee applies to a paid reservation', function (): void {
+test('admin cancellation of single seats refunds them in full and frees them', function (): void {
     $id = reservation(['WL-3-2', 'WL-3-3'], 'paid');
-    $terms = cancellation_terms(row($id));
-    same([true, 50, 300, 300], [$terms['allowed'], $terms['percent'], $terms['fee'], $terms['refund']], 'terms');
-    cancel_seats($id, ['WL-3-3'], 'customer');
+    cancel_seats($id, ['WL-3-3']);
     $r = row($id);
-    same(['paid', 'WL-3-2', 300, 150, 150], [$r['status'], $r['seats'], (int) $r['amount'], (int) $r['cancel_fee'], (int) $r['refund_amount']], 'after one seat');
+    same(['paid', 'WL-3-2', 300, 300], [$r['status'], $r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'after one seat');
     same(false, isset(held(1)['WL-3-3']), 'seat freed');
+    same('Vyberte místa z této rezervace.', (function () use ($id) {
+        try {
+            cancel_seats($id, ['ML-1-1']);
+            return '';
+        } catch (InvalidArgumentException $e) {
+            return $e->getMessage();
+        }
+    })(), 'foreign seat');
 });
 
 test('admin cancellation refunds a paid reservation in full', function (): void {
     $id = reservation(['WL-3-4'], 'paid');
-    cancel_seats($id, null, 'admin');
+    cancel_seats($id, null);
     $r = row($id);
-    same(['cancelled', 0, 300], [$r['status'], (int) $r['cancel_fee'], (int) $r['refund_amount']], 'refund');
+    same(['cancelled', 300], [$r['status'], (int) $r['refund_amount']], 'refund');
 });
 
 test('cancelling a partly paid pending reservation refunds what arrived', function (): void {
     $id = reservation(['WL-3-5', 'WL-3-6']);
     record_payment($id, 200);
-    same(200, cancellation_terms(row($id))['refund'], 'terms refund');
-    cancel_seats($id, null, 'customer');
+    cancel_seats($id, null);
     same(['cancelled', 200, 200, 600], money($id), 'refund');
 });
 
 test('cancelling seats of a pending reservation completes it when the payment now covers it', function (): void {
     $id = reservation(['WL-4-1', 'WL-4-2', 'WL-4-3']);
     record_payment($id, 600);
-    cancel_seats($id, ['WL-4-3'], 'customer');
+    cancel_seats($id, ['WL-4-3']);
     same(['paid', 600, null, 0], money($id), 'completed');
 });
 
@@ -192,19 +205,160 @@ test('a seat cannot be held twice in the same run', function (): void {
     throw new TestFailure('second reservation of the same seat was accepted');
 });
 
-// --------------------------------------------------------------------- VIP
+// ------------------------------------------------- prices and discount codes
 
-test('VIP guests hold their seats; taken seats are refused; removing frees them', function (): void {
-    reservation(['ML-1-1']);
-    contains('už jsou obsazená', add_vip_guest(1, 'Host', ['ML-1-1', 'ML-1-2'], ''), 'conflict');
-    same(false, isset(held(1)['ML-1-2']), 'nothing held after a conflict');
-    contains('přidán (2 místa)', add_vip_guest(1, 'Host', ['ML-1-3', 'ML-1-2'], 'pozn.'), 'added');
-    $vip = db_query("SELECT * FROM vip_guests WHERE name = 'Host'")->fetch();
-    same(['ML-1-2,ML-1-3', 'ML', 2], [$vip['seats'], $vip['section'], (int) $vip['persons']], 'stored sorted');
-    same('v' . $vip['id'], held(1)['ML-1-2'] ?? null, 'held by VIP');
-    same('Vyberte na plánku 1 až 50 míst.', add_vip_guest(1, 'Jiný', ['XX-1-1'], ''), 'invalid seat');
-    db()->prepare('DELETE FROM vip_guests WHERE id = ?')->execute([$vip['id']]);
-    same(false, isset(held(1)['ML-1-2']), 'freed on delete');
+/** A fresh unused discount code (normalized), created as the admin would. */
+function new_code(string $email = 'kod@example.com'): string
+{
+    create_discount_codes($email, 'test');
+    return (string) db_query('SELECT code FROM discount_codes ORDER BY id DESC LIMIT 1')->fetchColumn();
+}
+
+function book(array $seats, int $children = 0, array $codes = []): array
+{
+    return book_reservation(run_by_id(1) ?? [], 'Jana', 'Kódová', 'kody@example.com', $seats, $children, $codes);
+}
+
+test('child seats are the last seats, codes free the most expensive seats first', function (): void {
+    $seats = ['ML-1-3', 'ML-1-1', 'ML-1-2'];
+    $children = assign_child_seats($seats, 1);
+    same(['ML-1-3'], $children, 'last seat is the child seat');
+    same(['ML-1-1', 'ML-1-2'], assign_free_seats($seats, $children, 2, 300, 150), 'adult seats first');
+    same(['ML-1-1', 'ML-1-2', 'ML-1-3'], assign_free_seats($seats, $children, 3, 300, 150), 'then the child seat');
+    same(['ML-1-1'], assign_free_seats($seats, assign_child_seats($seats, 2), 1, 300, 150), 'the one adult seat');
+    same([], assign_free_seats($seats, $children, 0, 300, 150), 'no code');
+});
+
+test('a reservation with a child seat and a code costs adult + child − the adult seat', function (): void {
+    $code = new_code();
+    $booked = book(['MR-1-1', 'MR-1-2', 'MR-1-3'], 1, [$code]);
+    $r = $booked['reservation'] ?? [];
+    same(['pending', 'MR-1-3', 'MR-1-1', 450], [$r['status'], $r['child_seats'], $r['free_seats'], (int) $r['amount']], 'reservation');
+    $used = db()->prepare('SELECT used_at IS NOT NULL, reservation_id, seat_id FROM discount_codes WHERE code = ?');
+    $used->execute([$code]);
+    same([1, (int) $r['id'], 'MR-1-1'], array_map(fn ($v) => is_numeric($v) ? (int) $v : $v, $used->fetch(PDO::FETCH_NUM) ?: []), 'code used for the seat');
+    same([['MR-1-1', 'adult', 0, true], ['MR-1-2', 'adult', 300, false], ['MR-1-3', 'child', 150, false]],
+        array_map(fn ($t) => [$t['seat'], $t['kind'], $t['price'], $t['free']], reservation_payload($r)['tickets']), 'tickets in the payload');
+    same('2 dospělí, 1 dítě 4–17 let', seat_kinds_summary($r), 'summary');
+});
+
+test('a discount code works only once and not after it was revoked', function (): void {
+    $code = new_code();
+    same(true, isset(book(['MR-2-1'], 0, [$code])['reservation']), 'first use');
+    same('Slevový kód ' . format_discount_code($code) . ' neplatí nebo už byl použit.', book(['MR-2-2'], 0, [$code])['error'] ?? null, 'second use');
+    same(false, isset(held(1)['MR-2-2']), 'nothing booked on the failed attempt');
+    $revoked = new_code();
+    contains('Kód zrušen', revoke_discount_code((int) db_query('SELECT MAX(id) FROM discount_codes')->fetchColumn()), 'revoke');
+    same(422, book(['MR-2-3'], 0, [$revoked])['status'] ?? null, 'revoked code');
+    same(422, book(['MR-2-4'], 0, ['ZZZZZZZZ'])['status'] ?? null, 'unknown code');
+});
+
+test('a reservation paid fully by codes is confirmed at once', function (): void {
+    $booked = book(['MR-3-1', 'MR-3-2'], 1, [new_code(), new_code()]);
+    $r = $booked['reservation'] ?? [];
+    same(['paid', 0, 'MR-3-1,MR-3-2'], [$r['status'], (int) $r['amount'], $r['free_seats']], 'paid without money');
+    same(0, amount_due($r), 'nothing to pay');
+});
+
+test('codes are created per listed e-mail; an invalid address creates nothing', function (): void {
+    $before = (int) db_query('SELECT COUNT(*) FROM discount_codes')->fetchColumn();
+    contains('Neplatné e-maily: spatny', create_discount_codes("a@example.com\nspatny", 'test'), 'invalid');
+    same($before, (int) db_query('SELECT COUNT(*) FROM discount_codes')->fetchColumn(), 'nothing created');
+    contains('Vytvořeno 3 kódy', create_discount_codes("a@example.com, b@example.com;\na@example.com", 'test'), 'created');
+    same(2, (int) db_query("SELECT COUNT(*) FROM discount_codes WHERE email = 'a@example.com'")->fetchColumn(), 'two codes for a listed twice');
+    same('ABCDEFGH', normalize_discount_code(' abcd-efgh '), 'normalized input');
+});
+
+test('cancelling a seat paid by a code returns nothing; a child seat returns its price', function (): void {
+    $id = reservation(['MR-4-1', 'MR-4-2', 'MR-4-3'], 'paid', 1, '', ['MR-4-3'], ['MR-4-1']);
+    same(450, (int) row($id)['amount'], 'price');
+    cancel_seats($id, ['MR-4-1']);
+    same([450, 0], [(int) row($id)['amount'], (int) row($id)['refund_amount']], 'free seat: nothing back');
+    cancel_seats($id, ['MR-4-3']);
+    $r = row($id);
+    same(['MR-4-2', 300, 150], [$r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'child seat');
+    cancel_seats($id, null);
+    same(['cancelled', 450], [row($id)['status'], (int) row($id)['refund_amount']], 'the adult seat in full');
+});
+
+test('cancelling the paid seats of a pending reservation leaves the free seats confirmed', function (): void {
+    $id = reservation(['MR-5-1', 'MR-5-2'], 'pending', 1, '', [], ['MR-5-1']);
+    cancel_seats($id, ['MR-5-2']);
+    same(['paid', 0], [row($id)['status'], (int) row($id)['amount']], 'confirmed');
+});
+
+test('the payment deadline follows the rule in effect when the reservation is made', function (): void {
+    $default = (int) config('PAYMENT_DEADLINE_HOURS');
+    save_payment_deadline_rules([
+        ['from' => iso_utc(now_utc()->modify('+5 days')), 'hours' => 12],
+        ['from' => iso_utc(now_utc()->modify('-1 day')), 'hours' => 24],
+    ]);
+    try {
+        same([$default, 24, 12], [
+            payment_deadline_hours(now_utc()->modify('-2 days')),
+            payment_deadline_hours(now_utc()),
+            payment_deadline_hours(now_utc()->modify('+6 days')),
+        ], 'hours by booking time');
+        $r = book(['MR-8-1'])['reservation'] ?? [];
+        $hours = (utc_time($r['expires_at'])->getTimestamp() - utc_time($r['created_at'])->getTimestamp()) / 3600;
+        same(24, (int) round($hours), 'due date of a new reservation');
+    } finally {
+        save_payment_deadline_rules([]);
+    }
+});
+
+// ----------------------------------------------------------- check-in
+
+test('each seat ticket is checked in once; cancelled seats and other runs are refused', function (): void {
+    $id = reservation(['MR-6-1', 'MR-6-2', 'MR-6-3'], 'paid', 2, 'Vstupní', ['MR-6-2']);
+    cancel_seats($id, ['MR-6-3']);
+    $r = row($id);
+    $run = run_by_id(2) ?? [];
+    // Run 2 started an hour ago – checked in with the organizer's confirmation outside the window.
+    same('outside_window', verify_ticket(ticket_code($r, 'MR-6-1'), $run, device('Vchod A'), false)['result'], 'outside window');
+    $first = verify_ticket(ticket_code($r, 'MR-6-1'), $run, device('Vchod A'), true);
+    same(['valid', 'MR-6-1', 'adult', 1, 2], [$first['result'], $first['ticket']['seat'], $first['ticket']['kind'], $first['ticket']['checkedIn'], $first['ticket']['count']], 'first seat');
+    same('used', verify_ticket(ticket_code($r, 'MR-6-1'), $run, device('Vchod B'), true)['result'], 'same seat again');
+    $child = verify_ticket(ticket_code($r, 'MR-6-2'), $run, device('Vchod B'), true);
+    same(['valid', 'child', 2], [$child['result'], $child['ticket']['kind'], $child['ticket']['checkedIn']], 'second seat');
+    same('seat_cancelled', verify_ticket(ticket_code($r, 'MR-6-3'), $run, device('Vchod A'), true)['result'], 'cancelled seat');
+    same('wrong_run', verify_ticket(ticket_code($r, 'MR-6-2'), run_by_id(1) ?? [], device('Vchod A'), false)['result'], 'other run');
+    same('invalid', verify_ticket('Z26|1|2|3|x|y|z', $run, device('Vchod A'), false)['result'], 'not a ticket code');
+    same('Vchod A', row($id)['checked_in_by'], 'reservation checked in');
+});
+
+test('offline: seats of one reservation are checked in separately', function (): void {
+    db()->exec('DELETE FROM scan_conflicts');
+    $id = reservation(['MR-7-1', 'MR-7-2'], 'paid');
+    $vs = row($id)['variable_symbol'];
+    $at = iso_utc(now_utc()->modify('-3 minutes'));
+    $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [
+        ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'MR-7-1', 'at' => $at],
+        ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'MR-7-2', 'at' => $at],
+        ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'MR-7-3', 'at' => $at],
+    ]);
+    same(['ok', 'ok', 'conflict'], array_column($res['results'], 'status'), 'two seats in, unknown seat refused');
+    same(['MR-7-1', 'MR-7-2'], array_keys(reservation_checkins($id)), 'both seats checked in');
+    contains('řada 7 · místo 3', conflicts()[0]['label'] ?? '', 'conflict names the seat');
+});
+
+test('on-site sale: QR payment, then paid and every seat checked in; the accountant verifies it', function (): void {
+    $run = run_by_id(2) ?? [];
+    same(422, onsite_sale_create(device('Vchod A'), $run, ['XX-1-1'], 0)['status'] ?? null, 'invalid seat');
+    $sold = onsite_sale_create(device('Vchod A'), $run, ['WR-5-2', 'WR-5-1'], 1);
+    $sale = $sold['sale'] ?? [];
+    same([450, ['WR-5-1', 'WR-5-2']], [$sale['amount'], $sale['seats']], 'sale');
+    contains('*AM:450.00*', $sale['spd'], 'QR payment');
+    same(409, onsite_sale_create(device('Vchod B'), $run, ['WR-5-1'], 0)['status'] ?? null, 'seat held by the open sale');
+    contains('2 místa odbavena', (string) onsite_sale_paid(device('Vchod A'), $run, (int) $sale['id']), 'paid');
+    $r = row((int) $sale['id']);
+    same(['paid', 450, 'Vchod A', null], [$r['status'], (int) $r['paid_amount'], $r['sold_by'], $r['payment_checked_at']], 'reservation');
+    same(['WR-5-1', 'WR-5-2'], array_keys(reservation_checkins((int) $r['id'])), 'checked in');
+    same(null, onsite_sale_paid(device('Vchod A'), $run, (int) $sale['id']), 'only once');
+
+    $other = onsite_sale_create(device('Vchod A'), $run, ['WR-5-3'], 0)['sale'] ?? [];
+    same(true, onsite_sale_cancel($run, (int) $other['id']), 'cancelled');
+    same([false, 'cancelled'], [isset(held(2)['WR-5-3']), row((int) $other['id'])['status']], 'seat free again');
 });
 
 // -------------------------------------------------------------------- GDPR
@@ -230,12 +384,39 @@ test('personal data is purged after the event except while money is still to ret
 
 // ------------------------------------------------------------------ tickets
 
-test('ticket code round-trips and rejects tampering', function (): void {
-    $r = row(reservation(['BC-1-1', 'BC-1-2'], 'paid'));
-    $code = ticket_code($r);
-    $parsed = parse_ticket_code($code);
-    same(true, $parsed !== null, 'parsed');
+test('one ticket code per seat round-trips with its kind and rejects tampering', function (): void {
+    $r = row(reservation(['BC-1-1', 'BC-1-2'], 'paid', 1, '', ['BC-1-2']));
+    $code = ticket_code($r, 'BC-1-2');
+    same(['id' => (int) $r['id'], 'variableSymbol' => $r['variable_symbol'], 'seat' => 'BC-1-2', 'kind' => 'child', 'name' => 'Test ' . $r['last_name']],
+        parse_ticket_code($code), 'parsed');
+    same('adult', parse_ticket_code(ticket_code($r, 'BC-1-1'))['kind'] ?? null, 'adult seat');
     same(null, parse_ticket_code(str_replace('BC-1-2', 'BC-1-3', $code)), 'tampered');
+    $payload = reservation_payload($r);
+    same(['BC-1-1', 'BC-1-2'], array_column($payload['tickets'], 'seat'), 'one ticket per seat');
+    same(true, count(array_unique(array_column($payload['tickets'], 'code'))) === 2, 'codes differ');
+});
+
+test('customers put names on seat tickets; the code, payload and PDF carry them', function (): void {
+    $id = reservation(['BC-3-1', 'BC-3-2'], 'paid', 1, 'Jménová');
+    same(null, save_ticket_names(row($id), ['BC-3-2' => '  Petr   Novák ', 'BC-3-1' => '']), 'saved');
+    $r = row($id);
+    same(['BC-3-2' => 'Petr Novák'], ticket_names($r), 'stored, spaces normalized');
+    same(['Test Jménová', 'Petr Novák'], [ticket_holder($r, 'BC-3-1'), ticket_holder($r, 'BC-3-2')], 'holders');
+    same('Petr Novák', parse_ticket_code(ticket_code($r, 'BC-3-2'))['name'] ?? null, 'name in the QR code');
+    same([null, 'Petr Novák'], array_column(reservation_payload($r)['tickets'], 'holder'), 'payload');
+    same('Vyberte místa z této rezervace.', save_ticket_names($r, ['ML-1-1' => 'X']), 'foreign seat');
+    same('Jméno na vstupence může mít nejvýše 100 znaků.', save_ticket_names($r, ['BC-3-1' => str_repeat('x', 101)]), 'too long');
+    save_ticket_names($r, ['BC-3-2' => '']);
+    same([], ticket_names(row($id)), 'back to the reservation name');
+    $past = reservation(['BC-3-3'], 'paid', 2);
+    same('Jména na vstupenkách už nelze měnit.', save_ticket_names(row($past), ['BC-3-3' => 'X']), 'run started');
+});
+
+test('the printable PDF holds the tickets of the current seats', function (): void {
+    $r = row(reservation(['BC-1-3', 'BC-1-4', 'BC-1-5', 'BC-1-6', 'BC-1-7'], 'paid', 1, 'Tisková', ['BC-1-7']));
+    $pdf = ticket_pdf($r);
+    same('%PDF-', substr($pdf, 0, 5), 'PDF');
+    same(2, preg_match_all('#/Type\s*/Page[^s]#', $pdf), 'five tickets on two pages (four per page)');
 });
 
 test('the ticket calendar event covers the run with folded, escaped lines', function (): void {
@@ -250,7 +431,7 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
     contains('UID:zidle-' . $r['id'] . '@', $ics, 'uid');
     contains('SEQUENCE:' . $now->getTimestamp(), $ics, 'sequence');
     contains('ATTENDEE;CN="Test Nováková, Jana";', $unfolded, 'attendee');
-    contains('SUMMARY:Moje židle 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels($r['seats']))), $unfolded, 'summary');
+    contains('SUMMARY:TZG 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels($r['seats']))), $unfolded, 'summary');
     contains('Variabilní symbol: ' . $r['variable_symbol'], $unfolded, 'description');
     same(true, str_ends_with($ics, "END:VCALENDAR\r\n"), 'CRLF');
     foreach (explode("\r\n", $ics) as $line) {
@@ -261,70 +442,195 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
 
 // ------------------------------------------------------------------- layout
 
-test('the layout for the apps lists all sections in order with their shape', function (): void {
+test('a seat has exactly one id: leading zeros or a trailing new line are refused', function (): void {
+    same([true, false, false, false, false, false], array_map('is_valid_seat_id', ['ML-1-1', 'ML-01-1', 'ML-1-01', "ML-1-1\n", 'ML-0-1', 'BL-02-1']), 'forms');
+    $booking = fn ($seat) => book_reservation(run_by_id(1) ?? [], 'Jan', 'Židle', 'zidle@example.com', [$seat], 0, []);
+    same(true, isset($booking('WR-7-2')['reservation']), 'booked');
+    same([422, 409], [$booking('WR-07-2')['status'] ?? null, $booking('WR-7-2')['status'] ?? null], 'the same chair written differently / again');
+});
+
+test('seats per IP are limited per hour and per day; a refused or failed booking counts nothing', function (): void {
+    db()->exec('DELETE FROM rate_limits');
+    $hits = fn ($window) => (int) db_query("SELECT hits FROM rate_limits WHERE bucket = '" . hash('sha256', "seats|{$window}|" . client_ip()) . "'")->fetchColumn();
+    same(true, seat_quota_take(30), '30 seats');
+    same(false, seat_quota_take(15), 'over 40 an hour');
+    same([30, 30], [$hits('hour'), $hits('day')], 'refused request not counted');
+    same(true, seat_quota_take(10), 'up to 40');
+    seat_quota_release(10);
+    same([30, 30], [$hits('hour'), $hits('day')], 'released');
+    db()->exec("UPDATE rate_limits SET window_start = UTC_TIMESTAMP() - INTERVAL 2 HOUR WHERE bucket = '" . hash('sha256', 'seats|hour|' . client_ip()) . "'");
+    same(true, seat_quota_take(40), 'a new hour');
+    same(false, seat_quota_take(20), 'over 80 a day');
+    db()->exec('DELETE FROM rate_limits');
+});
+
+test('names lose line breaks, control and invisible characters', function (): void {
+    same('Jan POZOR změna účtu x y', clean_name("Jan\r\n\nPOZOR\tzměna  účtu\u{202E}x|y "), 'cleaned');
+    same('', clean_name(['pole']), 'not a string');
+});
+
+test('the layout matches the plan: seats per row, capacities, reserve balcony seats', function (): void {
     $layout = layout_public();
     same(array_keys(SECTIONS), array_column($layout['sections'], 'id'), 'order');
-    same(total_capacity(), array_sum(array_map(fn ($s) => $s['rows'] * $s['seatsPerRow'], $layout['sections'])), 'capacity');
-    same(['left', 'left', 'right', 'right', 'balcony', 'balcony', 'balcony'], array_column($layout['sections'], 'group'), 'groups');
-    same(array_keys(LEVELS), array_values(array_unique(array_column($layout['sections'], 'level'))), 'levels used');
+    $sizes = array_combine(array_column($layout['sections'], 'id'), array_map(fn ($s) => array_column($s['rows'], 'seats'), $layout['sections']));
+    same([5, 5, 5, 5], $sizes['WL'], 'left wing');
+    same(array_fill(0, 9, 8), $sizes['ML'], 'left main');
+    same([4, 4, 4, 5, 5, 5, 4], $sizes['WR'], 'right wing');
+    same([7, 14, 14, 7, 7], $sizes['BC'], 'balcony centre');
+    same([12, 11, 11, 6], $sizes['BL'], 'balcony left: bench + reserve rows');
+    same([5, 7], array_column(section_rows(SECTIONS['BL'])[0]['parts'], 0), 'bench split 1–5 | 6–12');
+    same([[5, 6], [5, 6]], [array_column(section_rows(SECTIONS['BL'])[1]['parts'], 0), array_column(section_rows(SECTIONS['BL'])[2]['parts'], 0)], 'reserve rows 2 and 3 split 1–5 | 6–11');
+    same([11, 3, 3], $sizes['BR'], 'balcony right');
+    same([6, 5], array_column(section_rows(SECTIONS['BR'])[0]['parts'], 0), 'right bench split 1–6 | 7–11');
+    same([195, 106, 301], [
+        array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'main'))),
+        array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'balcony'))),
+        total_capacity(),
+    ], 'capacities');
+    $default = default_reserve_seats();
+    same([34, true, false, true, false], [count($default), in_array('BL-2-1', $default, true), in_array('BL-1-12', $default, true),
+        in_array('BR-3-3', $default, true), in_array('BR-1-11', $default, true)], 'default reserve rows');
+    same(array_keys(LEVELS), array_keys($layout['plan']), 'a plan per level');
     foreach ($layout['sections'] as $section) {
-        same(true, is_valid_seat_id("{$section['id']}-{$section['rows']}-{$section['seatsPerRow']}"), "last seat of {$section['id']}");
+        $rows = count($section['rows']);
+        $last = $section['rows'][$rows - 1]['seats'];
+        same([true, false, false], [
+            is_valid_seat_id("{$section['id']}-{$rows}-{$last}"),
+            is_valid_seat_id("{$section['id']}-{$rows}-" . ($last + 1)),
+            is_valid_seat_id("{$section['id']}-" . ($rows + 1) . '-1'),
+        ], "last seat of {$section['id']}");
     }
 });
 
-// ----------------------------------------------------------- admin accounts
+test('"Záložní" seats: the reserve rows by default, any seat switchable per run, taken seats stay for sale', function (): void {
+    $run = run_by_id(1) ?? [];
+    same([34, 267], [count($run['reserve_seats']), run_capacity($run)], 'default');
+    same(409, book(['BL-2-1'])['status'] ?? null, 'reserve seat cannot be booked');
+    same(true, isset(book(['BL-1-6'])['reservation']), 'the bench of the same section can');
+    try {
+        same(['BL-1-6'], save_run_reserve_seats(1, ['ML-1-1', 'BL-1-6', 'XX-1-1']), 'a taken seat cannot become reserve');
+        $run = run_by_id(1) ?? [];
+        same([['ML-1-1'], 300], [$run['reserve_seats'], run_capacity($run)], 'only ML-1-1 reserve');
+        same(true, isset(book(['BL-2-1'])['reservation']), 'former reserve seat booked');
+        same(409, book(['ML-1-1'])['status'] ?? null, 'new reserve seat refused');
+        same(['ML-1-1'], run_public($run)['reserveSeats'], 'sent to the apps');
+        same(34, count(run_by_id(2)['reserve_seats'] ?? []), 'other runs keep the default');
+    } finally {
+        save_run_reserve_seats(1, null);
+    }
+    same(34, count(run_by_id(1)['reserve_seats'] ?? []), 'back to the default');
+});
 
-test('an invited accountant sets a password and signs in with the e-mail', function (): void {
-    $invite = admin_invite(' Jana@Example.cz ', 'Jana  Nováková', 'hlavní heslo');
+// ----------------------------------------------------------- user accounts
+
+/** Invites and accepts an account; returns the signed-in user. */
+function account(string $email, array $roles, string $password = 'dlouhe-heslo-1'): array
+{
+    $invite = admin_invite($email, $roles, 'test');
+    if (!is_array($invite)) {
+        throw new TestFailure("invite {$email}: {$invite}");
+    }
+    $me = admin_accept_invite($invite['token'], $password, $password);
+    if (!is_array($me)) {
+        throw new TestFailure("accept {$email}: {$me}");
+    }
+    return $me;
+}
+
+test('deploy creates the first Správce once; it needs DEPLOY_TOKEN', function (): void {
+    same(false, admin_exists(), 'no Správce yet');
+    same(false, deploy_token_ok(''), 'empty token');
+    $configured = (string) config('DEPLOY_TOKEN');
+    if ($configured !== '') {
+        same([true, false], [deploy_token_ok($configured), deploy_token_ok($configured . 'x')], 'configured token');
+    }
+    same('Heslo musí mít alespoň 10 znaků.', create_first_admin('spravce@example.cz', 'kratke'), 'short password');
+    $admin = create_first_admin(' Spravce@Example.cz ', 'spravcovo-heslo');
+    same(['spravce@example.cz', 'admin', 'deploy'], is_array($admin) ? [$admin['email'], $admin['roles'], $admin['invited_by']] : $admin, 'created');
+    same('Správce už existuje – deploy lze použít jen jednou.', create_first_admin('druhy@example.cz', 'druhe-heslo-22'), 'only once');
+    same(['admin'], admin_login('spravce@example.cz', 'spravcovo-heslo')['roles'] ?? null, 'signs in');
+});
+
+test('an invited user gets an account with the roles once they set a password', function (): void {
+    $invite = admin_invite(' Jana@Example.cz ', ['accountant', 'neznámá'], 'spravce@example.cz');
     same(true, is_array($invite), 'invited');
     $token = is_array($invite) ? $invite['token'] : '';
-    same(['jana@example.cz', 'Jana Nováková', null], [$invite['user']['email'] ?? null, $invite['user']['name'] ?? null, $invite['user']['password_hash'] ?? null], 'account');
+    same(['jana@example.cz', 'accountant', 'spravce@example.cz', null], [$invite['user']['email'] ?? null, $invite['user']['roles'] ?? null, $invite['user']['invited_by'] ?? null, $invite['user']['password_hash'] ?? null], 'invitation (not accepted yet)');
     same(null, admin_login('jana@example.cz', 'cokoliv-dlouheho'), 'no login before accepting');
     same('Heslo musí mít alespoň 10 znaků.', admin_accept_invite($token, 'kratke', 'kratke'), 'too short');
     same('Hesla se neshodují.', admin_accept_invite($token, 'dlouhe-heslo-1', 'dlouhe-heslo-2'), 'mismatch');
     $me = admin_accept_invite($token, 'dlouhe-heslo-1', 'dlouhe-heslo-1');
-    same('Jana Nováková', is_array($me) ? $me['name'] : $me, 'accepted');
+    same(['jana@example.cz', ['accountant']], is_array($me) ? [$me['email'], $me['roles']] : $me, 'accepted');
     same(null, admin_invited_user($token), 'link used up');
-    same('Jana Nováková', admin_login('JANA@example.cz', 'dlouhe-heslo-1')['name'] ?? null, 'login (e-mail case-insensitive)');
+    same('jana@example.cz', admin_login('JANA@example.cz', 'dlouhe-heslo-1')['email'] ?? null, 'login (e-mail case-insensitive)');
     same(null, admin_login('jana@example.cz', 'spatne-heslo'), 'wrong password');
-    same('Účet s tímto e-mailem už existuje. Pošlete mu nový odkaz v seznamu.', admin_invite('jana@example.cz', 'Jana', 'x'), 'duplicate');
-    same('Neplatný e-mail.', admin_invite('neni-email', 'Jana', 'x'), 'invalid e-mail');
+    same('Účet s tímto e-mailem už existuje.', admin_invite('jana@example.cz', ['scanner'], 'x'), 'duplicate');
+    same('Neplatný e-mail.', admin_invite('neni-email', ['scanner'], 'x'), 'invalid e-mail');
+    same('Vyberte alespoň jednu roli.', admin_invite('bez@example.cz', [], 'x'), 'no role');
+    $expired = admin_invite('pozde@example.cz', ['scanner'], 'x');
+    db()->prepare('UPDATE admin_users SET invite_expires_at = ? WHERE email = ?')->execute([db_time(now_utc()->modify('-1 minute')), 'pozde@example.cz']);
+    same('Pozvánka neplatí nebo vypršela. Požádejte o novou.', admin_accept_invite(is_array($expired) ? $expired['token'] : '', 'pozde-heslo-1', 'pozde-heslo-1'), 'expired');
 });
 
-test('a new link lets the owner set a new password; expired links do not work', function (): void {
-    $invite = admin_invite('petr@example.cz', 'Petr', 'x');
-    $id = is_array($invite) ? (int) $invite['user']['id'] : 0;
-    admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'prvni-heslo-1', 'prvni-heslo-1');
-    $token = admin_new_invite($id);
-    same('Petr', admin_login('petr@example.cz', 'prvni-heslo-1')['name'] ?? null, 'old password works until changed');
-    admin_accept_invite($token, 'druhe-heslo-2', 'druhe-heslo-2');
-    same([null, 'Petr'], [admin_login('petr@example.cz', 'prvni-heslo-1'), admin_login('petr@example.cz', 'druhe-heslo-2')['name'] ?? null], 'new password');
-    $expired = admin_new_invite($id);
-    db()->prepare('UPDATE admin_users SET invite_expires_at = ? WHERE id = ?')->execute([db_time(now_utc()->modify('-1 minute')), $id]);
-    same('Pozvánka neplatí nebo vypršela. Požádejte o novou.', admin_accept_invite($expired, 'treti-heslo-3', 'treti-heslo-3'), 'expired');
+test('roles: Správce everything, Účetní reservations, Odbavovatel the scanner; several roles add up', function (): void {
+    $can = fn (array $roles) => array_map(fn ($what) => user_can(['roles' => $roles], $what), ['manage', 'reservations', 'scan']);
+    same([true, true, true], $can(['admin']), 'Správce');
+    same([false, true, false], $can(['accountant']), 'Účetní');
+    same([false, false, true], $can(['scanner']), 'Odbavovatel');
+    same([false, true, true], $can(['accountant', 'scanner']), 'Účetní + Odbavovatel');
+    $me = account('role@example.cz', ['scanner']);
+    same('Role účtu role@example.cz uloženy.', admin_set_roles($me['id'], ['accountant', 'scanner'], 999), 'changed');
+    same(['accountant', 'scanner'], admin_login('role@example.cz', 'dlouhe-heslo-1')['roles'] ?? null, 'new roles');
+    $admin = account('admin2@example.cz', ['admin']);
+    same('Svou vlastní roli Správce nelze odebrat.', admin_set_roles($admin['id'], ['accountant'], $admin['id']), 'not your own Správce role');
+});
+
+test('forgotten password: an e-mailed link sets a new one and signs out the old sessions', function (): void {
+    $me = account('zapomnel@example.cz', ['accountant'], 'stare-heslo-1');
+    same($me['email'], admin_from_session($me['id'], $me['pw'])['email'] ?? null, 'session');
+    same(null, request_password_reset('nikdo@example.cz'), 'unknown e-mail: nothing (same answer for the visitor)');
+    $token = (string) request_password_reset('Zapomnel@example.cz');
+    same($me['email'], password_reset_user($token)['email'] ?? null, 'link valid');
+    same($me['email'], admin_login('zapomnel@example.cz', 'stare-heslo-1')['email'] ?? null, 'old password works until changed');
+    same('Hesla se neshodují.', reset_password($token, 'nove-heslo-11', 'jine-heslo-11'), 'mismatch');
+    $new = reset_password($token, 'nove-heslo-11', 'nove-heslo-11');
+    same($me['email'], is_array($new) ? $new['email'] : $new, 'changed');
+    same([null, $me['email']], [admin_login('zapomnel@example.cz', 'stare-heslo-1'), admin_login('zapomnel@example.cz', 'nove-heslo-11')['email'] ?? null], 'new password');
+    same(null, admin_from_session($me['id'], $me['pw']), 'old session signed out');
+    same('Odkaz neplatí nebo vypršel. Požádejte o nový.', reset_password($token, 'treti-heslo-11', 'treti-heslo-11'), 'link used up');
+    $late = (string) request_password_reset('zapomnel@example.cz');
+    db()->prepare('UPDATE admin_users SET reset_expires_at = ? WHERE id = ?')->execute([db_time(now_utc()->modify('-1 minute')), $me['id']]);
+    same(null, password_reset_user($late), 'expired');
+    request_password_reset('zapomnel@example.cz');
+    same(null, request_password_reset('zapomnel@example.cz'), 'at most 3 e-mails an hour');
 });
 
 test('disabled accounts cannot sign in and lose their session; nobody disables themselves', function (): void {
-    $invite = admin_invite('eva@example.cz', 'Eva', 'x');
-    $id = is_array($invite) ? (int) $invite['user']['id'] : 0;
-    admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'evino-heslo-1', 'evino-heslo-1');
-    same('Eva', admin_from_session($id)['name'] ?? null, 'session valid');
-    same('Svůj vlastní účet nelze vypnout.', admin_set_disabled($id, true, $id), 'not yourself');
-    admin_set_disabled($id, true, null);
-    same([null, null], [admin_login('eva@example.cz', 'evino-heslo-1'), admin_from_session($id)], 'disabled');
-    admin_set_disabled($id, false, null);
-    same('Eva', admin_login('eva@example.cz', 'evino-heslo-1')['name'] ?? null, 'enabled again');
+    $me = account('eva@example.cz', ['accountant'], 'evino-heslo-1');
+    same('Svůj vlastní účet nelze vypnout.', admin_set_disabled($me['id'], true, $me['id']), 'not yourself');
+    admin_set_disabled($me['id'], true, 999);
+    same([null, null], [admin_login('eva@example.cz', 'evino-heslo-1'), admin_from_session($me['id'], $me['pw'])], 'disabled');
+    admin_set_disabled($me['id'], false, 999);
+    same('eva@example.cz', admin_login('eva@example.cz', 'evino-heslo-1')['email'] ?? null, 'enabled again');
 });
 
-test('the master password signs in with an empty e-mail', function (): void {
-    $master = (string) config('ADMIN_PASSWORD');
-    if ($master === '') {
-        same(null, admin_login('', 'cokoliv'), 'no master password configured');
-        return;
-    }
-    same(['id' => null, 'name' => ADMIN_MASTER_NAME, 'email' => null], admin_login('', $master), 'master');
-    same(null, admin_login('', $master . 'x'), 'wrong master password');
-    same(ADMIN_MASTER_NAME, admin_from_session(0)['name'] ?? null, 'master session');
+test('the scanner signs in Odbavovatel and Správce accounts; a new password, a removed role or a disabled account lock the device out', function (): void {
+    $scanner = account('vchod@example.cz', ['scanner'], 'vchodove-heslo');
+    account('ucetni-jen@example.cz', ['accountant'], 'ucetni-heslo-1');
+    same('Nesprávný e-mail nebo heslo.', scanner_login('vchod@example.cz', 'spatne-heslo'), 'wrong password');
+    same('Tento účet nemá roli Odbavovatel. Požádejte správce o přidání role.', scanner_login('ucetni-jen@example.cz', 'ucetni-heslo-1'), 'Účet without the role');
+    same(['name' => 'vchod@example.cz', 'runIds' => null], array_intersect_key((array) scanner_login('vchod@example.cz', 'vchodove-heslo'), ['name' => 1, 'runIds' => 1]), 'signed in, all runs');
+    same(true, is_array(scanner_login('spravce@example.cz', 'spravcovo-heslo')), 'Správce may scan');
+    $cookie = scanner_cookie_for($scanner);
+    same($scanner['email'], scanner_access_from_cookie($cookie)['name'] ?? null, 'cookie');
+    same(null, scanner_access_from_cookie(substr($cookie, 0, -1) . (str_ends_with($cookie, 'a') ? 'b' : 'a')), 'forged');
+    admin_set_roles($scanner['id'], ['accountant'], 999);
+    same(null, scanner_access_from_cookie($cookie), 'role removed');
+    admin_set_roles($scanner['id'], ['scanner'], 999);
+    same($scanner['email'], scanner_access_from_cookie($cookie)['name'] ?? null, 'role back');
+    $token = (string) request_password_reset('vchod@example.cz');
+    reset_password($token, 'nove-vchodove-1', 'nove-vchodove-1');
+    same(null, scanner_access_from_cookie($cookie), 'new password');
 });
 
 // ------------------------------------------------------------------ offline
@@ -332,7 +638,7 @@ test('the master password signs in with an empty e-mail', function (): void {
 /** Scanner access as scanner_access() returns it. */
 function device(string $name): array
 {
-    return ['type' => 'invite', 'id' => 1, 'name' => $name, 'runIds' => null];
+    return ['id' => 1, 'name' => $name, 'roles' => ['scanner'], 'runIds' => null];
 }
 
 function conflicts(): array
@@ -340,14 +646,12 @@ function conflicts(): array
     return db_query('SELECT reason, label, scanned_by, other_by FROM scan_conflicts ORDER BY id')->fetchAll();
 }
 
-test('snapshot lists the run\'s tickets without e-mails and with VIP guests', function (): void {
+test('snapshot lists the run\'s tickets without e-mails', function (): void {
     $paid = reservation(['BR-1-1', 'BR-1-2'], 'paid', 1, 'Seznamová');
-    add_vip_guest(1, 'VIP Seznam', ['BR-2-1'], '');
     $snapshot = scanner_snapshot(run_by_id(1) ?? []);
     $ticket = array_values(array_filter($snapshot['tickets'], fn ($t) => $t['id'] === $paid))[0] ?? null;
-    same(['Test Seznamová', ['BR-1-1', 'BR-1-2'], 'paid', null], [$ticket['name'] ?? null, $ticket['seats'] ?? null, $ticket['status'] ?? null, $ticket['checkedInAt'] ?? null], 'ticket');
+    same(['Test Seznamová', ['BR-1-1', 'BR-1-2'], 'paid', []], [$ticket['name'] ?? null, $ticket['seats'] ?? null, $ticket['status'] ?? null, (array) ($ticket['checkedIn'] ?? null)], 'ticket');
     same(false, array_key_exists('email', $ticket ?? []), 'no e-mail');
-    same(true, in_array('VIP Seznam', array_column($snapshot['vips'], 'name'), true), 'VIP included');
 });
 
 test('offline check-ins are applied with the device time; the first one wins', function (): void {
@@ -355,14 +659,14 @@ test('offline check-ins are applied with the device time; the first one wins', f
     $id = reservation(['BR-1-3'], 'paid');
     $vs = row($id)['variable_symbol'];
     $at = now_utc()->modify('-10 minutes');
-    $event = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'at' => iso_utc($at)];
+    $event = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'BR-1-3', 'at' => iso_utc($at)];
     $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event]);
     same([['status' => 'ok']], $res['results'], 'applied');
     same([db_time($at), 'Vchod A (offline)'], [row($id)['checked_in_at'], row($id)['checked_in_by']], 'stored');
     // The same event sent again (response lost) is not a conflict.
     same(0, apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event])['conflicts'], 'resend');
     // Another device let the same ticket in offline too.
-    $other = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'at' => iso_utc($at->modify('+2 minutes'))];
+    $other = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'BR-1-3', 'at' => iso_utc($at->modify('+2 minutes'))];
     $res = apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [$other]);
     same([1, 'already_checked_in'], [$res['conflicts'], $res['results'][0]['reason'] ?? null], 'conflict');
     same(db_time($at), row($id)['checked_in_at'], 'first check-in kept');
@@ -377,9 +681,9 @@ test('offline scans of unpaid, unknown or other-run tickets become conflicts', f
     $pending = reservation(['BR-1-4']);
     $otherRun = reservation(['BR-1-5'], 'paid', 2);
     $events = [
-        ['type' => 'ticket', 'id' => $pending, 'variableSymbol' => row($pending)['variable_symbol'], 'at' => iso_utc(now_utc())],
-        ['type' => 'ticket', 'id' => $otherRun, 'variableSymbol' => row($otherRun)['variable_symbol'], 'at' => iso_utc(now_utc())],
-        ['type' => 'ticket', 'id' => 999999, 'variableSymbol' => '1', 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => $pending, 'variableSymbol' => row($pending)['variable_symbol'], 'seat' => 'BR-1-4', 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => $otherRun, 'variableSymbol' => row($otherRun)['variable_symbol'], 'seat' => 'BR-1-5', 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => 999999, 'variableSymbol' => '1', 'seat' => 'BR-1-6', 'at' => iso_utc(now_utc())],
     ];
     $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], $events);
     same(['not_paid', 'unknown', 'unknown'], array_column($res['results'], 'reason'), 'reasons');
@@ -387,26 +691,14 @@ test('offline scans of unpaid, unknown or other-run tickets become conflicts', f
 });
 
 test('device time is limited to the last 48 hours and never in the future', function (): void {
-    $future = reservation(['BR-2-2'], 'paid');
-    $old = reservation(['BR-2-3'], 'paid');
+    $future = reservation(['BR-1-8'], 'paid');
+    $old = reservation(['BR-1-9'], 'paid');
     apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [
-        ['type' => 'ticket', 'id' => $future, 'variableSymbol' => row($future)['variable_symbol'], 'at' => iso_utc(now_utc()->modify('+3 hours'))],
-        ['type' => 'ticket', 'id' => $old, 'variableSymbol' => row($old)['variable_symbol'], 'at' => '2001-01-01T00:00:00Z'],
+        ['type' => 'ticket', 'id' => $future, 'variableSymbol' => row($future)['variable_symbol'], 'seat' => 'BR-1-8', 'at' => iso_utc(now_utc()->modify('+3 hours'))],
+        ['type' => 'ticket', 'id' => $old, 'variableSymbol' => row($old)['variable_symbol'], 'seat' => 'BR-1-9', 'at' => '2001-01-01T00:00:00Z'],
     ]);
     same(true, row($future)['checked_in_at'] <= db_time(now_utc()), 'not in the future');
     same(true, row($old)['checked_in_at'] >= db_time(now_utc()->modify('-49 hours')), 'not older than 48 h');
-});
-
-test('offline VIP arrivals: first wins, undo takes an arrival back', function (): void {
-    db()->exec('DELETE FROM scan_conflicts');
-    add_vip_guest(1, 'VIP Offline', ['BR-2-4'], '');
-    $vip = (int) db_query("SELECT id FROM vip_guests WHERE name = 'VIP Offline'")->fetchColumn();
-    $at = iso_utc(now_utc()->modify('-5 minutes'));
-    same('ok', apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [['type' => 'vip-checkin', 'id' => $vip, 'at' => $at]])['results'][0]['status'], 'arrival');
-    $res = apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [['type' => 'vip-checkin', 'id' => $vip, 'at' => iso_utc(now_utc())]]);
-    same('already_checked_in', $res['results'][0]['reason'] ?? null, 'second device');
-    apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [['type' => 'vip-undo', 'id' => $vip]]);
-    same(null, db_query("SELECT checked_in_at FROM vip_guests WHERE id = {$vip}")->fetchColumn(), 'undone');
 });
 
 // ---------------------------------------------------------------------- run

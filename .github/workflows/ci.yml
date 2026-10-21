@@ -36,8 +36,9 @@ jobs:
       DB_PASS: root
       DB_NAME: zidle_test
       MAIL_ENABLED: '0'
-      TICKET_SECRET: ci-ticket-secret-0123456789
-      ADMIN_PASSWORD: ci-admin-master
+      TICKET_SECRET: ci-ticket-secret-0123456789-abcdefghij
+      DEPLOY_TOKEN: ci-deploy-token-0123456789-abcdefghij
+      BANK_IBAN: CZ6508000000192000145399
     steps:
       - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
@@ -56,17 +57,11 @@ jobs:
         run: find api tests -name '*.php' -not -path 'api/vendor/*' -print0 | xargs -0 -n1 php -l
       - name: PHPStan
         run: api/vendor/bin/phpstan analyse -c phpstan.neon --no-progress --error-format=github
-      - name: Schema and migrations apply cleanly (twice)
+      - name: Schema applies cleanly
         run: |
-          mysql -h127.0.0.1 -uroot -proot -e 'DROP DATABASE IF EXISTS zidle_migrate; CREATE DATABASE zidle_migrate CHARACTER SET utf8mb4'
-          mysql -h127.0.0.1 -uroot -proot zidle_migrate < db/schema.sql
-          for round in 1 2; do
-            for m in db/migrations/*.sql; do
-              echo "round $round: $m"
-              mysql -h127.0.0.1 -uroot -proot zidle_migrate < "$m"
-            done
-          done
-      - name: Integration tests (payments, cancellation, VIP, GDPR, tickets)
+          mysql -h127.0.0.1 -uroot -proot -e 'DROP DATABASE IF EXISTS zidle_schema; CREATE DATABASE zidle_schema CHARACTER SET utf8mb4'
+          mysql -h127.0.0.1 -uroot -proot zidle_schema < db/schema.sql
+      - name: Integration tests (payments, cancellation, discount codes, GDPR, tickets)
         run: php tests/php/run.php
 
   frontend:

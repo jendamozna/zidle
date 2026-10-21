@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { SECTIONS, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
+import { SECTION_BY_ID, parseSeatId, setLayout } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
+import { KIND_LABELS } from '../pricing.js';
 import { decodeTicket } from './ticket.js';
-import { acceptInvite, getSession, login, logout, verifyTicket } from './api.js';
+import { adminUrl, getSession, login, logout, verifyTicket } from './api.js';
 import { STALE_MS, cachedSession, clearOffline, getQueue, markTicketCheckedIn, saveSession, verifyOffline } from './offline.js';
 import { useOffline } from './useOffline.js';
 import { useQrCamera } from './useQrCamera.js';
-import VipView from './VipView.jsx';
+import SaleView from './SaleView.jsx';
 import { runLabel } from '../runs.js';
 
 const RUN_KEY = 'zidle-scanner-run';
@@ -62,6 +63,7 @@ const RESULT = {
   used: { tone: 'warn', title: 'Už odbaveno' },
   unpaid: { tone: 'bad', title: 'Nezaplaceno' },
   cancelled: { tone: 'bad', title: 'Rezervace zrušena' },
+  seat_cancelled: { tone: 'bad', title: 'Místo zrušeno' },
   invalid: { tone: 'bad', title: 'Neplatný kód' },
   payment: { tone: 'bad', title: 'To je platební QR kód' },
   wrong_run: { tone: 'bad', title: 'Jiný termín' },
@@ -80,19 +82,9 @@ const formatTime = (iso) =>
     timeZone: 'Europe/Prague',
   }).format(new Date(iso));
 
-function groupSeats(seats) {
-  const bySection = {};
-  for (const id of [...seats].sort(compareSeatIds)) {
-    const { sectionId, row, seat } = parseSeatId(id);
-    ((bySection[sectionId] ??= {})[row] ??= []).push(seat);
-  }
-  return SECTIONS.filter((s) => bySection[s.id]).map((s) => ({
-    section: s,
-    rows: Object.entries(bySection[s.id]).map(([row, seats]) => ({ row, seats })),
-  }));
-}
-
-function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
+/** Sign-in with the account (role Odbavovatel or Správce) the organizer was invited to. */
+function LoginScreen({ onLoggedIn }) {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -102,7 +94,7 @@ function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
     setBusy(true);
     setError(null);
     try {
-      await login(password);
+      await login(email, password);
       onLoggedIn();
     } catch (err) {
       setError(err.message);
@@ -114,33 +106,45 @@ function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
   return (
     <form className="scan-login" onSubmit={submit}>
       <h1 className="brand">
-        Moje židle <span>2026</span>
+        Koncert TZG <span>2026</span>
       </h1>
       <p className="muted">Odbavení vstupenek</p>
-      {inviteError && <p className="form-error">{inviteError}</p>}
+      <label className="field">
+        <span>E-mail</span>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />
+      </label>
+      <label className="field">
+        <span>Heslo</span>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+          required
+        />
+      </label>
+      {error && <p className="form-error">{error}</p>}
+      <button type="submit" className="btn btn-primary btn-block" disabled={busy || !email || !password}>
+        {busy ? 'Přihlašuji…' : 'Přihlásit'}
+      </button>
       <p className="scan-login-help">
-        Otevřete na tomto mobilu <strong>odkaz nebo QR kód z pozvánky</strong>, kterou Vám poslal správce. Pozvánka
-        povolí odbavení Vašich termínů.
+        Účet Vám založí správce pozvánkou na e-mail. <a href={adminUrl('?zapomenute')}>Zapomněl jsem heslo</a>
       </p>
-      {passwordLogin && (
-        <>
-          <label className="field">
-            <span>Nebo hlavní heslo pořadatele</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          {error && <p className="form-error">{error}</p>}
-          <button type="submit" className="btn btn-primary btn-block" disabled={busy || !password}>
-            {busy ? 'Přihlašuji…' : 'Přihlásit'}
-          </button>
-        </>
-      )}
     </form>
+  );
+}
+
+/** The seat of a scanned ticket in large type, with its kind (adult / child). */
+function TicketSeat({ ticket }) {
+  const { sectionId, row, seat } = parseSeatId(ticket.seat);
+  return (
+    <div className="scan-seat-big">
+      <span className="scan-section">{SECTION_BY_ID[sectionId]?.name ?? sectionId}</span>
+      <span className="scan-place">
+        řada <strong>{row}</strong> · místo <strong>{seat}</strong>
+      </span>
+      <span className={`scan-kind kind-${ticket.kind}`}>{KIND_LABELS[ticket.kind]}</span>
+    </div>
   );
 }
 
@@ -158,35 +162,24 @@ function ResultCard({ scan, onNext }) {
           <h2>{meta.title}</h2>
           {result === 'used' && checkedInAt && <p>Poprvé načteno {formatTime(checkedInAt)}</p>}
           {result === 'wrong_run' && scan.run && <p>Vstupenka platí na {scan.run.label}</p>}
-          {scan.changed && <p>Část míst byla zrušena – platí jen uvedená místa.</p>}
         </div>
       </div>
 
       {ticket ? (
         <div className="scan-ticket">
+          <TicketSeat ticket={ticket} />
           <div className="scan-ticket-name">
             <strong>{ticket.name}</strong>
-            <span className="scan-count">{seatsLabel(ticket.count)}</span>
+            {ticket.count !== undefined && (
+              <span className="scan-count">
+                rezervace {seatsLabel(ticket.count)} · odbaveno {ticket.checkedIn} z {ticket.count}
+              </span>
+            )}
           </div>
-          <ul className="scan-seats">
-            {groupSeats(ticket.seats).map(({ section, rows }) => (
-              <li key={section.id}>
-                <span className="scan-section">{section.name}</span>
-                <span className="scan-rows">
-                  {rows.map(({ row, seats }) => (
-                    <span key={row} className="scan-row">
-                      <span className="muted">ř. {row}</span>
-                      {seats.map((s) => (
-                        <span key={s} className="scan-seat">
-                          {s}
-                        </span>
-                      ))}
-                    </span>
-                  ))}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {ticket.reservedBy && ticket.reservedBy !== ticket.name && (
+            <p className="muted small">Rezervace: {ticket.reservedBy}</p>
+          )}
+          {result === 'seat_cancelled' && <p className="small">Toto místo bylo z rezervace zrušeno, ostatní místa platí.</p>}
           {result === 'unknown' && (
             <p className="small">Vstupenka není v seznamu tohoto termínu – může být na jiný termín, nebo neplatná.</p>
           )}
@@ -241,8 +234,8 @@ function OfflineStrip({ offline }) {
   );
 }
 
-function Scanner({ runs, name, onLogout, onUnauthorized }) {
-  const [mode, setMode] = useState('scan'); // scan | vip
+function Scanner({ runs, name, admin, onLogout, onUnauthorized }) {
+  const [mode, setMode] = useState('scan'); // scan | sale
   const [scan, setScan] = useState(null);
   const [runId, setRunId] = useState(() => defaultRunId(runs));
   const [confirmed, setConfirmed] = useState(() => new Set()); // runs confirmed for check-in outside their window
@@ -284,13 +277,12 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
       try {
         const res = await verifyTicket(raw, runId, confirmOutside);
         reachable();
-        if (res.result === 'valid') markTicketCheckedIn(runId, res.ticket.id, res.checkedInAt);
+        if (res.result === 'valid') markTicketCheckedIn(runId, res.ticket.id, res.ticket.seat, res.checkedInAt);
         setScan({
           raw,
           ticket: res.ticket ?? decoded,
           result: res.result,
           checkedInAt: res.checkedInAt,
-          changed: res.changed,
           run: res.run,
         });
       } catch (err) {
@@ -306,7 +298,9 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
         // No connection: check against the downloaded list, queue the check-in.
         fail(err);
         const res = verifyOffline(decoded, snapshot, getQueue());
-        if (res.result === 'valid') enqueue({ type: 'ticket', id: res.ticket.id, variableSymbol: res.ticket.variableSymbol });
+        if (res.result === 'valid') {
+          enqueue({ type: 'ticket', id: res.ticket.id, variableSymbol: res.ticket.variableSymbol, seat: res.ticket.seat });
+        }
         setScan({ raw, ...res, offlineAt: snapshot.at });
       }
     },
@@ -347,6 +341,11 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
               ☀
             </button>
           )}
+          {admin && (
+            <a className="btn btn-ghost btn-small" href={adminUrl()}>
+              Správa
+            </a>
+          )}
           <button type="button" className="btn btn-ghost btn-small" onClick={onLogout}>
             Odhlásit
           </button>
@@ -368,8 +367,8 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
         <button type="button" role="tab" aria-selected={mode === 'scan'} onClick={() => switchMode('scan')}>
           Vstupenky
         </button>
-        <button type="button" role="tab" aria-selected={mode === 'vip'} onClick={() => switchMode('vip')}>
-          VIP
+        <button type="button" role="tab" aria-selected={mode === 'sale'} onClick={() => switchMode('sale')}>
+          Prodej
         </button>
       </div>
 
@@ -388,8 +387,8 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
           onSwitch={changeRun}
           onConfirm={() => setConfirmed((prev) => new Set(prev).add(runId))}
         />
-      ) : mode === 'vip' ? (
-        <VipView key={runId} runId={runId} confirmOutside={confirmOutside} offline={offline} onUnauthorized={onUnauthorized} />
+      ) : mode === 'sale' ? (
+        <SaleView key={runId} runId={runId} onUnauthorized={onUnauthorized} />
       ) : (
         <div className={`scan-view ${scan ? 'has-result' : ''}`}>
           <video ref={camera.videoRef} className="scan-video" playsInline muted autoPlay />
@@ -414,16 +413,15 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
 
 export default function ScannerApp() {
   const [session, setSession] = useState('loading'); // loading | in | out | error
-  const [info, setInfo] = useState({ runs: [], name: null, passwordLogin: false });
+  const [info, setInfo] = useState({ runs: [], name: null, admin: false });
   const [error, setError] = useState(null);
-  const [inviteError, setInviteError] = useState(null);
 
   const loadSession = useCallback(() => {
     getSession()
       .then((s) => {
         setLayout(s.layout);
-        setInfo({ runs: s.runs ?? [], name: s.name, passwordLogin: s.passwordLogin });
-        if (s.loggedIn) saveSession({ name: s.name, runs: s.runs ?? [], layout: s.layout });
+        setInfo({ runs: s.runs ?? [], name: s.name, admin: !!s.admin });
+        if (s.loggedIn) saveSession({ name: s.name, admin: !!s.admin, runs: s.runs ?? [], layout: s.layout });
         else clearOffline();
         setSession(s.loggedIn ? 'in' : 'out');
       })
@@ -432,7 +430,7 @@ export default function ScannerApp() {
         const cached = err.offline ? cachedSession() : null;
         if (cached) {
           setLayout(cached.layout);
-          setInfo({ runs: cached.runs, name: cached.name, passwordLogin: false });
+          setInfo({ runs: cached.runs, name: cached.name, admin: !!cached.admin });
           setSession('in');
           return;
         }
@@ -441,19 +439,8 @@ export default function ScannerApp() {
       });
   }, []);
 
-  // Invite link: scanner.html?pozvanka=<token> signs this device in, then the token leaves the URL.
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const token = url.searchParams.get('pozvanka');
-    if (!token) {
-      loadSession();
-      return;
-    }
-    url.searchParams.delete('pozvanka');
-    window.history.replaceState(null, '', url);
-    acceptInvite(token)
-      .catch((err) => setInviteError(err.message))
-      .finally(loadSession);
+    loadSession();
   }, [loadSession]);
 
   const handleLogout = useCallback(() => {
@@ -466,7 +453,7 @@ export default function ScannerApp() {
     setSession('out');
   }, []);
 
-  // Access revoked or expired: nothing stored can be used or sent any more.
+  // Account disabled, password changed or role removed: nothing stored can be used or sent any more.
   const handleUnauthorized = useCallback(() => {
     clearOffline();
     setSession('out');
@@ -474,11 +461,11 @@ export default function ScannerApp() {
 
   if (session === 'loading') return <div className="scan-center muted">Načítám…</div>;
   if (session === 'error') return <div className="scan-center form-error">{error}</div>;
-  if (session === 'out') {
-    return <LoginScreen passwordLogin={info.passwordLogin} inviteError={inviteError} onLoggedIn={loadSession} />;
-  }
+  if (session === 'out') return <LoginScreen onLoggedIn={loadSession} />;
   if (!info.runs.length) {
-    return <div className="scan-center muted">Nemáte přiřazený žádný termín. Požádejte správce o pozvánku.</div>;
+    return <div className="scan-center muted">Zatím není žádný termín k odbavení.</div>;
   }
-  return <Scanner runs={info.runs} name={info.name} onLogout={handleLogout} onUnauthorized={handleUnauthorized} />;
+  return (
+    <Scanner runs={info.runs} name={info.name} admin={info.admin} onLogout={handleLogout} onUnauthorized={handleUnauthorized} />
+  );
 }

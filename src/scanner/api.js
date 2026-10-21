@@ -30,16 +30,20 @@ async function call(body) {
   return data;
 }
 
-/** { loggedIn, name, passwordLogin, runs: [... , scanFrom, scanTo] } */
+/** { loggedIn, name, admin, runs: [... , scanFrom, scanTo], layout } */
 export const getSession = () => call();
-export const acceptInvite = (token) => call({ action: 'invite', token });
-export const login = (password) => call({ action: 'login', password });
+export const login = (email, password) => call({ action: 'login', email, password });
+/** Admin pages (forgotten password, Správa) next to the API. */
+export const adminUrl = (query = '') => `${API_URL}/admin.php${query}`;
 export const logout = () => call({ action: 'logout' });
 export const verifyTicket = (code, runId, confirmOutside) => call({ action: 'verify', code, runId, confirmOutside });
-export const vipList = (runId) => call({ action: 'vip-list', runId });
-export const vipCheckIn = (id, runId, confirmOutside) => call({ action: 'vip-checkin', id, runId, confirmOutside });
-export const vipUndo = (id, runId) => call({ action: 'vip-undo', id, runId });
-/** Tickets and VIP guests of the run for checking offline. */
+/** Tickets of the run for checking offline. */
 export const getSnapshot = (runId) => call({ action: 'snapshot', runId });
 /** Sends check-ins made offline: {results: [{status, reason}], conflicts}. */
 export const syncScans = (runId, events) => call({ action: 'sync', runId, events });
+/** Selling on site: {taken, price, childPrice, maxSeats} of the run. */
+export const saleSeats = (runId) => call({ action: 'sale-seats', runId });
+/** {sale: {id, variableSymbol, amount, seats, tickets, spd, account}} */
+export const saleCreate = (runId, seats, children) => call({ action: 'sale-create', runId, seats, children });
+export const salePaid = (runId, id) => call({ action: 'sale-paid', runId, id });
+export const saleCancel = (runId, id) => call({ action: 'sale-cancel', runId, id });

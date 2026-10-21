@@ -1,17 +1,18 @@
 <?php
-// Organizer API used by the ticket scanner (scanner.html). Access: invite link
-// from admin (only the invited runs) or the optional master password (all runs).
-//   GET  organizer.php                                      → {loggedIn, name, runs, passwordLogin, layout}
-//   POST organizer.php {action: "invite", token}            → signs the device in with an invite
-//   POST organizer.php {action: "login", password}          → master password (if enabled)
+// Organizer API used by the ticket scanner (scanner.html). Access: accounts with the role
+// Odbavovatel or Správce (scanner_access.php), all runs.
+//   GET  organizer.php                                      → {loggedIn, name, admin, runs, layout}
+//                                                             (a signed-in admin session signs the scanner in too)
+//   POST organizer.php {action: "login", email, password}   → signs the device in
 //   POST organizer.php {action: "logout"}
 //   POST organizer.php {action: "verify", code, runId, confirmOutside?}
 //                                                           → ticket check for the run being checked in
-//   POST organizer.php {action: "vip-list", runId}          → {vips: [...]}
-//   POST organizer.php {action: "vip-checkin", id, runId, confirmOutside?}
-//   POST organizer.php {action: "vip-undo", id, runId}
 //   POST organizer.php {action: "snapshot", runId}          → list for checking tickets offline (scanner_snapshot())
 //   POST organizer.php {action: "sync", runId, events}      → check-ins made offline (apply_offline_scans())
+//   POST organizer.php {action: "sale-seats", runId}        → {taken, reserveSeats, price, childPrice, maxSeats} for selling on site
+//   POST organizer.php {action: "sale-create", runId, seats, children} → {sale} with the QR payment (onsite.php)
+//   POST organizer.php {action: "sale-paid", runId, id}     → paid and checked in
+//   POST organizer.php {action: "sale-cancel", runId, id}   → seats free again
 // Outside the run's check-in window (SCAN_WINDOW_*), check-ins happen only with
 // confirmOutside = true; otherwise the result is "outside_window".
 declare(strict_types=1);
@@ -19,11 +20,12 @@ require __DIR__ . '/lib/bootstrap.php';
 
 run_api(function (): void {
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        $access = scanner_access();
+        $access = scanner_access() ?? scanner_access_from_admin_session();
         json_response([
             'loggedIn' => $access !== null,
             'name' => $access['name'] ?? null,
-            'passwordLogin' => (string) config('ORGANIZER_PASSWORD') !== '',
+            // the account may also use the admin (link "Správa" in the scanner)
+            'admin' => $access !== null && (in_array('admin', $access['roles'], true) || in_array('accountant', $access['roles'], true)),
             'runs' => $access ? array_map('scanner_run_public', scanner_runs($access)) : [],
             'layout' => layout_public(),
         ]);
@@ -34,28 +36,17 @@ run_api(function (): void {
 
     $body = read_json_body();
     switch ($body['action'] ?? '') {
-        case 'invite':
-            if (!login_allowed('organizer')) {
-                json_error('Příliš mnoho pokusů. Zkuste to za 15 minut.', 429);
-            }
-            if (!accept_invite((string) ($body['token'] ?? ''))) {
-                json_error('Pozvánka neplatí – je zrušená nebo nahrazená novou. Požádejte správce o nový odkaz.', 401);
-            }
-            json_response(['loggedIn' => true]);
-            // no break – json_response exits
         case 'login':
-            $password = (string) config('ORGANIZER_PASSWORD');
-            if ($password === '') {
-                json_error('Přihlášení heslem je vypnuté. Použijte pozvánku od správce.', 403);
-            }
             if (!login_allowed('organizer')) {
                 json_error('Příliš mnoho pokusů. Zkuste to za 15 minut.', 429);
             }
-            if (!hash_equals($password, (string) ($body['password'] ?? ''))) {
+            $email = $body['email'] ?? null;
+            $password = $body['password'] ?? null;
+            $signedIn = is_string($email) && is_string($password) ? scanner_login($email, $password) : 'Nesprávný e-mail nebo heslo.';
+            if (is_string($signedIn)) {
                 sleep(1);
-                json_error('Nesprávné heslo.', 401);
+                json_error($signedIn, 401);
             }
-            scanner_set_cookie(master_cookie());
             json_response(['loggedIn' => true]);
             // no break
         case 'logout':
@@ -65,12 +56,7 @@ run_api(function (): void {
         case 'verify':
             $access = require_organizer();
             $run = require_run($access, (int) ($body['runId'] ?? 0));
-            verify_ticket((string) ($body['code'] ?? ''), $run, $access, !empty($body['confirmOutside']));
-            // no break
-        case 'vip-list':
-            $access = require_organizer();
-            $run = require_run($access, (int) ($body['runId'] ?? 0));
-            json_response(['vips' => vip_list($run['id'])]);
+            json_response(verify_ticket((string) ($body['code'] ?? ''), $run, $access, !empty($body['confirmOutside'])));
             // no break
         case 'snapshot':
             $access = require_organizer();
@@ -82,25 +68,43 @@ run_api(function (): void {
             $run = require_run($access, (int) ($body['runId'] ?? 0));
             json_response(apply_offline_scans($access, $run, is_array($body['events'] ?? null) ? $body['events'] : []));
             // no break
-        case 'vip-checkin':
-        case 'vip-undo':
+        case 'sale-seats':
             $access = require_organizer();
             $run = require_run($access, (int) ($body['runId'] ?? 0));
-            $id = (int) ($body['id'] ?? 0);
-            if ($body['action'] === 'vip-checkin') {
-                if (!run_in_scan_window($run) && empty($body['confirmOutside'])) {
-                    json_error('Termín je mimo čas odbavení. Potvrďte odbavení mimo čas.', 409);
-                }
-                // The first arrival wins when two organizers tap at once.
-                db()->prepare(
-                    'UPDATE vip_guests SET checked_in_by = IF(checked_in_at IS NULL, ?, checked_in_by),
-                       checked_in_at = COALESCE(checked_in_at, ?) WHERE id = ? AND run_id = ?'
-                )->execute([$access['name'], db_time(now_utc()), $id, $run['id']]);
-            } else {
-                db()->prepare('UPDATE vip_guests SET checked_in_at = NULL, checked_in_by = NULL WHERE id = ? AND run_id = ?')
-                    ->execute([$id, $run['id']]);
+            expire_reservations();
+            json_response([
+                'taken' => run_taken_seats($run['id']),
+                'reserveSeats' => $run['reserve_seats'],
+                'price' => adult_price(),
+                'childPrice' => child_price(),
+                'maxSeats' => (int) config('MAX_SEATS_PER_RESERVATION'),
+            ]);
+            // no break
+        case 'sale-create':
+            $access = require_organizer();
+            $run = require_run($access, (int) ($body['runId'] ?? 0));
+            $sold = onsite_sale_create($access, $run, $body['seats'] ?? null, $body['children'] ?? 0);
+            if (isset($sold['error'])) {
+                json_error($sold['error'], $sold['status'], $sold['extra']);
             }
-            json_response(['vips' => vip_list($run['id'])]);
+            json_response($sold, 201);
+            // no break
+        case 'sale-paid':
+            $access = require_organizer();
+            $run = require_run($access, (int) ($body['runId'] ?? 0));
+            $message = onsite_sale_paid($access, $run, (int) ($body['id'] ?? 0));
+            if ($message === null) {
+                json_error('Prodej už není otevřený.', 409);
+            }
+            json_response(['message' => $message]);
+            // no break
+        case 'sale-cancel':
+            $access = require_organizer();
+            $run = require_run($access, (int) ($body['runId'] ?? 0));
+            if (!onsite_sale_cancel($run, (int) ($body['id'] ?? 0))) {
+                json_error('Prodej už není otevřený.', 409);
+            }
+            json_response(['message' => 'Prodej zrušen, místa jsou volná.']);
             // no break
         default:
             json_error('Neznámá akce.', 400);
@@ -111,7 +115,7 @@ function require_organizer(): array
 {
     $access = scanner_access();
     if ($access === null) {
-        json_error('Přihlaste se pozvánkou od správce.', 401);
+        json_error('Přihlaste se svým e-mailem a heslem.', 401);
     }
     return $access;
 }
@@ -129,79 +133,4 @@ function scanner_run_public(array $run): array
 {
     [$from, $to] = run_scan_window($run);
     return run_public($run) + ['scanFrom' => iso_utc($from), 'scanTo' => iso_utc($to)];
-}
-
-/**
- * result: valid          – paid, first scan (check-in recorded now)
- *         used           – paid, already scanned before
- *         unpaid         – reservation not paid yet
- *         cancelled      – reservation cancelled or expired
- *         invalid        – not our ticket, forged or altered
- *         wrong_run      – valid reservation, but for another run (not checked in)
- *         outside_window – would be valid, but the run is outside its check-in window
- *                          and the organizer did not confirm (not checked in)
- */
-function verify_ticket(string $code, array $run, array $access, bool $confirmOutside): void
-{
-    $ticket = parse_ticket_code($code);
-    if ($ticket === null) {
-        json_response(['result' => 'invalid']);
-    }
-
-    $pdo = db();
-    $pdo->beginTransaction();
-    // Current state is always loaded from the database: by reservation id
-    // (older tickets: by variable symbol); the VS must match as well.
-    $stmt = $ticket['id'] !== null
-        ? $pdo->prepare('SELECT * FROM reservations WHERE id = ? AND variable_symbol = ? FOR UPDATE')
-        : $pdo->prepare('SELECT * FROM reservations WHERE variable_symbol = ? FOR UPDATE');
-    $stmt->execute($ticket['id'] !== null ? [$ticket['id'], $ticket['variableSymbol']] : [$ticket['variableSymbol']]);
-    $r = $stmt->fetch();
-
-    if (!$r) {
-        $pdo->rollBack();
-        json_response(['result' => 'invalid', 'ticket' => $ticket]);
-    }
-    // Seats may have been cancelled individually since the ticket was issued:
-    // the database is authoritative, the scanner shows the current seats.
-    $changed = $r['seats'] !== implode(',', $ticket['seats']);
-
-    $wrongRun = (int) $r['run_id'] !== $run['id'];
-    $firstScan = $r['checked_in_at'] === null;
-    $outside = !run_in_scan_window($run) && !$confirmOutside;
-    if ($r['status'] === 'paid' && $firstScan && !$wrongRun && !$outside) {
-        $now = db_time(now_utc());
-        $pdo->prepare('UPDATE reservations SET checked_in_at = ?, checked_in_by = ? WHERE id = ?')
-            ->execute([$now, $access['name'], $r['id']]);
-        $r['checked_in_at'] = $now;
-        $r['checked_in_by'] = $access['name'];
-    }
-    $pdo->commit();
-
-    $result = match (true) {
-        $wrongRun && in_array($r['status'], ['pending', 'paid'], true) => 'wrong_run',
-        $r['status'] === 'paid' && !$firstScan => 'used',
-        $r['status'] === 'paid' && $outside => 'outside_window',
-        $r['status'] === 'paid' => 'valid',
-        $r['status'] === 'pending' => 'unpaid',
-        default => 'cancelled',
-    };
-    $ticketRun = run_by_id((int) $r['run_id']);
-    json_response([
-        'result' => $result,
-        'changed' => $changed,
-        'ticket' => [
-            'id' => (int) $r['id'],
-            'variableSymbol' => $r['variable_symbol'],
-            'count' => (int) $r['seat_count'],
-            'name' => trim($r['first_name'] . ' ' . $r['last_name']) ?: $ticket['name'],
-            'seats' => explode(',', $r['seats']),
-        ],
-        'checkedInAt' => iso_time($r['checked_in_at']),
-        'checkedInBy' => $r['checked_in_by'],
-        'status' => $r['status'],
-        'run' => $ticketRun ? ['id' => $ticketRun['id'], 'label' => run_label($ticketRun)] : null,
-        'cancelledSeats' => $r['cancelled_seats'] === '' ? [] : explode(',', $r['cancelled_seats']),
-        'email' => $r['email'],
-    ]);
 }

@@ -11,18 +11,21 @@ return [
     'PAYMENT_RECIPIENT' => 'Farnost',
     'PAYMENT_SPECIFIC_SYMBOL' => '2026',
 
-    'ADMIN_PASSWORD' => 'change-me', // master login (empty e-mail) – needed to invite the first accountant
-    'ORGANIZER_PASSWORD' => '',  // optional master password for all runs; organizers normally use invite links from admin
-    'TICKET_SECRET' => 'paste output of: php -r "echo bin2hex(random_bytes(32));"',
+    // Fill in before the first start (min. 32 characters each), e.g. the output of: php -r "echo bin2hex(random_bytes(32));"
+    'TICKET_SECRET' => '',
+    'DEPLOY_TOKEN' => '',        // for POST api/deploy.php that creates the first Správce; may be removed afterwards
 
+    // E-mails via SMTP
     'MAIL_ENABLED' => true,
     'SMTP_HOST' => 'smtp.example.com',
-    'SMTP_PORT' => 587,
+    'SMTP_PORT' => 587,                // 465 = implicit TLS (SMTPS), otherwise STARTTLS when offered
     'SMTP_AUTH' => true,
     'SMTP_SENDER' => 'rezervace@example.com',
     'SMTP_USER' => '',                 // only when the login differs from SMTP_SENDER
+    'SMTP_PASSWORD' => 'change-me',
+
+    // Contact of the organizers: website footer and every e-mail (Reply-To = CONTACT_EMAIL)
     'CONTACT_EMAIL' => 'farnost@example.com',
     'CONTACT_PHONE' => '+420 123 456 789',
-    'SMTP_PASSWORD' => 'change-me',
     'PUBLIC_URL' => 'https://example.com/zidle/',
 ];

@@ -6,7 +6,13 @@ declare(strict_types=1);
 use PHPMailer\PHPMailer\Exception as MailerException;
 use PHPMailer\PHPMailer\PHPMailer;
 
-const MAIL_FROM_NAME = 'Moje židle 2026';
+const MAIL_FROM_NAME = 'Koncert TZG 2026';
+
+/** "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Koncert TZG 2026"). */
+function mail_subject(string $subject): string
+{
+    return 'TZG 2026: ' . $subject;
+}
 
 /**
  * Sends one e-mail. $html is optional (multipart/alternative with $text);
@@ -124,7 +130,7 @@ function payment_lines(array $r): array
     $lines = [
         ...$lines,
         'Částka: ' . format_czk(amount_due($r)),
-        'Účet: ' . config('BANK_ACCOUNT_DISPLAY') . ' (IBAN ' . config('BANK_IBAN') . ')',
+        'Účet: ' . config('BANK_ACCOUNT_DISPLAY'), // no IBAN – it is in the QR code on the reservation page
         'Variabilní symbol: ' . $r['variable_symbol'],
     ];
     if (specific_symbol() !== '') {
@@ -143,10 +149,10 @@ function send_customer_email(array $r, string $subject, array $lines): bool
     $body = implode("\n", array_merge(
         ["Dobrý den, {$r['first_name']} {$r['last_name']},", ''],
         $lines,
-        ['', 'Moje židle 2026'],
+        ['', 'Koncert TZG 2026'],
         contact_line() !== '' ? [contact_line()] : []
     ));
-    $ok = deliver_mail($r['email'], $subject . ' – Moje židle 2026', $body);
+    $ok = deliver_mail($r['email'], mail_subject($subject), $body);
     if (!$ok) {
         error_log("[zidle] Failed to send '{$subject}' for reservation {$r['id']}");
     }
@@ -160,7 +166,7 @@ function send_payment_email(array $r): void
         ['děkujeme za rezervaci míst: ' . implode('; ', seat_labels($r['seats'])) . '.', run_line($r), '', 'Platební údaje:'],
         payment_lines($r),
         ['', 'Pokud platba nedorazí, rezervace bude zrušena a místa uvolněna.'],
-        $link ? ['', "QR kód pro platbu a zrušení rezervace: {$link}"] : []
+        $link ? ['', "QR kód pro platbu: {$link}"] : []
     ));
 }
 

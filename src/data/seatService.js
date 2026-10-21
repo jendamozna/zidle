@@ -27,22 +27,29 @@ async function request(path, options = {}) {
 }
 
 /**
- * { runs: [{id, label, startsAt, bookingOpen, free, stornoRules}], runId, taken: string[] (of runId),
- *   price, deadlineHours, maxSeats, bookingOpen (of runId), formToken, contact {email, phone}, dataRetentionDays }
+ * { runs: [{id, label, startsAt, bookingOpen, free}], runId, taken: string[] (of runId),
+ *   price (adult seat), childPrice, deadlineHours, maxSeats, bookingOpen (of runId), formToken, contact {email, phone}, dataRetentionDays }
  */
 export const fetchSeats = (runId) => request(runId ? `seats.php?run=${encodeURIComponent(runId)}` : 'seats.php');
 
 /** Creates a pending reservation; returns it with payment details. */
 // formToken comes from fetchSeats; hp is the honeypot field (empty for humans).
-// altcha is the invisible ALTCHA payload (src/altcha.js).
-export const createReservation = ({ runId, firstName, lastName, email, seats, formToken, hp = '', altcha = '' }) =>
+// altcha is the invisible ALTCHA payload (src/altcha.js). children = number of child seats (4–17 years),
+// infants = children up to 3 years on a lap, codes = discount codes.
+export const createReservation = ({
+  runId, firstName, lastName, email, seats, children = 0, infants = 0, codes = [], formToken, hp = '', altcha = '',
+}) =>
   request('reservations.php', {
     method: 'POST',
-    body: JSON.stringify({ runId, firstName, lastName, email, seats, formToken, hp, altcha }),
+    body: JSON.stringify({ runId, firstName, lastName, email, seats, children, infants, codes, formToken, hp, altcha }),
   });
+
+/** Printable tickets of a paid reservation (PDF, one ticket per seat). */
+export const ticketsPdfUrl = (token) => `${API_URL}/tickets.php?token=${encodeURIComponent(token)}`;
 
 export const fetchReservation = (token) => request(`reservations.php?token=${encodeURIComponent(token)}`);
 
-/** Customer cancellation of the given seats (null = whole reservation). */
-export const cancelReservation = (token, seats = null) =>
-  request('cancel.php', { method: 'POST', body: JSON.stringify({ token, seats }) });
+/** Names on the seat tickets ({seat: name}, '' = the reservation name); returns the reservation. */
+export const saveTicketNames = (token, names) =>
+  request('ticket-names.php', { method: 'POST', body: JSON.stringify({ token, names }) });
+

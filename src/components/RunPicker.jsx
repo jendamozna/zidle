@@ -1,4 +1,4 @@
-import { TOTAL_CAPACITY, occupancyLevel } from '../data/layout.js';
+import { occupancyLevel } from '../data/layout.js';
 import { runParts } from '../runs.js';
 
 const freeLabel = (n) => (n === 1 ? '1 volné místo' : n >= 2 && n <= 4 ? `${n} volná místa` : `${n} volných míst`);
@@ -18,7 +18,7 @@ export default function RunPicker({ runs, onSelect }) {
           const { weekday, date, time } = runParts(run);
           const soldOut = run.free === 0;
           const closed = !run.bookingOpen;
-          const pct = Math.round(((TOTAL_CAPACITY - run.free) / TOTAL_CAPACITY) * 100);
+          const pct = Math.round(((run.capacity - run.free) / run.capacity) * 100);
           return (
             <li key={run.id}>
               <button

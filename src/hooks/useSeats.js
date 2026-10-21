@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SECTIONS, TOTAL_CAPACITY, capacity, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
+import { SECTIONS, capacity, compareSeatIds, parseSeatId, setLayout } from '../data/layout.js';
 import { createReservation, fetchSeats } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
 
@@ -11,6 +11,7 @@ export function useSeats(runId) {
   const [taken, setTaken] = useState(() => new Set());
   const [selected, setSelected] = useState(() => new Set());
   const [price, setPrice] = useState(0);
+  const [childPrice, setChildPrice] = useState(0);
   const [layoutReady, setLayoutReady] = useState(false); // layout from the server applied (setLayout)
   const [deadlineHours, setDeadlineHours] = useState(null);
   const formToken = useRef('');
@@ -34,6 +35,7 @@ export function useSeats(runId) {
       const nextTaken = new Set(data.taken);
       setTaken(nextTaken);
       setPrice(data.price);
+      setChildPrice(data.childPrice);
       setDeadlineHours(data.deadlineHours);
       formToken.current = data.formToken;
       setMaxSeats(data.maxSeats);
@@ -72,9 +74,13 @@ export function useSeats(runId) {
     };
   }, [refresh]);
 
+  const run = runs?.find((r) => r.id === runId) ?? null;
+  // "Záložní" seats: not for sale in this run (chosen by the admin).
+  const closedSeats = useMemo(() => new Set(run?.reserveSeats ?? []), [run]);
+
   const toggleSeat = useCallback(
     (id) => {
-      if (taken.has(id)) return;
+      if (taken.has(id) || closedSeats.has(id)) return;
       if (!bookingOpen) {
         setNotice({ text: 'Rezervace na tento termín jsou uzavřeny.' });
         return;
@@ -90,13 +96,14 @@ export function useSeats(runId) {
         return next;
       });
     },
-    [taken, selected, maxSeats, bookingOpen],
+    [taken, selected, maxSeats, bookingOpen, closedSeats],
   );
 
   const stats = useMemo(() => {
     const bySection = Object.fromEntries(
       SECTIONS.map((s) => [s.id, { capacity: capacity(s), taken: 0, mine: [] }]),
     );
+    for (const id of closedSeats) bySection[parseSeatId(id).sectionId].capacity -= 1;
     for (const id of taken) {
       const section = bySection[parseSeatId(id).sectionId];
       if (section) section.taken += 1;
@@ -108,17 +115,18 @@ export function useSeats(runId) {
       s.free = s.capacity - s.occupied;
       s.pct = Math.round((s.occupied / s.capacity) * 100);
     }
-    const occupied = Object.values(bySection).reduce((sum, s) => sum + s.occupied, 0);
     return {
       bySection,
-      free: TOTAL_CAPACITY - occupied,
+      free: Object.values(bySection).reduce((sum, s) => sum + s.free, 0),
+      selected: [...selected].sort(compareSeatIds),
       selectedCount: selected.size,
       price,
+      childPrice,
       total: selected.size * price,
     };
-  }, [taken, selected, price, layoutReady]); // eslint-disable-line react-hooks/exhaustive-deps -- layoutReady: SECTIONS were replaced
+  }, [taken, selected, price, childPrice, closedSeats, layoutReady]); // eslint-disable-line react-hooks/exhaustive-deps -- layoutReady: SECTIONS were replaced
 
-  /** Submits the selection with customer details; resolves with the reservation. */
+  /** Submits the selection with customer details ({firstName, …, children, codes}); resolves with the reservation. */
   const reserve = useCallback(
     async (customer) => {
       const ids = [...selected].sort(compareSeatIds);
@@ -140,8 +148,8 @@ export function useSeats(runId) {
   );
 
   const seatState = useCallback(
-    (id) => (selected.has(id) ? 'selected' : taken.has(id) ? 'taken' : 'available'),
-    [selected, taken],
+    (id) => (selected.has(id) ? 'selected' : taken.has(id) ? 'taken' : closedSeats.has(id) ? 'reserve' : 'available'),
+    [selected, taken, closedSeats],
   );
 
   return {
@@ -152,7 +160,7 @@ export function useSeats(runId) {
     bookingOpen,
     notice,
     runs,
-    run: runs?.find((r) => r.id === runId) ?? null,
+    run,
     dataRetentionDays,
     contact,
     layoutReady,

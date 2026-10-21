@@ -54,6 +54,55 @@ function rate_limit(string $key, int $max, int $windowSeconds): bool
     return (int) $stmt->fetchColumn() <= $max;
 }
 
+/**
+ * Seat quota of the client IP: adds $seats to the hourly and the daily count (SEATS_PER_IP_PER_*,
+ * a quarter of it without ALTCHA). Over a limit nothing is counted and false is returned.
+ */
+function seat_quota_take(int $seats): bool
+{
+    $share = altcha_enabled() ? 1 : 4;
+    $limits = ['hour' => [(int) config('SEATS_PER_IP_PER_HOUR'), 3600], 'day' => [(int) config('SEATS_PER_IP_PER_DAY'), 86400]];
+    $taken = [];
+    foreach ($limits as $name => [$max, $window]) {
+        $key = "seats|{$name}|" . client_ip();
+        if (!rate_limit_add($key, $seats, intdiv($max, $share), $window)) {
+            foreach ($taken as [$takenKey, $takenWindow]) {
+                rate_limit_add($takenKey, -$seats, PHP_INT_MAX, $takenWindow);
+            }
+            return false;
+        }
+        $taken[] = [$key, $window];
+    }
+    return true;
+}
+
+/** Gives the seats back (the reservation was not made, e.g. a seat was taken meanwhile). */
+function seat_quota_release(int $seats): void
+{
+    rate_limit_add('seats|hour|' . client_ip(), -$seats, PHP_INT_MAX, 3600);
+    rate_limit_add('seats|day|' . client_ip(), -$seats, PHP_INT_MAX, 86400);
+}
+
+/** Adds $amount to the count of $key; when it would exceed $max nothing is added and false is returned. */
+function rate_limit_add(string $key, int $amount, int $max, int $windowSeconds): bool
+{
+    $pdo = db();
+    $bucket = hash('sha256', $key);
+    $pdo->prepare(
+        'INSERT INTO rate_limits (bucket, hits, window_start) VALUES (?, GREATEST(?, 0), UTC_TIMESTAMP())
+         ON DUPLICATE KEY UPDATE
+           hits = GREATEST(CAST(IF(window_start < UTC_TIMESTAMP() - INTERVAL ? SECOND, 0, hits) AS SIGNED) + ?, 0),
+           window_start = IF(window_start < UTC_TIMESTAMP() - INTERVAL ? SECOND, UTC_TIMESTAMP(), window_start)'
+    )->execute([$bucket, $amount, $windowSeconds, $amount, $windowSeconds]);
+    $stmt = $pdo->prepare('SELECT hits FROM rate_limits WHERE bucket = ?');
+    $stmt->execute([$bucket]);
+    if ((int) $stmt->fetchColumn() <= $max) {
+        return true;
+    }
+    $pdo->prepare('UPDATE rate_limits SET hits = GREATEST(CAST(hits AS SIGNED) - ?, 0) WHERE bucket = ?')->execute([$amount, $bucket]);
+    return false;
+}
+
 function login_allowed(string $area): bool
 {
     return rate_limit("login|{$area}|" . client_ip(), (int) config('LOGIN_ATTEMPTS_PER_15_MIN'), 900);

@@ -15,12 +15,14 @@ function amount_due(array $r): int
 
 /**
  * Inside an open transaction: a pending reservation whose received money covers
- * its price becomes paid; a surplus is due for refund. Returns true when it did.
+ * its price becomes paid; a surplus is due for refund. A price of 0 (only seats paid
+ * by discount codes left) is covered without any money. Returns true when it did.
  */
 function complete_if_covered(PDO $pdo, array $r): bool
 {
     $received = (int) $r['paid_amount'];
-    if ($r['status'] !== 'pending' || $received <= 0 || $received - (int) $r['refunded_amount'] < (int) $r['amount']) {
+    $covered = (int) $r['amount'] === 0 || ($received > 0 && $received - (int) $r['refunded_amount'] >= (int) $r['amount']);
+    if ($r['status'] !== 'pending' || !$covered) {
         return false;
     }
     $surplus = $received - (int) $r['amount'];
@@ -41,8 +43,10 @@ function complete_if_covered(PDO $pdo, array $r): bool
  *  - cancelled: due for refund (the reservation was cancelled before the money arrived).
  *  - paid:      an extra payment (e.g. sent twice), due for refund.
  * Refunds go back to the paying account; the customer is e-mailed. Returns a message for the admin.
+ * $paidBefore (admin form: the amount received when the page was shown) refuses the same payment
+ * submitted twice (double click, resent form).
  */
-function record_payment(int $id, int $received): string
+function record_payment(int $id, int $received, ?int $paidBefore = null): string
 {
     if ($received < 1 || $received > 1000000) {
         return 'Zadejte přijatou částku v Kč.';
@@ -56,6 +60,10 @@ function record_payment(int $id, int $received): string
         if (!$r) {
             $pdo->rollBack();
             return 'Rezervace nenalezena.';
+        }
+        if ($paidBefore !== null && (int) $r['paid_amount'] !== $paidBefore) {
+            $pdo->rollBack();
+            return 'Platba u této rezervace už byla mezitím zapsána – nic dalšího se nezapsalo. Zkontrolujte stav rezervace.';
         }
         $status = $r['status'];
         $pdo->prepare('UPDATE reservations SET paid_amount = COALESCE(paid_amount, 0) + ? WHERE id = ?')
@@ -116,7 +124,7 @@ function record_payment(int $id, int $received): string
         }
         return "Přijato {$kc}" . ($outcome === 'restored' ? ', rezervace obnovena' : '') . ' – zaplaceno.'
             . ($surplus > 0 ? ' Přeplatek ' . format_czk($surplus) . ' k vrácení.' : '')
-            . send_ticket_for($id, $intro, 'Vstupenka');
+            . send_ticket_for($id, $intro, 'Platba přijata – Vaše vstupenky');
     }
     $mailed = send_partial_payment_email($r, $received);
     return "Přijato {$kc}, zbývá doplatit " . format_czk(amount_due($r)) . '.'

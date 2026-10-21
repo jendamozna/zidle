@@ -10,7 +10,8 @@ return (static function (): array {
         'DB_USER' => 'zidle',
         'DB_PASS' => '',
 
-        'SEAT_PRICE' => 300,             // CZK per seat
+        'SEAT_PRICE' => 300,             // CZK per adult seat (from 18 years)
+        'CHILD_SEAT_PRICE' => 150,       // CZK per child seat (4–17 years); up to 3 years on a lap for free, no seat
         'PAYMENT_DEADLINE_HOURS' => 72,  // due date shown to the customer
         'PAYMENT_GRACE_HOURS' => 48,     // unpaid reservations are cancelled this long after the due date (bank transfer delay)
         'REFUND_DAYS' => 14,             // refunds are promised within this many days (e-mails)
@@ -22,11 +23,13 @@ return (static function (): array {
         'EVENT_DURATION_MINUTES' => 120, // end of the calendar event = run start + this
 
         // Spam / bot protection
-        'RESERVATIONS_PER_IP_PER_HOUR' => 5,          // without ALTCHA
-        'RESERVATIONS_PER_IP_PER_HOUR_ALTCHA' => 30,  // with ALTCHA (each reservation costs proof-of-work); shared networks
+        // Seats one IP may reserve (so one script can't hold a whole run); without ALTCHA a quarter of it.
+        // Generous enough for several families booking from one shared network (parish Wi-Fi).
+        'SEATS_PER_IP_PER_HOUR' => 40,
+        'SEATS_PER_IP_PER_DAY' => 80,
         'ALTCHA_CHALLENGES_PER_IP_PER_HOUR' => 300,
         'PENDING_RESERVATIONS_PER_EMAIL' => 2, // unpaid reservations one e-mail may hold at once in one run
-        'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and organizer login, per IP
+        'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and scanner login, invitation, forgotten password, per IP
         'FORM_MIN_SECONDS' => 3,               // reservation sent sooner after loading the page = bot
         // Invisible ALTCHA proof-of-work on the reservation form
         'ALTCHA_ENABLED' => true,
@@ -38,16 +41,12 @@ return (static function (): array {
         'BANK_BIC' => '',
         'BANK_ACCOUNT_DISPLAY' => '',   // e.g. 19-2000145399/0800
         'PAYMENT_RECIPIENT' => 'Farnost',
-        'PAYMENT_MESSAGE' => 'Moje zidle 2026',
+        'PAYMENT_MESSAGE' => 'Koncert TZG 2026',
         'PAYMENT_SPECIFIC_SYMBOL' => '', // specific symbol (SS) used for all payments, max 10 digits
 
-        // Admin page (admin.php): accountants sign in with their e-mail and password
-        // (invited in the "Účetní" tab). Master password = sign-in with an empty
-        // e-mail; required until the first account exists, may be removed afterwards.
-        'ADMIN_PASSWORD' => '',
-        // Ticket scanner (scanner.html): organizers sign in with invite links from admin.
-        // Optional master password for all runs ('' = disabled).
-        'ORGANIZER_PASSWORD' => '',
+        // One-time token for api/deploy.php, which creates the first Správce (admin account) while
+        // none exists; at least 32 characters, '' = deploy disabled. Everybody else is invited in the admin.
+        'DEPLOY_TOKEN' => '',
         // Check-in window around the start of a run; outside it the scanner warns
         // and checks in only after an explicit confirmation.
         'SCAN_WINDOW_BEFORE_MINUTES' => 60,

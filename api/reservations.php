@@ -1,6 +1,7 @@
 <?php
 // POST api/reservations.php        – create a reservation
-//      body: {runId, firstName, lastName, email, seats: ["ML-1-1", ...], formToken, hp}
+//      body: {runId, firstName, lastName, email, seats: ["ML-1-1", ...], children, codes: ["ABCD-EFGH"],
+//             formToken, hp, altcha}
 // GET  api/reservations.php?token= – reservation status and payment details
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
@@ -57,10 +58,12 @@ function create_reservation(): void
         json_error('Ověření proti robotům se nezdařilo. Zkuste to prosím znovu.', 400, ['code' => 'altcha']);
     }
 
-    $firstName = trim((string) ($body['firstName'] ?? ''));
-    $lastName = trim((string) ($body['lastName'] ?? ''));
+    $firstName = clean_name($body['firstName'] ?? '');
+    $lastName = clean_name($body['lastName'] ?? '');
     $email = trim((string) ($body['email'] ?? ''));
     $seats = $body['seats'] ?? null;
+    $children = $body['children'] ?? 0;
+    $codes = $body['codes'] ?? [];
 
     $errors = [];
     if ($firstName === '' || mb_strlen($firstName) > 100) {
@@ -74,6 +77,7 @@ function create_reservation(): void
     }
     if (!is_array($seats) || $seats === []) {
         $errors['seats'] = 'Vyberte alespoň jedno místo.';
+        $seats = [];
     } else {
         $seats = array_values(array_unique(array_map('strval', $seats)));
         $max = (int) config('MAX_SEATS_PER_RESERVATION');
@@ -81,96 +85,43 @@ function create_reservation(): void
             $errors['seats'] = 'Najednou lze rezervovat nejvýše ' . $max . ' ' . ($max === 1 ? 'místo' : ($max < 5 ? 'místa' : 'míst')) . '.';
         } elseif (array_filter($seats, fn ($id) => !is_valid_seat_id($id))) {
             $errors['seats'] = 'Neplatné místo.';
+        } else {
+            usort($seats, 'compare_seat_ids');
+        }
+    }
+    if (!is_int($children) || $children < 0 || $children > count($seats)) {
+        $errors['children'] = 'Dětských vstupenek může být nejvýše tolik, kolik je míst.';
+    }
+    $codes = is_array($codes) ? array_values(array_filter(array_map(static fn ($c) => normalize_discount_code((string) $c), $codes))) : null;
+    if ($codes === null) {
+        $errors['codes'] = 'Neplatné slevové kódy.';
+    } elseif (count($codes) > count($seats)) {
+        $errors['codes'] = 'Slevových kódů může být nejvýše tolik, kolik je míst.';
+    } elseif (count($codes) !== count(array_unique($codes))) {
+        $errors['codes'] = 'Každý slevový kód lze zadat jen jednou.';
+    } else {
+        foreach ($codes as $code) {
+            if (!preg_match('/^[' . DISCOUNT_ALPHABET . ']{8}$/', $code)) {
+                $errors['codes'] = 'Slevový kód ' . $code . ' neplatí nebo už byl použit.';
+                break;
+            }
         }
     }
     if ($errors) {
-        json_error($errors['seats'] ?? 'Zkontrolujte zadané údaje.', 422, ['fields' => $errors]);
+        json_error($errors['seats'] ?? $errors['codes'] ?? $errors['children'] ?? 'Zkontrolujte zadané údaje.', 422, ['fields' => $errors]);
     }
+    // Seats per IP, not reservations: one script can't hold a whole run with many small ones.
     // Counted only for well-formed requests, so a visitor's own typos don't use up the limit.
-    // With ALTCHA every reservation costs proof-of-work, so a higher limit lets several
-    // people book from one shared network (parish Wi-Fi, office).
-    $ipLimit = (int) config(altcha_enabled() ? 'RESERVATIONS_PER_IP_PER_HOUR_ALTCHA' : 'RESERVATIONS_PER_IP_PER_HOUR');
-    if (!rate_limit('reserve|' . client_ip(), $ipLimit, 3600)) {
-        json_error('Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.', 429);
+    if (!seat_quota_take(count($seats))) {
+        json_error('Z tohoto zařízení už bylo rezervováno příliš mnoho míst. Zkuste to prosím později.', 429);
     }
 
     expire_reservations();
 
-    // Counted per run, so one person can book several runs at once.
-    $pending = db()->prepare("SELECT COUNT(*) FROM reservations WHERE email = ? AND run_id = ? AND status = 'pending'");
-    $pending->execute([$email, $run['id']]);
-    if ((int) $pending->fetchColumn() >= (int) config('PENDING_RESERVATIONS_PER_EMAIL')) {
-        json_error('Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.', 429);
+    $booked = book_reservation($run, $firstName, $lastName, $email, $seats, (int) $children, (array) $codes);
+    if (isset($booked['error'])) {
+        seat_quota_release(count($seats));
+        json_error($booked['error'], $booked['status'], $booked['extra']);
     }
-
-    $pdo = db();
-    $now = now_utc();
-    // Due date: PAYMENT_DEADLINE_HOURS, but never after the start of the run.
-    $expires = min($now->modify('+' . (int) config('PAYMENT_DEADLINE_HOURS') . ' hours'), run_starts($run));
-    $amount = count($seats) * (int) config('SEAT_PRICE');
-    $token = bin2hex(random_bytes(16));
-
-    $pdo->beginTransaction();
-    try {
-        $placeholders = implode(',', array_fill(0, count($seats), '?'));
-        $stmt = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE run_id = ? AND seat_id IN ($placeholders) FOR UPDATE");
-        $stmt->execute([$run['id'], ...$seats]);
-        $conflict = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        if ($conflict) {
-            $pdo->rollBack();
-            json_error('Některá místa už mezitím někdo rezervoval.', 409, ['conflict' => $conflict]);
-        }
-
-        $pdo->prepare(
-            'INSERT INTO reservations
-               (token, run_id, first_name, last_name, email, seats, seat_count, amount, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        )->execute([
-            $token, $run['id'], $firstName, $lastName, $email, implode(',', $seats), count($seats), $amount,
-            db_time($now), db_time($expires),
-        ]);
-        $id = (int) $pdo->lastInsertId();
-        $pdo->prepare('UPDATE reservations SET variable_symbol = ? WHERE id = ?')
-            ->execute([generate_variable_symbol($pdo), $id]);
-
-        $insertSeat = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, reservation_id) VALUES (?, ?, ?)');
-        foreach ($seats as $seatId) {
-            $insertSeat->execute([$run['id'], $seatId, $id]);
-        }
-        $pdo->commit();
-    } catch (PDOException $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        // Duplicate key: a concurrent request took one of the seats first.
-        if ($e->getCode() === '23000') {
-            json_error('Některá místa už mezitím někdo rezervoval.', 409, ['conflict' => []]);
-        }
-        throw $e;
-    }
-
-    $r = find_reservation_by_token($token);
-    if ($r === null) {
-        throw new RuntimeException('Reservation just created was not found.');
-    }
-    send_payment_email($r);
-    json_response(reservation_payload($r), 201);
-}
-
-/**
- * Random 10-digit variable symbol that is not used by any reservation yet.
- * Random instead of sequential so it does not reveal the number of
- * reservations and cannot be guessed; uq_vs guarantees uniqueness.
- */
-function generate_variable_symbol(PDO $pdo): string
-{
-    $check = $pdo->prepare('SELECT 1 FROM reservations WHERE variable_symbol = ?');
-    for ($i = 0; $i < 20; $i++) {
-        $vs = (string) random_int(1_000_000_000, 9_999_999_999);
-        $check->execute([$vs]);
-        if (!$check->fetchColumn()) {
-            return $vs;
-        }
-    }
-    throw new RuntimeException('Could not generate a unique variable symbol.');
+    json_response(reservation_payload($booked['reservation']), 201);
 }

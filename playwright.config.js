@@ -4,10 +4,9 @@ import { defineConfig, devices } from '@playwright/test';
 
 export const ENV = {
   DB_NAME: 'zidle_test',
-  ADMIN_PASSWORD: 'e2e-admin',
-  ORGANIZER_PASSWORD: 'e2e-organizer',
+  PUBLIC_URL: 'http://127.0.0.1:4173', // links from the admin (scanner, invitations) go to the built apps
   BANK_IBAN: 'CZ6508000000192000145399',
-  TICKET_SECRET: 'e2e-ticket-secret-0123456789',
+  TICKET_SECRET: 'e2e-ticket-secret-0123456789-abcdefgh',
   MAIL_ENABLED: '0',
   ...process.env,
 };

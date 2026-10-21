@@ -1,6 +1,6 @@
 <?php
 // GET api/seats.php?run=<id> – runs with free seat counts, the seats of the
-// given run held by pending or paid reservations and VIP guests, the seating layout.
+// given run held by pending or paid reservations, the seating layout.
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 
@@ -15,7 +15,7 @@ run_api(function (): void {
 
     $held = db_query('SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id')->fetchAll(PDO::FETCH_KEY_PAIR);
     $runs = array_values(array_map(
-        static fn ($run) => run_public($run, total_capacity() - (int) ($held[$run['id']] ?? 0)),
+        static fn ($run) => run_public($run, run_capacity($run) - (int) ($held[$run['id']] ?? 0)),
         runs()
     ));
 
@@ -31,8 +31,9 @@ run_api(function (): void {
         'runs' => $runs,
         'runId' => $run['id'] ?? null,
         'taken' => $taken,
-        'price' => (int) config('SEAT_PRICE'),
-        'deadlineHours' => (int) config('PAYMENT_DEADLINE_HOURS'),
+        'price' => adult_price(),
+        'childPrice' => child_price(),
+        'deadlineHours' => payment_deadline_hours(now_utc()),
         'maxSeats' => (int) config('MAX_SEATS_PER_RESERVATION'),
         'bookingOpen' => $run !== null && run_booking_open($run),
         'formToken' => form_token(),

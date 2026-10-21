@@ -107,14 +107,14 @@ export default function App() {
   else if (reservation) view = <PaymentView reservation={reservation} onChange={setReservation} onBack={closePayment} />;
   else if (choosing) view = <RunPicker runs={seats.runs} onSelect={chooseRun} />;
   else if (section) view = <SectionDetail section={section} seats={seats} onBack={() => setSectionId(null)} />;
-  else view = <Overview stats={stats} loading={seats.loading} onOpen={setSectionId} />;
+  else view = <Overview stats={stats} seatState={seats.seatState} loading={seats.loading} onOpen={setSectionId} />;
 
   return (
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
           <h1 className="brand">
-            Moje židle <span>2026</span>
+            Koncert TZG <span>2026</span>
           </h1>
           {!section && !reservation && !choosing && (
             <div className="summary">
@@ -148,10 +148,11 @@ export default function App() {
           {!reservation && seats.run && (
             <div className="run-bar">
               <span>
-                <span className="muted">Termín</span> <strong>{runLabel(seats.run)}</strong>
+                <span className="muted wide-only">Termín </span>
+                <strong>{runLabel(seats.run)}</strong>
               </span>
               <button type="button" className="link" onClick={() => chooseRun(null)}>
-                Změnit termín
+                Změnit<span className="wide-only"> termín</span>
               </button>
             </div>
           )}

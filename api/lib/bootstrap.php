@@ -2,13 +2,18 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/layout.php';
+require_once __DIR__ . '/pricing.php';
 require_once __DIR__ . '/ticket.php';
+require_once __DIR__ . '/ticket_pdf.php';
+require_once __DIR__ . '/discounts.php';
+require_once __DIR__ . '/booking.php';
+require_once __DIR__ . '/checkin.php';
+require_once __DIR__ . '/onsite.php';
 require_once __DIR__ . '/antispam.php';
 require_once __DIR__ . '/settings.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/cancellation.php';
 require_once __DIR__ . '/payments.php';
-require_once __DIR__ . '/vip.php';
 require_once __DIR__ . '/offline.php';
 require_once __DIR__ . '/admin_users.php';
 require_once __DIR__ . '/scanner_access.php';
@@ -205,9 +210,26 @@ function spd_string(array $r): string
     return implode('*', $parts);
 }
 
+/** Checked-in seats of a reservation: [seat => ['at' => ISO, 'by' => name]]. */
+function reservation_checkins(int $id): array
+{
+    $stmt = db()->prepare('SELECT seat_id, checked_in_at, checked_in_by FROM ticket_checkins WHERE reservation_id = ?');
+    $stmt->execute([$id]);
+    $out = [];
+    foreach ($stmt->fetchAll() as $c) {
+        $out[$c['seat_id']] = ['at' => iso_time($c['checked_in_at']), 'by' => $c['checked_in_by']];
+    }
+    return $out;
+}
+
 function reservation_payload(array $r): array
 {
-    $ticket = $r['status'] === 'paid' && strlen((string) config('TICKET_SECRET')) >= 16 ? ticket_code($r) : null;
+    $withCodes = $r['status'] === 'paid' && strlen((string) config('TICKET_SECRET')) >= 16;
+    $checkins = reservation_checkins((int) $r['id']);
+    $tickets = array_map(static fn ($item) => $item + [
+        'code' => $withCodes ? ticket_code($r, $item['seat']) : null,
+        'checkedInAt' => $checkins[$item['seat']]['at'] ?? null,
+    ], reservation_seat_items($r));
     return [
         'token' => $r['token'],
         'status' => $r['status'],
@@ -215,22 +237,20 @@ function reservation_payload(array $r): array
         'lastName' => $r['last_name'],
         'email' => $r['email'],
         'seats' => $r['seats'] === '' ? [] : explode(',', $r['seats']),
+        'tickets' => $tickets,
+        'ticketNamesEditable' => in_array($r['status'], ['pending', 'paid'], true)
+            && ($run = run_by_id((int) $r['run_id'])) !== null && !run_started($run),
         'amount' => (int) $r['amount'],
         'createdAt' => iso_time($r['created_at']),
         'expiresAt' => iso_time($r['expires_at']),
         'paidAt' => iso_time($r['paid_at']),
-        'ticket' => $ticket,
         'checkedInAt' => iso_time($r['checked_in_at']),
-        'cancellation' => cancellation_terms($r),
-        'cancelledBy' => $r['cancelled_by'],
-        'cancelFee' => $r['cancel_fee'] === null ? null : (int) $r['cancel_fee'],
         'refundAmount' => $r['refund_amount'] === null ? null : (int) $r['refund_amount'],
         'refundedAmount' => (int) $r['refunded_amount'],
         'cancelledSeats' => $r['cancelled_seats'] === '' ? [] : explode(',', $r['cancelled_seats']),
         'refundedAt' => iso_time($r['refunded_at']),
         'run' => ($run = run_by_id((int) $r['run_id'])) ? run_public($run) : null,
         'payment' => [
-            'iban' => (string) config('BANK_IBAN'),
             'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
             'recipient' => (string) config('PAYMENT_RECIPIENT'),
             'variableSymbol' => $r['variable_symbol'],
