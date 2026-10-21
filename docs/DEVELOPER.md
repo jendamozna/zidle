@@ -236,7 +236,7 @@ name override them (local file wins).
 
   | Id | Name (short) | Level | Seats per row (row 1 first) | Capacity |
   | --- | --- | --- | --- | --- |
-  | WL | Levé křídlo (L. křídlo) – below the band, its name above the band level with the other names | main | 5, 5, 5, 5 | 20 |
+  | WL | Levé křídlo (L. křídlo) – just below the band, its name above the band level with the other names | main | 5, 5, 5, 5 | 20 |
   | ML | Levá hlavní (L. hlavní) – a narrow aisle to MR | main | 9 × 8 | 72 |
   | MR | Pravá hlavní (P. hlavní) | main | 9 × 8 | 72 |
   | WR | Pravé křídlo (P. křídlo) | main | 4, 4, 4, 5, 5, 5, 4 (the last row set apart) | 31 |

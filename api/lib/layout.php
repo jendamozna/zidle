@@ -21,7 +21,7 @@ const LEVELS = [
 
 const PLAN = [
     // the stage spans both main sections; the band's top is level with the first rows
-    'main' => ['height' => 51, 'items' => [
+    'main' => ['height' => 49.5, 'items' => [
         ['kind' => 'stage', 'label' => 'Pódium', 'x' => 24.1, 'y' => 0, 'w' => 51.8, 'h' => 8],
         ['kind' => 'band', 'label' => 'Kapela', 'x' => 1.5, 'y' => 15.6, 'w' => 14, 'h' => 12],
     ]],
@@ -32,7 +32,7 @@ const PLAN = [
 
 const SECTIONS = [
     'WL' => ['name' => 'Levé křídlo', 'short' => 'L. křídlo', 'level' => 'main', 'label' => [8.6, 9.5, 'center'], 'rows' => [
-        [5, 3.2, 38.5, 14, 38.5], [5, 3.2, 41.7, 14, 41.7], [5, 3.2, 44.9, 14, 44.9], [5, 3.2, 48.1, 14, 48.1],
+        [5, 3.2, 30.5, 14, 30.5], [5, 3.2, 33.7, 14, 33.7], [5, 3.2, 36.9, 14, 36.9], [5, 3.2, 40.1, 14, 40.1],
     ]],
     'ML' => ['name' => 'Levá hlavní', 'short' => 'L. hlavní', 'level' => 'main', 'label' => [35.45, 9.5, 'center'], 'rows' => [
         [8, 26, 17.5, 44.9, 17.5], [8, 26, 21.1, 44.9, 21.1], [8, 26, 24.7, 44.9, 24.7], [8, 26, 28.3, 44.9, 28.3],
