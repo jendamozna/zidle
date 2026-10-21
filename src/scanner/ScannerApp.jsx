@@ -134,6 +134,70 @@ function LoginScreen({ passwordLogin, inviteError, onLoggedIn }) {
   );
 }
 
+/**
+ * Invite link opened: the first time the organizer creates a password, later the link works only with it
+ * (a forwarded link alone signs nobody in).
+ */
+function InviteScreen({ invite, onLoggedIn }) {
+  const [mode, setMode] = useState(invite.mode);
+  const [password, setPassword] = useState('');
+  const [again, setAgain] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const create = mode === 'create';
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await acceptInvite(invite.token, password, create ? again : undefined);
+      onLoggedIn();
+    } catch (err) {
+      setError(err.message);
+      if (err.status === 409) setMode('enter');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="scan-login" onSubmit={submit}>
+      <h1 className="brand">
+        Vstupenky na TZG <span>2026</span>
+      </h1>
+      <p className="muted">Pozvánka – {invite.name}</p>
+      <p className="scan-login-help">
+        {create
+          ? 'Vytvořte si heslo k pozvánce. Budete ho zadávat při dalším otevření odkazu (i na jiném mobilu) – bez něj odkaz nefunguje.'
+          : 'Zadejte heslo, které jste si vytvořili při prvním otevření pozvánky.'}
+      </p>
+      <label className="field">
+        <span>{create ? 'Nové heslo (alespoň 8 znaků)' : 'Heslo'}</span>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete={create ? 'new-password' : 'current-password'}
+          minLength={create ? 8 : undefined}
+          required
+        />
+      </label>
+      {create && (
+        <label className="field">
+          <span>Heslo znovu</span>
+          <input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" required />
+        </label>
+      )}
+      {error && <p className="form-error">{error}</p>}
+      <button type="submit" className="btn btn-primary btn-block" disabled={busy || !password}>
+        {busy ? 'Přihlašuji…' : create ? 'Vytvořit heslo a přihlásit' : 'Přihlásit'}
+      </button>
+      {!create && <p className="muted small">Zapomenuté heslo: požádejte správce o nový odkaz.</p>}
+    </form>
+  );
+}
+
 /** The seat of a scanned ticket in large type, with its kind (adult / child). */
 function TicketSeat({ ticket }) {
   const { sectionId, row, seat } = parseSeatId(ticket.seat);
@@ -411,6 +475,7 @@ export default function ScannerApp() {
   const [info, setInfo] = useState({ runs: [], name: null, passwordLogin: false });
   const [error, setError] = useState(null);
   const [inviteError, setInviteError] = useState(null);
+  const [invite, setInvite] = useState(null); // invite link waiting for its password: { token, mode, name }
 
   const loadSession = useCallback(() => {
     getSession()
@@ -435,7 +500,8 @@ export default function ScannerApp() {
       });
   }, []);
 
-  // Invite link: scanner.html?pozvanka=<token> signs this device in, then the token leaves the URL.
+  // Invite link: scanner.html?pozvanka=<token> asks for the invite password (created on the first
+  // opening) and signs this device in; the token leaves the URL at once.
   useEffect(() => {
     const url = new URL(window.location.href);
     const token = url.searchParams.get('pozvanka');
@@ -446,8 +512,14 @@ export default function ScannerApp() {
     url.searchParams.delete('pozvanka');
     window.history.replaceState(null, '', url);
     acceptInvite(token)
-      .catch((err) => setInviteError(err.message))
-      .finally(loadSession);
+      .then((res) => {
+        if (res.loggedIn) loadSession();
+        else setInvite({ token, mode: res.password, name: res.name });
+      })
+      .catch((err) => {
+        setInviteError(err.message);
+        loadSession();
+      });
   }, [loadSession]);
 
   const handleLogout = useCallback(() => {
@@ -466,6 +538,17 @@ export default function ScannerApp() {
     setSession('out');
   }, []);
 
+  if (invite) {
+    return (
+      <InviteScreen
+        invite={invite}
+        onLoggedIn={() => {
+          setInvite(null);
+          loadSession();
+        }}
+      />
+    );
+  }
   if (session === 'loading') return <div className="scan-center muted">Načítám…</div>;
   if (session === 'error') return <div className="scan-center form-error">{error}</div>;
   if (session === 'out') {

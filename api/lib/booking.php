@@ -4,7 +4,7 @@
 declare(strict_types=1);
 
 /**
- * Books $seats (valid, sorted) of the run. The last $children seats are child seats,
+ * Books $seats (sorted; ids in the exact form, checked again here) of the run. The last $children seats are child seats,
  * each discount code (normalized) frees the most expensive seat; a reservation that
  * costs nothing is paid at once and gets its tickets, otherwise the payment e-mail.
  * $soldBy: on-site sale by this organizer (onsite.php) – no e-mail, no limit of unpaid
@@ -13,6 +13,9 @@ declare(strict_types=1);
  */
 function book_reservation(array $run, string $firstName, string $lastName, string $email, array $seats, int $children, array $codes, ?string $soldBy = null): array
 {
+    if (!$seats || array_filter($seats, static fn ($seat) => !is_string($seat) || !is_valid_seat_id($seat))) {
+        return ['error' => 'Neplatné místo.', 'status' => 422, 'extra' => []];
+    }
     $closed = array_values(array_filter($seats, static fn ($seat) => seat_closed_in_run($run, $seat)));
     if ($closed) {
         return ['error' => 'Některá místa zatím nejsou v prodeji.', 'status' => 409, 'extra' => ['conflict' => $closed]];

@@ -43,8 +43,10 @@ function complete_if_covered(PDO $pdo, array $r): bool
  *  - cancelled: due for refund (the reservation was cancelled before the money arrived).
  *  - paid:      an extra payment (e.g. sent twice), due for refund.
  * Refunds go back to the paying account; the customer is e-mailed. Returns a message for the admin.
+ * $paidBefore (admin form: the amount received when the page was shown) refuses the same payment
+ * submitted twice (double click, resent form).
  */
-function record_payment(int $id, int $received): string
+function record_payment(int $id, int $received, ?int $paidBefore = null): string
 {
     if ($received < 1 || $received > 1000000) {
         return 'Zadejte přijatou částku v Kč.';
@@ -58,6 +60,10 @@ function record_payment(int $id, int $received): string
         if (!$r) {
             $pdo->rollBack();
             return 'Rezervace nenalezena.';
+        }
+        if ($paidBefore !== null && (int) $r['paid_amount'] !== $paidBefore) {
+            $pdo->rollBack();
+            return 'Platba u této rezervace už byla mezitím zapsána – nic dalšího se nezapsalo. Zkontrolujte stav rezervace.';
         }
         $status = $r['status'];
         $pdo->prepare('UPDATE reservations SET paid_amount = COALESCE(paid_amount, 0) + ? WHERE id = ?')

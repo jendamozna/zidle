@@ -32,7 +32,8 @@ async function call(body) {
 
 /** { loggedIn, name, passwordLogin, runs: [... , scanFrom, scanTo] } */
 export const getSession = () => call();
-export const acceptInvite = (token) => call({ action: 'invite', token });
+/** Without a password: { password: 'create' | 'enter', name } or { loggedIn }; with it: { loggedIn }. */
+export const acceptInvite = (token, password, passwordAgain) => call({ action: 'invite', token, password, passwordAgain });
 export const login = (password) => call({ action: 'login', password });
 export const logout = () => call({ action: 'logout' });
 export const verifyTicket = (code, runId, confirmOutside) => call({ action: 'verify', code, runId, confirmOutside });

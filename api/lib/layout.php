@@ -151,9 +151,10 @@ function total_capacity(): int
     return array_sum(array_map('section_capacity', SECTIONS));
 }
 
+/** Only the exact form "ML-1-2" (no leading zeros, nothing after it), so one chair has one id. */
 function is_valid_seat_id(string $id): bool
 {
-    if (!preg_match('/^([A-Z]{2})-(\d{1,2})-(\d{1,2})$/', $id, $m)) {
+    if (!preg_match('/^([A-Z]{2})-([1-9]\d?)-([1-9]\d?)\z/', $id, $m)) {
         return false;
     }
     $sizes = isset(SECTIONS[$m[1]]) ? section_row_sizes(SECTIONS[$m[1]]) : [];

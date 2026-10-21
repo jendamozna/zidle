@@ -2,6 +2,9 @@
 // Access of organizers to the ticket scanner (scanner.html).
 //  - Invitation: admin creates an invite for chosen runs; its link
 //    (scanner.html?pozvanka=<token>) signs the device in for those runs only.
+//    The first opening makes the organizer create a password; afterwards the link
+//    works only with it, so a forwarded or leaked link alone is useless. Forgotten
+//    password = the admin makes a new link (which clears the password).
 //    Revoking the invite locks the device out on its next request.
 //  - Master password ORGANIZER_PASSWORD (optional): all runs.
 // The device keeps a cookie (no PHP session, so it survives idle hours):
@@ -11,6 +14,7 @@ declare(strict_types=1);
 const SCANNER_COOKIE = 'zidle_scanner';
 const SCANNER_COOKIE_DAYS = 30;
 const MASTER_NAME = 'hlavní heslo';
+const SCANNER_PASSWORD_MIN = 8;
 
 function scanner_cookie_path(): string
 {
@@ -19,6 +23,9 @@ function scanner_cookie_path(): string
 
 function scanner_set_cookie(string $value): void
 {
+    if (headers_sent()) {
+        return; // CLI tests
+    }
     setcookie(SCANNER_COOKIE, $value, [
         'expires' => time() + SCANNER_COOKIE_DAYS * 86400,
         'path' => scanner_cookie_path(),
@@ -70,7 +77,7 @@ function scanner_access(): ?array
                 'runIds' => invite_run_ids((int) $invite['id']),
             ];
         }
-    } elseif (preg_match('/^m:(\d{10}):([a-f0-9]{64})$/', $cookie, $m) && (string) config('ORGANIZER_PASSWORD') !== '') {
+    } elseif (preg_match('/^m:(\d{10}):([a-f0-9]{64})$/', $cookie, $m) && master_password_usable('ORGANIZER_PASSWORD')) {
         $expected = hash_hmac('sha256', 'master|' . $m[1], antispam_secret() . (string) config('ORGANIZER_PASSWORD'));
         if ((int) $m[1] > time() && hash_equals($expected, $m[2])) {
             $access = ['type' => 'master', 'id' => null, 'name' => MASTER_NAME, 'runIds' => null];
@@ -97,19 +104,51 @@ function invite_run_ids(int $inviteId): array
     return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 }
 
-/** Accepts an invite token: stores the device cookie. Returns false for unknown / revoked invites. */
-function accept_invite(string $token): bool
+/**
+ * Invite link opened. Without $password: ['password' => 'create'|'enter', 'name'] says what the
+ * scanner asks for (or ['loggedIn' => true] when this device is already signed in with the invite).
+ * With $password: creates it on the first opening ($again must match), otherwise checks it; then
+ * stores the device cookie → ['loggedIn' => true]. Errors: ['error' => message, 'status' => HTTP status].
+ */
+function accept_invite(mixed $token, mixed $password = null, mixed $again = null): array
 {
-    if (!preg_match('/^[a-f0-9]{48}$/', $token)) {
-        return false;
+    $invalid = ['error' => 'Pozvánka neplatí – je zrušená nebo nahrazená novou. Požádejte správce o nový odkaz.', 'status' => 401];
+    if (!is_string($token) || !preg_match('/^[a-f0-9]{48}\z/', $token)) {
+        return $invalid;
     }
-    $stmt = db()->prepare('SELECT id FROM scanner_invites WHERE token_hash = ? AND revoked_at IS NULL');
+    $stmt = db()->prepare('SELECT * FROM scanner_invites WHERE token_hash = ? AND revoked_at IS NULL');
     $stmt->execute([token_hash($token)]);
-    if (!$stmt->fetchColumn()) {
-        return false;
+    $invite = $stmt->fetch();
+    if (!$invite) {
+        return $invalid;
+    }
+    $current = scanner_access();
+    if ($current !== null && $current['type'] === 'invite' && $current['id'] === (int) $invite['id']) {
+        return ['loggedIn' => true];
+    }
+    $hash = $invite['password_hash'];
+    if ($password === null) {
+        return ['password' => $hash === null ? 'create' : 'enter', 'name' => $invite['name']];
+    }
+    $password = is_string($password) ? $password : '';
+    if ($hash === null) {
+        if (mb_strlen($password) < SCANNER_PASSWORD_MIN) {
+            return ['error' => 'Heslo musí mít alespoň ' . SCANNER_PASSWORD_MIN . ' znaků.', 'status' => 422];
+        }
+        if ($password !== $again) {
+            return ['error' => 'Hesla se neshodují.', 'status' => 422];
+        }
+        $set = db()->prepare('UPDATE scanner_invites SET password_hash = ? WHERE id = ? AND password_hash IS NULL');
+        $set->execute([password_hash($password, PASSWORD_DEFAULT), $invite['id']]);
+        if ($set->rowCount() === 0) {
+            return ['error' => 'Heslo k této pozvánce už někdo vytvořil. Zadejte ho, nebo požádejte správce o nový odkaz.', 'status' => 409];
+        }
+    } elseif (!password_verify($password, $hash)) {
+        sleep(1);
+        return ['error' => 'Nesprávné heslo. Zapomenuté heslo: požádejte správce o nový odkaz.', 'status' => 401];
     }
     scanner_set_cookie('i:' . $token);
-    return true;
+    return ['loggedIn' => true];
 }
 
 /** Creates (id = 0) or updates an invite; returns the new token when one was issued. */
@@ -128,8 +167,10 @@ function save_invite(int $id, string $name, array $runIds, bool $newToken): ?str
         $pdo->prepare('UPDATE scanner_invites SET name = ? WHERE id = ?')->execute([$name, $id]);
         if ($newToken) {
             $token = bin2hex(random_bytes(24));
-            // A new link replaces the old one: devices signed in with the old link are signed out.
-            $pdo->prepare('UPDATE scanner_invites SET token_hash = ?, revoked_at = NULL WHERE id = ?')->execute([token_hash($token), $id]);
+            // A new link replaces the old one: devices signed in with the old link are signed out
+            // and the organizer creates a new password (forgotten password).
+            $pdo->prepare('UPDATE scanner_invites SET token_hash = ?, password_hash = NULL, revoked_at = NULL WHERE id = ?')
+                ->execute([token_hash($token), $id]);
         }
     }
     $pdo->prepare('DELETE FROM scanner_invite_runs WHERE invite_id = ?')->execute([$id]);

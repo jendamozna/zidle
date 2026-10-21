@@ -9,12 +9,36 @@ declare(strict_types=1);
 const ADMIN_INVITE_DAYS = 7;
 const ADMIN_PASSWORD_MIN = 10;
 const ADMIN_MASTER_NAME = 'hlavní heslo';
+const MASTER_PASSWORD_MIN = 12;
+const MASTER_PASSWORD_PLACEHOLDERS = ['change-me', 'changeme', 'password', 'heslo'];
 /** bcrypt hash of a throw-away password, verified for unknown e-mails. */
 const ADMIN_DUMMY_HASH = '$2y$10$HGCUErDu2BaaEz6fNk5guOKYJzs4WKAtSEvvQkg8FjNoszGDbyPpW';
 
 function admin_master_enabled(): bool
 {
-    return (string) config('ADMIN_PASSWORD') !== '';
+    return master_password_usable('ADMIN_PASSWORD');
+}
+
+/**
+ * A master password from the configuration (ADMIN_PASSWORD, ORGANIZER_PASSWORD) works only when it
+ * is at least MASTER_PASSWORD_MIN characters long and not a placeholder; a weak one is logged and ignored.
+ */
+function master_password_usable(string $key): bool
+{
+    $password = (string) config($key);
+    if ($password === '') {
+        return false;
+    }
+    if (!master_password_strong($password)) {
+        error_log("[zidle] {$key} ignored: use at least " . MASTER_PASSWORD_MIN . ' characters (not a placeholder).');
+        return false;
+    }
+    return true;
+}
+
+function master_password_strong(string $password): bool
+{
+    return mb_strlen($password) >= MASTER_PASSWORD_MIN && !in_array(mb_strtolower($password), MASTER_PASSWORD_PLACEHOLDERS, true);
 }
 
 /** True when nobody could sign in: no master password and no account with a password. */

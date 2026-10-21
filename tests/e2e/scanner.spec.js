@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import QRCode from 'qrcode';
-import { ENV, seed } from './helpers.js';
+import { ENV, adminLogin, seed } from './helpers.js';
 
 /**
  * Replaces the camera with a canvas stream that shows the given QR code
@@ -107,4 +107,39 @@ test('organizer sells free seats at the entrance: QR payment, then the seats are
   await expect(page.locator('.sale-done')).toHaveText('Zaplaceno 450 Kč – 2 místa odbavena.');
   // The section stays open; the sold seats are taken now.
   await expect(page.getByRole('button', { name: /Řada 4, místo 5/ })).toBeDisabled();
+});
+
+test('an invite link makes the organizer create a password; a forwarded link alone signs nobody in', async ({ page, browser }) => {
+  const admin = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+  await adminLogin(admin);
+  await admin.goto('http://127.0.0.1:8000/api/admin.php?view=scanners');
+  const form = admin.locator('form', { hasText: 'Nová pozvánka' });
+  await form.locator('input[name=name]').fill('Vchod E2E');
+  await form.locator('input[name="runs[]"]').first().check();
+  await form.getByRole('button', { name: 'Vytvořit pozvánku' }).click();
+  const token = new URL(await admin.locator('.invite-link').inputValue()).searchParams.get('pozvanka');
+  await expect(admin.locator('tr', { hasText: 'Vchod E2E' })).toContainText('Čeká na heslo');
+
+  // The organizer opens the link and creates the password.
+  await page.goto(`/scanner.html?pozvanka=${token}`);
+  await expect(page.locator('.scan-login')).toContainText('Vytvořte si heslo');
+  await page.getByLabel('Nové heslo (alespoň 8 znaků)').fill('vchod-heslo');
+  await page.getByLabel('Heslo znovu').fill('vchod-heslo');
+  await page.getByRole('button', { name: 'Vytvořit heslo a přihlásit' }).click();
+  await expect(page.locator('.scan-login')).toHaveCount(0);
+  await expect(page).not.toHaveURL(/pozvanka/);
+
+  // Someone else with the forwarded link.
+  const other = await browser.newPage();
+  await other.goto(`http://127.0.0.1:4173/scanner.html?pozvanka=${token}`);
+  await expect(other.locator('.scan-login')).toContainText('Zadejte heslo');
+  await other.getByLabel('Heslo').fill('hadam-heslo');
+  await other.getByRole('button', { name: 'Přihlásit' }).click();
+  await expect(other.locator('.form-error')).toContainText('Nesprávné heslo.');
+  await other.getByLabel('Heslo').fill('vchod-heslo');
+  await other.getByRole('button', { name: 'Přihlásit' }).click();
+  await expect(other.locator('.scan-login')).toHaveCount(0);
+
+  await admin.reload();
+  await expect(admin.locator('tr', { hasText: 'Vchod E2E' })).toContainText('Aktivní');
 });

@@ -14,7 +14,7 @@ $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
 if (admin_login_impossible()) {
     http_response_code(503);
-    exit('Nastavte ADMIN_PASSWORD v config.local.php.');
+    exit('Nastavte ADMIN_PASSWORD v config.local.php (alespoň ' . MASTER_PASSWORD_MIN . ' znaků, ne „change-me“).');
 }
 
 if (empty($_SESSION['csrf'])) {
@@ -245,7 +245,7 @@ if ($me !== null && $csrfOk && in_array($action, ['payment', 'cancel', 'cancel-s
         $stmt->execute([$now, $id]);
         $flash = $stmt->rowCount() ? 'Platba za prodej na místě ověřena.' : 'Nelze označit.';
     } elseif ($action === 'payment') {
-        $flash = record_payment($id, (int) ($_POST['received'] ?? 0));
+        $flash = record_payment($id, (int) ($_POST['received'] ?? 0), isset($_POST['paid_before']) ? (int) $_POST['paid_before'] : null);
     } elseif ($action === 'email') {
         $email = trim((string) ($_POST['email'] ?? ''));
         if (mb_strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -661,8 +661,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       };
   ?>
   <p class="hint settings-intro">Pořadatel u vchodu dostane odkaz (nebo QR kód) na odbavení. Odkaz otevře scanner na jeho
-    mobilu a povolí odbavení jen vybraných termínů. Odkaz se zobrazí jen jednou – při ztrátě vytvořte nový.
-    Zrušením přístupu se zařízení okamžitě odhlásí.</p>
+    mobilu a povolí odbavení jen vybraných termínů. Při prvním otevření si pořadatel vytvoří heslo – potom odkaz bez
+    hesla nefunguje, takže přeposlaný odkaz nikomu nestačí. Odkaz se zobrazí jen jednou; při ztrátě nebo zapomenutém
+    hesle vytvořte nový. Zrušením přístupu se zařízení okamžitě odhlásí.</p>
 
   <?php if ($newInvite): ?>
     <div class="card invite-new">
@@ -698,7 +699,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td class="seats"><?= $h(implode(', ', array_map(static fn ($id) => ($r = run_by_id($id)) ? run_label($r) : '–', $invRuns))) ?></td>
           <td><?= $h($fmt($inv['created_at'])) ?></td>
           <td><?= $h($fmt($inv['last_used_at'])) ?: '–' ?></td>
-          <td><span class="badge <?= $revoked ? 's-cancelled' : 's-paid' ?>"><?= $revoked ? 'Zrušeno' : 'Aktivní' ?></span></td>
+          <td><span class="badge <?= $revoked ? 's-cancelled' : ($inv['password_hash'] === null ? 's-pending' : 's-paid') ?>"><?= $revoked ? 'Zrušeno' : ($inv['password_hash'] === null ? 'Čeká na heslo' : 'Aktivní') ?></span></td>
           <td>
             <div class="actions">
               <details class="edit-email"><summary>upravit</summary>
@@ -707,7 +708,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                   <input type="hidden" name="id" value="<?= (int) $inv['id'] ?>">
                   <input name="name" required maxlength="100" value="<?= $h($inv['name']) ?>">
                   <div class="checks"><?= $runChecks($invRuns) ?></div>
-                  <label class="check"><input type="checkbox" name="new_link" value="1" <?= $revoked ? 'checked' : '' ?>> vytvořit nový odkaz (původní přestane platit<?= $revoked ? ', obnoví přístup' : '' ?>)</label>
+                  <label class="check"><input type="checkbox" name="new_link" value="1" <?= $revoked ? 'checked' : '' ?>> vytvořit nový odkaz (původní přestane platit, pořadatel si vytvoří nové heslo<?= $revoked ? ', obnoví přístup' : '' ?>)</label>
                   <button name="action" value="invite-save">Uložit</button>
                 </form>
               </details>
@@ -997,9 +998,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td>
             <div class="actions">
               <?php if ($r['status'] === 'pending'): ?>
-                <form method="post" class="pay-form" title="Zadejte částku, která skutečně přišla na účet">
+                <form method="post" class="pay-form" title="Zadejte částku, která skutečně přišla na účet" onsubmit="if (this.dataset.sent) return false; this.dataset.sent = 1">
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                  <input type="hidden" name="paid_before" value="<?= (int) $r['paid_amount'] ?>">
                   <input type="number" name="received" min="1" max="1000000" value="<?= amount_due($r) ?>" required aria-label="Přijatá částka v Kč"> Kč
                   <button name="action" value="payment">Zaplaceno</button>
                 </form>

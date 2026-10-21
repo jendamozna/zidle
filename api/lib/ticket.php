@@ -18,11 +18,14 @@ use chillerlan\QRCode\QROptions;
 const TICKET_PREFIX = 'Z26M';
 const TICKET_KINDS = ['adult' => 'A', 'child' => 'C'];
 
+const TICKET_SECRET_MIN = 32;
+
+/** TICKET_SECRET; refuses a short one or the text from config.local.example.php (contains spaces). */
 function ticket_secret(): string
 {
     $secret = (string) config('TICKET_SECRET');
-    if (strlen($secret) < 16) {
-        throw new RuntimeException('TICKET_SECRET is not configured (min. 16 characters).');
+    if (strlen($secret) < TICKET_SECRET_MIN || preg_match('/\s/', $secret)) {
+        throw new RuntimeException('TICKET_SECRET is not configured (a random string of min. ' . TICKET_SECRET_MIN . ' characters, no spaces).');
     }
     return $secret;
 }
@@ -33,10 +36,10 @@ function ticket_signature(string $payload): string
     return substr(rtrim(strtr(base64_encode($mac), '+/', '-_'), '='), 0, 22);
 }
 
-/** Name in the ticket code of the seat (the name on the ticket, without "|" and control characters). */
+/** Name in the ticket code of the seat (the name on the ticket, without "|", control and invisible format characters). */
 function ticket_name(array $r, string $seat): string
 {
-    return trim(preg_replace('/[|\p{Cc}]+/u', ' ', ticket_holder($r, $seat)) ?? '');
+    return trim(preg_replace('/[|\p{Cc}\p{Cf}]+/u', ' ', ticket_holder($r, $seat)) ?? '');
 }
 
 /** Ticket code of one seat of the reservation. */

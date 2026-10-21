@@ -23,8 +23,10 @@ return (static function (): array {
         'EVENT_DURATION_MINUTES' => 120, // end of the calendar event = run start + this
 
         // Spam / bot protection
-        'RESERVATIONS_PER_IP_PER_HOUR' => 5,          // without ALTCHA
-        'RESERVATIONS_PER_IP_PER_HOUR_ALTCHA' => 30,  // with ALTCHA (each reservation costs proof-of-work); shared networks
+        // Seats one IP may reserve (so one script can't hold a whole run); without ALTCHA a quarter of it.
+        // Generous enough for several families booking from one shared network (parish Wi-Fi).
+        'SEATS_PER_IP_PER_HOUR' => 40,
+        'SEATS_PER_IP_PER_DAY' => 80,
         'ALTCHA_CHALLENGES_PER_IP_PER_HOUR' => 300,
         'PENDING_RESERVATIONS_PER_EMAIL' => 2, // unpaid reservations one e-mail may hold at once in one run
         'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and organizer login, per IP

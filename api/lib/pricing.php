@@ -85,6 +85,15 @@ function reservation_seat_items(array $r): array
     ], $seats);
 }
 
+/**
+ * A person's name as typed: line breaks, control and invisible format characters (bidi, zero-width)
+ * and runs of spaces become one space, "|" (separator of the ticket code) too; non-strings give ''.
+ */
+function clean_name(mixed $name): string
+{
+    return is_string($name) ? trim(preg_replace('/[|\p{Cc}\p{Cf}\s]+/u', ' ', $name) ?? '') : '';
+}
+
 /** Names the customer put on the seat tickets: [seat => name]. */
 function ticket_names(array $r): array
 {
@@ -112,7 +121,7 @@ function save_ticket_names(array $r, array $names): ?string
     $seats = seat_list((string) $r['seats']);
     $current = ticket_names($r);
     foreach ($names as $seat => $name) {
-        $name = trim(preg_replace('/[|\p{Cc}\s]+/u', ' ', (string) $name) ?? '');
+        $name = clean_name($name);
         if (!in_array((string) $seat, $seats, true)) {
             return 'Vyberte místa z této rezervace.';
         }

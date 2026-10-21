@@ -11,9 +11,10 @@ return [
     'PAYMENT_RECIPIENT' => 'Farnost',
     'PAYMENT_SPECIFIC_SYMBOL' => '2026',
 
-    'ADMIN_PASSWORD' => 'change-me', // master login (empty e-mail) – needed to invite the first accountant
-    'ORGANIZER_PASSWORD' => '',  // optional master password for all runs; organizers normally use invite links from admin
-    'TICKET_SECRET' => 'paste output of: php -r "echo bin2hex(random_bytes(32));"',
+    // Fill in before the first start – the app refuses empty, short or placeholder values.
+    'ADMIN_PASSWORD' => '',      // master login (empty e-mail), min. 12 characters – needed to invite the first accountant
+    'ORGANIZER_PASSWORD' => '',  // optional master password for all runs (min. 12 characters); organizers normally use invite links from admin
+    'TICKET_SECRET' => '',       // min. 32 characters, e.g. the output of: php -r "echo bin2hex(random_bytes(32));"
 
     // E-mails via SMTP
     'MAIL_ENABLED' => true,

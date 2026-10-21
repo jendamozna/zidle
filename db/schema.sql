@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS scanner_invites (
   id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
   name         VARCHAR(100) NOT NULL COMMENT 'e.g. Vchod A – Petr',
   token_hash   CHAR(64)     NOT NULL COMMENT 'sha256 of the invite token (the token is shown only once)',
+  password_hash VARCHAR(255) NULL   COMMENT 'organizer''s password created on the first opening of the link (NULL = not yet)',
   created_at   DATETIME     NOT NULL,
   last_used_at DATETIME     NULL,
   revoked_at   DATETIME     NULL,

@@ -4,10 +4,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 export const ENV = {
   DB_NAME: 'zidle_test',
-  ADMIN_PASSWORD: 'e2e-admin',
+  ADMIN_PASSWORD: 'e2e-admin-master',
   ORGANIZER_PASSWORD: 'e2e-organizer',
   BANK_IBAN: 'CZ6508000000192000145399',
-  TICKET_SECRET: 'e2e-ticket-secret-0123456789',
+  TICKET_SECRET: 'e2e-ticket-secret-0123456789-abcdefgh',
   MAIL_ENABLED: '0',
   ...process.env,
 };

@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { decodeTicket } from '../src/scanner/ticket.js';
 
 const php = (code) =>
-  JSON.parse(execFileSync('php', ['-r', code], { encoding: 'utf8', env: { ...process.env, TICKET_SECRET: 'consistency-check-secret' } }));
+  JSON.parse(execFileSync('php', ['-r', code], { encoding: 'utf8', env: { ...process.env, TICKET_SECRET: 'consistency-check-secret-0123456789ab' } }));
 
 let failed = 0;
 const check = (ok, message) => {

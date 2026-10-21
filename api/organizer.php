@@ -2,7 +2,8 @@
 // Organizer API used by the ticket scanner (scanner.html). Access: invite link
 // from admin (only the invited runs) or the optional master password (all runs).
 //   GET  organizer.php                                      → {loggedIn, name, runs, passwordLogin, layout}
-//   POST organizer.php {action: "invite", token}            → signs the device in with an invite
+//   POST organizer.php {action: "invite", token}            → {password: create|enter, name} or {loggedIn} (accept_invite())
+//   POST organizer.php {action: "invite", token, password, passwordAgain?} → creates / checks the invite password, signs in
 //   POST organizer.php {action: "login", password}          → master password (if enabled)
 //   POST organizer.php {action: "logout"}
 //   POST organizer.php {action: "verify", code, runId, confirmOutside?}
@@ -24,7 +25,7 @@ run_api(function (): void {
         json_response([
             'loggedIn' => $access !== null,
             'name' => $access['name'] ?? null,
-            'passwordLogin' => (string) config('ORGANIZER_PASSWORD') !== '',
+            'passwordLogin' => master_password_usable('ORGANIZER_PASSWORD'),
             'runs' => $access ? array_map('scanner_run_public', scanner_runs($access)) : [],
             'layout' => layout_public(),
         ]);
@@ -39,20 +40,21 @@ run_api(function (): void {
             if (!login_allowed('organizer')) {
                 json_error('Příliš mnoho pokusů. Zkuste to za 15 minut.', 429);
             }
-            if (!accept_invite((string) ($body['token'] ?? ''))) {
-                json_error('Pozvánka neplatí – je zrušená nebo nahrazená novou. Požádejte správce o nový odkaz.', 401);
+            $accepted = accept_invite($body['token'] ?? null, $body['password'] ?? null, $body['passwordAgain'] ?? null);
+            if (isset($accepted['error'])) {
+                json_error($accepted['error'], $accepted['status']);
             }
-            json_response(['loggedIn' => true]);
+            json_response($accepted);
             // no break – json_response exits
         case 'login':
             $password = (string) config('ORGANIZER_PASSWORD');
-            if ($password === '') {
+            if (!master_password_usable('ORGANIZER_PASSWORD')) {
                 json_error('Přihlášení heslem je vypnuté. Použijte pozvánku od správce.', 403);
             }
             if (!login_allowed('organizer')) {
                 json_error('Příliš mnoho pokusů. Zkuste to za 15 minut.', 429);
             }
-            if (!hash_equals($password, (string) ($body['password'] ?? ''))) {
+            if (!is_string($body['password'] ?? null) || !hash_equals($password, $body['password'])) {
                 sleep(1);
                 json_error('Nesprávné heslo.', 401);
             }

@@ -1,7 +1,7 @@
 <?php
 // Integration tests of the money, seat, discount code and ticket logic against a real MariaDB.
 //
-//   DB_NAME=zidle_test MAIL_ENABLED=0 TICKET_SECRET=test-secret-0123456789 BANK_IBAN=CZ6508000000192000145399 php tests/php/run.php
+//   DB_NAME=zidle_test MAIL_ENABLED=0 TICKET_SECRET=test-secret-0123456789-abcdefghijklmn BANK_IBAN=CZ6508000000192000145399 php tests/php/run.php
 //
 // The database is wiped and recreated from db/schema.sql, so DB_NAME must end with "_test".
 declare(strict_types=1);
@@ -139,6 +139,14 @@ test('a second payment for a paid reservation is refunded', function (): void {
     $id = reservation(['WL-2-6'], 'paid');
     contains('platbu navíc', record_payment($id, 300), 'message');
     same(['paid', 600, 300, 0], money($id), 'refund');
+});
+
+test('the same payment submitted twice (double click) is recorded once', function (): void {
+    $id = reservation(['WR-7-3']);
+    contains('zaplaceno', record_payment($id, 300, 0), 'first submit');
+    same('Platba u této rezervace už byla mezitím zapsána – nic dalšího se nezapsalo. Zkontrolujte stav rezervace.',
+        record_payment($id, 300, 0), 'second submit');
+    same(['paid', 300, null, 0], money($id), 'no refund for money that never arrived');
 });
 
 test('invalid amounts are rejected', function (): void {
@@ -429,6 +437,52 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
 });
 
 // ------------------------------------------------------------------- layout
+
+test('a seat has exactly one id: leading zeros or a trailing new line are refused', function (): void {
+    same([true, false, false, false, false, false], array_map('is_valid_seat_id', ['ML-1-1', 'ML-01-1', 'ML-1-01', "ML-1-1\n", 'ML-0-1', 'BL-02-1']), 'forms');
+    $booking = fn ($seat) => book_reservation(run_by_id(1) ?? [], 'Jan', 'Židle', 'zidle@example.com', [$seat], 0, []);
+    same(true, isset($booking('WR-7-2')['reservation']), 'booked');
+    same([422, 409], [$booking('WR-07-2')['status'] ?? null, $booking('WR-7-2')['status'] ?? null], 'the same chair written differently / again');
+});
+
+test('seats per IP are limited per hour and per day; a refused or failed booking counts nothing', function (): void {
+    db()->exec('DELETE FROM rate_limits');
+    $hits = fn ($window) => (int) db_query("SELECT hits FROM rate_limits WHERE bucket = '" . hash('sha256', "seats|{$window}|" . client_ip()) . "'")->fetchColumn();
+    same(true, seat_quota_take(30), '30 seats');
+    same(false, seat_quota_take(15), 'over 40 an hour');
+    same([30, 30], [$hits('hour'), $hits('day')], 'refused request not counted');
+    same(true, seat_quota_take(10), 'up to 40');
+    seat_quota_release(10);
+    same([30, 30], [$hits('hour'), $hits('day')], 'released');
+    db()->exec("UPDATE rate_limits SET window_start = UTC_TIMESTAMP() - INTERVAL 2 HOUR WHERE bucket = '" . hash('sha256', 'seats|hour|' . client_ip()) . "'");
+    same(true, seat_quota_take(40), 'a new hour');
+    same(false, seat_quota_take(20), 'over 80 a day');
+    db()->exec('DELETE FROM rate_limits');
+});
+
+test('names lose line breaks, control and invisible characters', function (): void {
+    same('Jan POZOR změna účtu x y', clean_name("Jan\r\n\nPOZOR\tzměna  účtu\u{202E}x|y "), 'cleaned');
+    same('', clean_name(['pole']), 'not a string');
+});
+
+test('master passwords from the configuration need 12 characters and no placeholder', function (): void {
+    same([false, false, false, true], array_map('master_password_strong', ['krátké', 'change-me', 'CHANGE-ME', 'dlouhé-heslo-12']), 'strength');
+});
+
+test('a scanner invite link works only with the password the organizer created on its first opening', function (): void {
+    $token = (string) save_invite(0, 'Vchod T', [1], true);
+    same(['password' => 'create', 'name' => 'Vchod T'], accept_invite($token), 'first opening');
+    same(422, accept_invite($token, 'krátké', 'krátké')['status'] ?? null, 'too short');
+    same('Hesla se neshodují.', accept_invite($token, 'heslo-vchod', 'jiné-heslo')['error'] ?? null, 'mismatch');
+    same(['loggedIn' => true], accept_invite($token, 'heslo-vchod', 'heslo-vchod'), 'created');
+    same(['password' => 'enter', 'name' => 'Vchod T'], accept_invite($token), 'forwarded link asks for it');
+    same(401, accept_invite($token, 'hádám-heslo')['status'] ?? null, 'wrong password');
+    same(['loggedIn' => true], accept_invite($token, 'heslo-vchod'), 'right password');
+    $id = (int) db_query("SELECT id FROM scanner_invites WHERE name = 'Vchod T'")->fetchColumn();
+    $new = (string) save_invite($id, 'Vchod T', [1], true);
+    same(401, accept_invite($token, 'heslo-vchod')['status'] ?? null, 'old link');
+    same('create', accept_invite($new)['password'] ?? null, 'a new link clears the password');
+});
 
 test('the layout matches the plan: seats per row, capacities, reserve balcony seats', function (): void {
     $layout = layout_public();

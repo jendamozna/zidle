@@ -58,8 +58,8 @@ function create_reservation(): void
         json_error('Ověření proti robotům se nezdařilo. Zkuste to prosím znovu.', 400, ['code' => 'altcha']);
     }
 
-    $firstName = trim((string) ($body['firstName'] ?? ''));
-    $lastName = trim((string) ($body['lastName'] ?? ''));
+    $firstName = clean_name($body['firstName'] ?? '');
+    $lastName = clean_name($body['lastName'] ?? '');
     $email = trim((string) ($body['email'] ?? ''));
     $seats = $body['seats'] ?? null;
     $children = $body['children'] ?? 0;
@@ -110,18 +110,17 @@ function create_reservation(): void
     if ($errors) {
         json_error($errors['seats'] ?? $errors['codes'] ?? $errors['children'] ?? 'Zkontrolujte zadané údaje.', 422, ['fields' => $errors]);
     }
+    // Seats per IP, not reservations: one script can't hold a whole run with many small ones.
     // Counted only for well-formed requests, so a visitor's own typos don't use up the limit.
-    // With ALTCHA every reservation costs proof-of-work, so a higher limit lets several
-    // people book from one shared network (parish Wi-Fi, office).
-    $ipLimit = (int) config(altcha_enabled() ? 'RESERVATIONS_PER_IP_PER_HOUR_ALTCHA' : 'RESERVATIONS_PER_IP_PER_HOUR');
-    if (!rate_limit('reserve|' . client_ip(), $ipLimit, 3600)) {
-        json_error('Příliš mnoho rezervací z tohoto zařízení. Zkuste to prosím později.', 429);
+    if (!seat_quota_take(count($seats))) {
+        json_error('Z tohoto zařízení už bylo rezervováno příliš mnoho míst. Zkuste to prosím později.', 429);
     }
 
     expire_reservations();
 
     $booked = book_reservation($run, $firstName, $lastName, $email, $seats, (int) $children, (array) $codes);
     if (isset($booked['error'])) {
+        seat_quota_release(count($seats));
         json_error($booked['error'], $booked['status'], $booked['extra']);
     }
     json_response(reservation_payload($booked['reservation']), 201);
