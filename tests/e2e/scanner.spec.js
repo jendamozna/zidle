@@ -51,15 +51,6 @@ test('scanner checks a seat ticket in and warns on the second scan', async ({ pa
   await expect(page.locator('.scan-result h2')).toHaveText('Už odbaveno', { timeout: 20_000 });
 });
 
-test('scanner lets a VIP guest in and shows the seats', async ({ page }) => {
-  await login(page);
-  await page.getByRole('tab', { name: 'VIP' }).click();
-  const card = page.locator('.vip-card', { hasText: 'Mons. Testovací' });
-  await expect(card).toContainText('ř. 1 m. 1, 2');
-  await card.getByRole('button', { name: 'Vpustit' }).click();
-  await expect(card.locator('.vip-arrived')).toBeVisible();
-});
-
 test('without a connection the scanner checks tickets against the downloaded list and sends the check-ins later', async ({
   page,
   context,
@@ -76,19 +67,13 @@ test('without a connection the scanner checks tickets against the downloaded lis
   await expect(page.locator('.offline-strip')).toContainText('k odeslání: 1');
   await page.getByRole('button', { name: 'Skenovat další' }).click();
   await expect(page.locator('.scan-result h2')).toHaveText('Už odbaveno', { timeout: 20_000 });
-
-  await page.getByRole('tab', { name: 'VIP' }).click();
-  const card = page.locator('.vip-card', { hasText: 'Paní Offline' });
-  await card.getByRole('button', { name: 'Vpustit' }).click();
-  await expect(card.locator('.vip-arrived')).toBeVisible();
-  await expect(page.locator('.offline-strip')).toContainText('k odeslání: 2');
+  await expect(page.locator('.offline-strip')).toContainText('k odeslání: 1');
 
   await context.setOffline(false);
-  await expect(page.locator('.offline-strip')).toContainText('Odesláno 2 odbavení bez spojení.', { timeout: 20_000 });
+  await expect(page.locator('.offline-strip')).toContainText('Odesláno 1 odbavení bez spojení.', { timeout: 20_000 });
 
   const snapshot = await (await page.request.post('/api/organizer.php', { data: { action: 'snapshot', runId: 2 } })).json();
   expect(snapshot.tickets.find((t) => t.name === 'Test Offline').checkedIn['BC-2-1'].by).toContain('(offline)');
-  expect(snapshot.vips.find((v) => v.name === 'Paní Offline').checkedInAt).not.toBeNull();
 });
 
 test('the scanner opens without a connection after it was used online once', async ({ page, context }) => {

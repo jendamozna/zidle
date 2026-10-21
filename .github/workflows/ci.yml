@@ -67,7 +67,7 @@ jobs:
               mysql -h127.0.0.1 -uroot -proot zidle_migrate < "$m"
             done
           done
-      - name: Integration tests (payments, cancellation, VIP, GDPR, tickets)
+      - name: Integration tests (payments, cancellation, discount codes, GDPR, tickets)
         run: php tests/php/run.php
 
   frontend:

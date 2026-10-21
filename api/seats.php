@@ -1,6 +1,6 @@
 <?php
 // GET api/seats.php?run=<id> – runs with free seat counts, the seats of the
-// given run held by pending or paid reservations and VIP guests, the seating layout.
+// given run held by pending or paid reservations, the seating layout.
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 

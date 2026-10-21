@@ -36,10 +36,7 @@ export const acceptInvite = (token) => call({ action: 'invite', token });
 export const login = (password) => call({ action: 'login', password });
 export const logout = () => call({ action: 'logout' });
 export const verifyTicket = (code, runId, confirmOutside) => call({ action: 'verify', code, runId, confirmOutside });
-export const vipList = (runId) => call({ action: 'vip-list', runId });
-export const vipCheckIn = (id, runId, confirmOutside) => call({ action: 'vip-checkin', id, runId, confirmOutside });
-export const vipUndo = (id, runId) => call({ action: 'vip-undo', id, runId });
-/** Tickets and VIP guests of the run for checking offline. */
+/** Tickets of the run for checking offline. */
 export const getSnapshot = (runId) => call({ action: 'snapshot', runId });
 /** Sends check-ins made offline: {results: [{status, reason}], conflicts}. */
 export const syncScans = (runId, events) => call({ action: 'sync', runId, events });

@@ -7,9 +7,6 @@
 //   POST organizer.php {action: "logout"}
 //   POST organizer.php {action: "verify", code, runId, confirmOutside?}
 //                                                           → ticket check for the run being checked in
-//   POST organizer.php {action: "vip-list", runId}          → {vips: [...]}
-//   POST organizer.php {action: "vip-checkin", id, runId, confirmOutside?}
-//   POST organizer.php {action: "vip-undo", id, runId}
 //   POST organizer.php {action: "snapshot", runId}          → list for checking tickets offline (scanner_snapshot())
 //   POST organizer.php {action: "sync", runId, events}      → check-ins made offline (apply_offline_scans())
 //   POST organizer.php {action: "sale-seats", runId}        → {taken, price, childPrice, maxSeats} for selling on site
@@ -71,11 +68,6 @@ run_api(function (): void {
             $run = require_run($access, (int) ($body['runId'] ?? 0));
             json_response(verify_ticket((string) ($body['code'] ?? ''), $run, $access, !empty($body['confirmOutside'])));
             // no break
-        case 'vip-list':
-            $access = require_organizer();
-            $run = require_run($access, (int) ($body['runId'] ?? 0));
-            json_response(['vips' => vip_list($run['id'])]);
-            // no break
         case 'snapshot':
             $access = require_organizer();
             $run = require_run($access, (int) ($body['runId'] ?? 0));
@@ -122,26 +114,6 @@ run_api(function (): void {
                 json_error('Prodej už není otevřený.', 409);
             }
             json_response(['message' => 'Prodej zrušen, místa jsou volná.']);
-            // no break
-        case 'vip-checkin':
-        case 'vip-undo':
-            $access = require_organizer();
-            $run = require_run($access, (int) ($body['runId'] ?? 0));
-            $id = (int) ($body['id'] ?? 0);
-            if ($body['action'] === 'vip-checkin') {
-                if (!run_in_scan_window($run) && empty($body['confirmOutside'])) {
-                    json_error('Termín je mimo čas odbavení. Potvrďte odbavení mimo čas.', 409);
-                }
-                // The first arrival wins when two organizers tap at once.
-                db()->prepare(
-                    'UPDATE vip_guests SET checked_in_by = IF(checked_in_at IS NULL, ?, checked_in_by),
-                       checked_in_at = COALESCE(checked_in_at, ?) WHERE id = ? AND run_id = ?'
-                )->execute([$access['name'], db_time(now_utc()), $id, $run['id']]);
-            } else {
-                db()->prepare('UPDATE vip_guests SET checked_in_at = NULL, checked_in_by = NULL WHERE id = ? AND run_id = ?')
-                    ->execute([$id, $run['id']]);
-            }
-            json_response(['vips' => vip_list($run['id'])]);
             // no break
         default:
             json_error('Neznámá akce.', 400);

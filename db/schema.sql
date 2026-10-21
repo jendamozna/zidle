@@ -1,7 +1,7 @@
 -- Moje židle 2026 – MariaDB schema
 -- All timestamps (DATETIME columns and JSON dates) are stored in UTC.
 
--- Runs (dates) of the event. Seats, reservations and VIP guests belong to a run.
+-- Runs (dates) of the event. Seats and reservations belong to a run.
 CREATE TABLE IF NOT EXISTS runs (
   id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
   label             VARCHAR(100) NOT NULL DEFAULT '' COMMENT 'Optional name, e.g. Premiéra',
@@ -82,40 +82,17 @@ CREATE TABLE IF NOT EXISTS discount_codes (
   KEY idx_reservation (reservation_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
--- VIP guests entered by the management. They do not pay; their seats are held
--- in reservation_seats; organizers find them by name at the entrance.
-CREATE TABLE IF NOT EXISTS vip_guests (
-  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  run_id        INT UNSIGNED NOT NULL,
-  name          VARCHAR(200) NOT NULL,
-  section       CHAR(2)      NOT NULL COMMENT 'Section id of the first seat, e.g. ML',
-  seats         TEXT         NOT NULL DEFAULT '' COMMENT 'Comma separated seat ids held for the guest (empty for guests added before seats existed)',
-  persons       TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Number of seats',
-  note          VARCHAR(255) NOT NULL DEFAULT '',
-  created_at    DATETIME     NOT NULL,
-  checked_in_at DATETIME     NULL,
-  checked_in_by VARCHAR(100) NULL,
-  PRIMARY KEY (id),
-  KEY idx_section (section),
-  KEY idx_run (run_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
-
--- One row per currently held seat of a run: a pending/paid reservation's seat or a VIP guest's seat
--- (exactly one of reservation_id / vip_guest_id is set).
+-- One row per currently held seat of a run (a pending or paid reservation's seat).
 -- The primary key makes double booking of a seat in the same run impossible; rows are deleted when a
--- reservation expires or is cancelled or a VIP guest is removed, which frees the seat.
+-- reservation expires or is cancelled, which frees the seat.
 CREATE TABLE IF NOT EXISTS reservation_seats (
   run_id         INT UNSIGNED NOT NULL,
   seat_id        VARCHAR(12)  NOT NULL,
-  reservation_id INT UNSIGNED NULL,
-  vip_guest_id   INT UNSIGNED NULL,
+  reservation_id INT UNSIGNED NOT NULL,
   PRIMARY KEY (run_id, seat_id),
   KEY idx_reservation (reservation_id),
-  KEY idx_vip (vip_guest_id),
   CONSTRAINT fk_seat_reservation FOREIGN KEY (reservation_id)
-    REFERENCES reservations (id) ON DELETE CASCADE,
-  CONSTRAINT fk_seat_vip FOREIGN KEY (vip_guest_id)
-    REFERENCES vip_guests (id) ON DELETE CASCADE
+    REFERENCES reservations (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- Rate limiting for spam/bot protection (fixed time windows).
@@ -159,8 +136,7 @@ CREATE TABLE IF NOT EXISTS scan_conflicts (
   id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
   run_id         INT UNSIGNED NOT NULL,
   reservation_id INT UNSIGNED NULL,
-  vip_guest_id   INT UNSIGNED NULL,
-  label          VARCHAR(250) NOT NULL COMMENT 'Who it was about (VS + name, or VIP name), kept for display',
+  label          VARCHAR(250) NOT NULL COMMENT 'Which ticket it was about (VS + name + seat), kept for display',
   reason         ENUM('already_checked_in', 'not_paid', 'unknown') NOT NULL,
   scanned_at     DATETIME     NOT NULL COMMENT 'UTC, time of the offline scan on the device',
   scanned_by     VARCHAR(100) NOT NULL,

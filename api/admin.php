@@ -1,7 +1,6 @@
 <?php
 // Admin page: list reservations, confirm received payments, cancel reservations,
-// manage VIP guests (free entry, checked by name at the entrance), discount codes,
-// scanner invites, runs and admin accounts (accountants invited by e-mail).
+// manage discount codes, scanner invites, runs and admin accounts (accountants invited by e-mail).
 // Sign-in: e-mail + password of an account, or the master ADMIN_PASSWORD with an empty e-mail.
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
@@ -66,7 +65,7 @@ if ($action === 'logout' && $csrfOk) {
 }
 
 $flash = null;
-$view = in_array($_GET['view'] ?? '', ['vip', 'codes', 'scanners', 'users', 'settings'], true) ? $_GET['view'] : 'reservations';
+$view = in_array($_GET['view'] ?? '', ['codes', 'scanners', 'users', 'settings'], true) ? $_GET['view'] : 'reservations';
 
 if ($me !== null && $csrfOk && in_array($action, ['code-create', 'code-resend', 'code-revoke'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
@@ -160,10 +159,8 @@ if ($me !== null && $csrfOk && $action === 'deadline-save') {
 if ($me !== null && $csrfOk && in_array($action, ['run-save', 'run-delete'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     if ($action === 'run-delete') {
-        $used = db()->prepare('SELECT (SELECT COUNT(*) FROM reservations WHERE run_id = ?) + (SELECT COUNT(*) FROM vip_guests WHERE run_id = ?)');
-        $used->execute([$id, $id]);
-        if ((int) $used->fetchColumn() > 0) {
-            $_SESSION['flash'] = 'Termín má rezervace nebo VIP hosty, nelze ho smazat.';
+        if (run_has_reservations($id)) {
+            $_SESSION['flash'] = 'Termín má rezervace, nelze ho smazat.';
         } else {
             db()->prepare('DELETE FROM runs WHERE id = ?')->execute([$id]);
             db()->prepare('DELETE FROM scanner_invite_runs WHERE run_id = ?')->execute([$id]);
@@ -221,27 +218,6 @@ if ($me !== null && $csrfOk && in_array($action, ['run-save', 'run-delete'], tru
         }
     }
     header('Location: admin.php?view=settings');
-    exit;
-}
-
-if ($me !== null && $csrfOk && in_array($action, ['vip-add', 'vip-delete', 'vip-reset'], true)) {
-    $id = (int) ($_POST['id'] ?? 0);
-    if ($action === 'vip-add') {
-        $flash = add_vip_guest(
-            (int) ($_POST['run_id'] ?? 0),
-            trim(preg_replace('/\s+/u', ' ', (string) ($_POST['name'] ?? '')) ?? ''),
-            array_values(array_unique(array_map('strval', (array) ($_POST['seats'] ?? [])))),
-            trim((string) ($_POST['note'] ?? ''))
-        );
-    } elseif ($action === 'vip-delete') {
-        db()->prepare('DELETE FROM vip_guests WHERE id = ?')->execute([$id]);
-        $flash = 'VIP host odstraněn, jeho místa jsou volná.';
-    } else {
-        db()->prepare('UPDATE vip_guests SET checked_in_at = NULL WHERE id = ?')->execute([$id]);
-        $flash = 'Příchod zrušen.';
-    }
-    $_SESSION['flash'] = $flash;
-    header('Location: admin.php?' . http_build_query(['view' => 'vip', 'run' => $_GET['run'] ?? '']));
     exit;
 }
 
@@ -342,23 +318,6 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .tabs { display:flex; gap:4px; padding:4px; border-radius:999px; background:#efe9df; margin-right:auto; }
   .tabs a { padding:6px 16px; border-radius:999px; color:var(--ink-2); text-decoration:none; font-weight:600; }
   .tabs a.active { background:var(--surface); color:var(--ink); box-shadow:0 1px 4px rgba(60,45,25,.12); }
-  .vip-form { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
-  .vip-form label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; font-weight:600; color:var(--ink-2); }
-  .vip-form label.grow { flex:1 1 200px; }
-  .vip-add { margin-bottom:16px; }
-  .vip-add .vip-form { margin-bottom:8px; }
-  .vip-map { display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; }
-  .vip-section { border:1px solid var(--wall); border-radius:12px; padding:8px 10px; margin:0; }
-  .vip-section legend { font-size:.8rem; font-weight:600; color:var(--ink-2); padding:0 4px; }
-  .vip-row { display:flex; gap:3px; align-items:center; margin-bottom:3px; }
-  .vip-row-label { width:18px; font-size:.7rem; color:var(--ink-2); text-align:right; margin-right:3px; }
-  .vip-seat { position:relative; cursor:pointer; }
-  .vip-seat input { position:absolute; opacity:0; pointer-events:none; }
-  .vip-seat span { display:grid; place-items:center; width:24px; height:24px; border-radius:6px; border:1px solid var(--wall); background:#fff; font-size:.7rem; }
-  .vip-seat input:checked + span { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
-  .vip-seat input:focus-visible + span { outline:2px solid var(--accent); outline-offset:1px; }
-  .vip-seat.is-taken span { background:#e4dccf; color:#a59a8a; border-color:#e4dccf; cursor:not-allowed; }
-  .vip-seat.is-vip span { background:#f1d98f; color:#7a5d0c; border-color:#f1d98f; cursor:not-allowed; }
   .edit-email summary { cursor:pointer; font-size:.78rem; color:var(--ink-2); margin-top:2px; }
   .edit-email form { display:flex; gap:6px; margin-top:6px; }
   .edit-email input { width:200px; padding:4px 8px; }
@@ -475,7 +434,6 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <h1>Správa rezervací</h1>
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
-      <a href="admin.php?view=vip" class="<?= $view === 'vip' ? 'active' : '' ?>">VIP</a>
       <a href="admin.php?view=codes" class="<?= $view === 'codes' ? 'active' : '' ?>">Slevové kódy</a>
       <?php $conflictCount = (int) db_query('SELECT COUNT(*) FROM scan_conflicts')->fetchColumn(); ?>
       <a href="admin.php?view=scanners" class="<?= $view === 'scanners' ? 'active' : '' ?>">Pořadatelé<?= $conflictCount ? ' <span class="tab-alert" title="Konflikty z odbavení bez spojení">' . $conflictCount . '</span>' : '' ?></a>
@@ -762,7 +720,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $runForms = array_values(runs());
       $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null, 'storno_rules' => []];
   ?>
-  <p class="hint settings-intro">Každý termín má vlastní plánek míst, rezervace, VIP hosty a storno podmínky.
+  <p class="hint settings-intro">Každý termín má vlastní plánek míst, rezervace a storno podmínky.
     Rezervace a rušení zákazníkem končí začátkem termínu (nebo dříve, je-li vyplněn konec rezervací).
     <?php if ($deleteAt): ?>Osobní údaje budou smazány <?= $h($deleteAt->format('j. n. Y')) ?> (<?= (int) config('DATA_RETENTION_DAYS') ?> dní po posledním termínu).<?php endif ?></p>
 
@@ -814,110 +772,12 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <div class="actions">
       <button name="action" value="run-save"><?= $run['id'] ? 'Uložit termín' : 'Přidat termín' ?></button>
       <?php if ($run['id']): ?>
-        <button class="danger" name="action" value="run-delete" onclick="return confirm('Smazat termín? Lze jen u termínu bez rezervací a VIP.')">Smazat</button>
+        <button class="danger" name="action" value="run-delete" onclick="return confirm('Smazat termín? Lze jen u termínu bez rezervací.')">Smazat</button>
       <?php endif ?>
     </div>
   </form>
   <?php endforeach ?>
 
-  <?php elseif ($view === 'vip'):
-      $runFilter = (int) ($_GET['run'] ?? 0);
-      $stmt = db()->prepare('SELECT * FROM vip_guests' . ($runFilter ? ' WHERE run_id = ?' : '') . ' ORDER BY run_id, section, name');
-      $stmt->execute($runFilter ? [$runFilter] : []);
-      $vips = $stmt->fetchAll();
-      $vipPersons = array_sum(array_column($vips, 'persons'));
-      $vipArrived = array_sum(array_map(fn ($v) => $v['checked_in_at'] ? (int) $v['persons'] : 0, $vips));
-  ?>
-  <div class="stats">
-    <div class="card">VIP hosté<strong><?= count($vips) ?></strong><?= $vipPersons ?> osob</div>
-    <div class="card">Přišlo<strong><?= $vipArrived ?> / <?= $vipPersons ?></strong>osob</div>
-  </div>
-
-  <form class="filters" method="get">
-    <input type="hidden" name="view" value="vip">
-    <select name="run" onchange="this.form.submit()">
-      <option value="">Všechny termíny</option>
-      <?php foreach (runs() as $run): ?><option value="<?= (int) $run['id'] ?>" <?= $runFilter === $run['id'] ? 'selected' : '' ?>><?= $h(run_label($run)) ?></option><?php endforeach ?>
-    </select>
-  </form>
-
-  <?php if ($runFilter && ($vipRun = run_by_id($runFilter))):
-      $heldStmt = db()->prepare('SELECT seat_id, vip_guest_id FROM reservation_seats WHERE run_id = ?');
-      $heldStmt->execute([$runFilter]);
-      $held = $heldStmt->fetchAll(PDO::FETCH_KEY_PAIR); ?>
-  <form class="card vip-add" method="post">
-    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-    <input type="hidden" name="action" value="vip-add">
-    <input type="hidden" name="run_id" value="<?= (int) $runFilter ?>">
-    <div class="vip-form">
-      <label>Jméno<input name="name" required maxlength="200" placeholder="Jméno a příjmení"></label>
-      <label class="grow">Poznámka<input name="note" maxlength="255" placeholder="nepovinné"></label>
-      <span class="hint">Vybraná místa: <strong id="vip-count">0</strong></span>
-      <button>Přidat VIP</button>
-    </div>
-    <p class="hint">Vyberte místa na plánku (<?= $h(run_label($vipRun)) ?>). Šedá jsou obsazená rezervacemi, zlatá jinými VIP hosty. Místa VIP se na webu zobrazí jako obsazená.</p>
-    <div class="vip-map">
-      <?php foreach (SECTIONS as $sid => $def): ?>
-        <fieldset class="vip-section"><legend><?= $h($def['name']) ?></legend>
-          <?php for ($row = 1; $row <= $def['rows']; $row++): ?>
-            <div class="vip-row"><span class="vip-row-label"><?= $row ?></span>
-              <?php for ($seat = 1; $seat <= $def['seats']; $seat++):
-                  $seatId = "{$sid}-{$row}-{$seat}";
-                  $isHeld = array_key_exists($seatId, $held);
-                  $cls = $isHeld ? ($held[$seatId] !== null ? 'is-vip' : 'is-taken') : ''; ?>
-                <label class="vip-seat <?= $cls ?>" title="<?= $h($seatId) ?>"><input type="checkbox" name="seats[]" value="<?= $h($seatId) ?>" <?= $isHeld ? 'disabled' : '' ?>><span><?= $seat ?></span></label>
-              <?php endfor ?>
-            </div>
-          <?php endfor ?>
-        </fieldset>
-      <?php endforeach ?>
-    </div>
-  </form>
-  <script>
-    document.querySelector('.vip-map').addEventListener('change', () => {
-      document.getElementById('vip-count').textContent = document.querySelectorAll('.vip-map input:checked').length;
-    });
-  </script>
-  <?php else: ?>
-  <p class="card hint">Pro přidání VIP hosta vyberte nahoře termín – zobrazí se plánek s volnými místy.</p>
-  <?php endif ?>
-
-  <div class="card table">
-    <table>
-      <thead><tr><th>Termín</th><th>Jméno</th><th>Místa</th><th>Osob</th><th>Poznámka</th><th>Příchod</th><th></th></tr></thead>
-      <tbody>
-      <?php foreach ($vips as $v): ?>
-        <tr>
-          <td><?= ($vr = run_by_id((int) $v['run_id'])) ? $h(run_label($vr)) : '–' ?></td>
-          <td><strong><?= $h($v['name']) ?></strong></td>
-          <td class="seats"><?= $v['seats'] !== ''
-              ? implode('<br>', array_map($h, seat_labels($v['seats'])))
-              : $h(SECTIONS[$v['section']]['name'] ?? $v['section']) . '<br><small class="overdue">bez přidělených míst – odstraňte a přidejte znovu</small>' ?></td>
-          <td><?= (int) $v['persons'] ?></td>
-          <td><?= $h($v['note']) ?></td>
-          <td><?= $v['checked_in_at'] ? '<span class="badge s-paid">' . $h($fmt($v['checked_in_at'])) . '</span>' . ($v['checked_in_by'] ? '<br><small>' . $h($v['checked_in_by']) . '</small>' : '') : '' ?></td>
-          <td>
-            <div class="actions">
-              <?php if ($v['checked_in_at']): ?>
-                <form method="post">
-                  <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-                  <input type="hidden" name="id" value="<?= (int) $v['id'] ?>">
-                  <button class="secondary" name="action" value="vip-reset">Zrušit příchod</button>
-                </form>
-              <?php endif ?>
-              <form method="post" onsubmit="return confirm('Odstranit VIP hosta a uvolnit jeho místa?')">
-                <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-                <input type="hidden" name="id" value="<?= (int) $v['id'] ?>">
-                <button class="danger" name="action" value="vip-delete">Odstranit</button>
-              </form>
-            </div>
-          </td>
-        </tr>
-      <?php endforeach ?>
-      <?php if (!$vips): ?><tr><td colspan="7">Žádní VIP hosté.</td></tr><?php endif ?>
-      </tbody>
-    </table>
-  </div>
   <?php else: ?>
 
   <div class="stats">

@@ -251,7 +251,7 @@ function data_deletion_at(): ?DateTimeImmutable
 
 /**
  * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails
- * (payment records – VS, amount, seats – stay for accounting), delete the VIP list and
+ * (payment records – VS, amount, seats – stay for accounting), delete the
  * offline scan conflicts and empty the e-mails of discount codes. Reservations with money still to return keep their
  * contact until the refund is marked as done (the next run then removes it).
  * Returns the number of anonymized reservations.
@@ -267,7 +267,6 @@ function purge_personal_data(): int
          WHERE (email <> '' OR first_name <> '') AND COALESCE(refund_amount, 0) <= refunded_amount"
     );
     $stmt->execute();
-    db()->exec('DELETE FROM vip_guests');
     db()->exec('DELETE FROM scan_conflicts');
     db()->exec("UPDATE discount_codes SET email = '' WHERE email <> ''");
     return $stmt->rowCount();

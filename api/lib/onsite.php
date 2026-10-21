@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 const ONSITE_NAME = 'Prodej na místě';
 
-/** Seats of the run that are held (reservations and VIP guests). */
+/** Seats of the run that are held by reservations. */
 function run_taken_seats(int $runId): array
 {
     $stmt = db()->prepare('SELECT seat_id FROM reservation_seats WHERE run_id = ?');

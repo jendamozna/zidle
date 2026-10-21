@@ -108,16 +108,11 @@ export function useOffline(runId, onUnauthorized) {
     setQueue(getQueue());
   }, [runId]);
 
-  const dequeue = useCallback((uids) => {
-    removeFromQueue(uids);
-    setQueue(getQueue());
-  }, []);
-
   /** Called after any successful request: the server is reachable again. */
   const reachable = useCallback(() => {
     setOnline(true);
     if (getQueue().length) flush();
   }, [flush]);
 
-  return { snapshot, online, queue, note, enqueue, dequeue, fail, reachable };
+  return { snapshot, online, queue, note, enqueue, fail, reachable };
 }

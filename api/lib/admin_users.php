@@ -180,7 +180,7 @@ function send_admin_invite_email(array $user, string $token, string $invitedBy):
     $text = implode("\n", array_merge([
         "Dobrý den, {$user['name']},",
         '',
-        "{$who} Vás zve ke správě rezervací Moje židle 2026 (potvrzování plateb, vracení peněz, VIP hosté).",
+        "{$who} Vás zve ke správě rezervací Moje židle 2026 (potvrzování plateb, vracení peněz, slevové kódy).",
         '',
         'Heslo si vytvoříte na tomto odkazu (platí ' . ADMIN_INVITE_DAYS . ' dní):',
         admin_invite_link($token),

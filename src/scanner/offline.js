@@ -1,6 +1,6 @@
 // Offline mode of the scanner. Kept in localStorage of the device (one key):
 //   session    – last {name, runs, layout} from the server, so the scanner opens without a connection
-//   snapshots  – per run: the list of tickets and VIP guests (organizer.php "snapshot")
+//   snapshots  – per run: the list of tickets (organizer.php "snapshot")
 //   queue      – check-ins made without a connection, sent later (organizer.php "sync")
 // Everything is removed on logout; snapshots also a day after their run.
 
@@ -124,17 +124,4 @@ export function verifyOffline(decoded, snapshot, queue) {
   const at = checkedIn(decoded.seat);
   if (at) return { result: 'used', ticket, checkedInAt: at };
   return { result: 'valid', ticket: { ...ticket, checkedIn: ticket.checkedIn + 1 } };
-}
-
-/** VIP list with this device's not yet sent arrivals/undos applied. */
-export function applyVipQueue(vips, runId, queue) {
-  const byId = new Map(vips.map((v) => [v.id, { ...v }]));
-  for (const e of queue) {
-    if (e.runId !== runId) continue;
-    const vip = byId.get(e.id);
-    if (!vip) continue;
-    if (e.type === 'vip-checkin' && !vip.checkedInAt) vip.checkedInAt = e.at;
-    if (e.type === 'vip-undo') vip.checkedInAt = null;
-  }
-  return [...byId.values()];
 }

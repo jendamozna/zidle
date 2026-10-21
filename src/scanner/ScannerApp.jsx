@@ -7,7 +7,6 @@ import { acceptInvite, getSession, login, logout, verifyTicket } from './api.js'
 import { STALE_MS, cachedSession, clearOffline, getQueue, markTicketCheckedIn, saveSession, verifyOffline } from './offline.js';
 import { useOffline } from './useOffline.js';
 import { useQrCamera } from './useQrCamera.js';
-import VipView from './VipView.jsx';
 import SaleView from './SaleView.jsx';
 import { runLabel } from '../runs.js';
 
@@ -238,7 +237,7 @@ function OfflineStrip({ offline }) {
 }
 
 function Scanner({ runs, name, onLogout, onUnauthorized }) {
-  const [mode, setMode] = useState('scan'); // scan | vip | sale
+  const [mode, setMode] = useState('scan'); // scan | sale
   const [scan, setScan] = useState(null);
   const [runId, setRunId] = useState(() => defaultRunId(runs));
   const [confirmed, setConfirmed] = useState(() => new Set()); // runs confirmed for check-in outside their window
@@ -365,9 +364,6 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
         <button type="button" role="tab" aria-selected={mode === 'scan'} onClick={() => switchMode('scan')}>
           Vstupenky
         </button>
-        <button type="button" role="tab" aria-selected={mode === 'vip'} onClick={() => switchMode('vip')}>
-          VIP
-        </button>
         <button type="button" role="tab" aria-selected={mode === 'sale'} onClick={() => switchMode('sale')}>
           Prodej
         </button>
@@ -390,8 +386,6 @@ function Scanner({ runs, name, onLogout, onUnauthorized }) {
         />
       ) : mode === 'sale' ? (
         <SaleView key={runId} runId={runId} onUnauthorized={onUnauthorized} />
-      ) : mode === 'vip' ? (
-        <VipView key={runId} runId={runId} confirmOutside={confirmOutside} offline={offline} onUnauthorized={onUnauthorized} />
       ) : (
         <div className={`scan-view ${scan ? 'has-result' : ''}`}>
           <video ref={camera.videoRef} className="scan-video" playsInline muted autoPlay />

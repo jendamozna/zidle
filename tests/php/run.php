@@ -1,5 +1,5 @@
 <?php
-// Integration tests of the money, seat, discount code, ticket and VIP logic against a real MariaDB.
+// Integration tests of the money, seat, discount code and ticket logic against a real MariaDB.
 //
 //   DB_NAME=zidle_test MAIL_ENABLED=0 TICKET_SECRET=test-secret-0123456789 BANK_IBAN=CZ6508000000192000145399 php tests/php/run.php
 //
@@ -55,10 +55,10 @@ function expire(int $id): void
     expire_reservations();
 }
 
-/** Seat ids held in the run, with the holder ("r<id>" or "v<id>"). */
+/** Seat ids held in the run, with the holder ("r<id>"). */
 function held(int $run): array
 {
-    $stmt = db()->prepare('SELECT seat_id, COALESCE(CONCAT("r", reservation_id), CONCAT("v", vip_guest_id)) FROM reservation_seats WHERE run_id = ?');
+    $stmt = db()->prepare('SELECT seat_id, CONCAT("r", reservation_id) FROM reservation_seats WHERE run_id = ?');
     $stmt->execute([$run]);
     return $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 }
@@ -349,21 +349,6 @@ test('on-site sale: QR payment, then paid and every seat checked in; the account
     same([false, 'cancelled'], [isset(held(2)['WR-5-3']), row((int) $other['id'])['status']], 'seat free again');
 });
 
-// --------------------------------------------------------------------- VIP
-
-test('VIP guests hold their seats; taken seats are refused; removing frees them', function (): void {
-    reservation(['ML-1-1']);
-    contains('už jsou obsazená', add_vip_guest(1, 'Host', ['ML-1-1', 'ML-1-2'], ''), 'conflict');
-    same(false, isset(held(1)['ML-1-2']), 'nothing held after a conflict');
-    contains('přidán (2 místa)', add_vip_guest(1, 'Host', ['ML-1-3', 'ML-1-2'], 'pozn.'), 'added');
-    $vip = db_query("SELECT * FROM vip_guests WHERE name = 'Host'")->fetch();
-    same(['ML-1-2,ML-1-3', 'ML', 2], [$vip['seats'], $vip['section'], (int) $vip['persons']], 'stored sorted');
-    same('v' . $vip['id'], held(1)['ML-1-2'] ?? null, 'held by VIP');
-    same('Vyberte na plánku 1 až 50 míst.', add_vip_guest(1, 'Jiný', ['XX-1-1'], ''), 'invalid seat');
-    db()->prepare('DELETE FROM vip_guests WHERE id = ?')->execute([$vip['id']]);
-    same(false, isset(held(1)['ML-1-2']), 'freed on delete');
-});
-
 // -------------------------------------------------------------------- GDPR
 
 test('personal data is purged after the event except while money is still to return', function (): void {
@@ -508,14 +493,12 @@ function conflicts(): array
     return db_query('SELECT reason, label, scanned_by, other_by FROM scan_conflicts ORDER BY id')->fetchAll();
 }
 
-test('snapshot lists the run\'s tickets without e-mails and with VIP guests', function (): void {
+test('snapshot lists the run\'s tickets without e-mails', function (): void {
     $paid = reservation(['BR-1-1', 'BR-1-2'], 'paid', 1, 'Seznamová');
-    add_vip_guest(1, 'VIP Seznam', ['BR-2-1'], '');
     $snapshot = scanner_snapshot(run_by_id(1) ?? []);
     $ticket = array_values(array_filter($snapshot['tickets'], fn ($t) => $t['id'] === $paid))[0] ?? null;
     same(['Test Seznamová', ['BR-1-1', 'BR-1-2'], 'paid', []], [$ticket['name'] ?? null, $ticket['seats'] ?? null, $ticket['status'] ?? null, (array) ($ticket['checkedIn'] ?? null)], 'ticket');
     same(false, array_key_exists('email', $ticket ?? []), 'no e-mail');
-    same(true, in_array('VIP Seznam', array_column($snapshot['vips'], 'name'), true), 'VIP included');
 });
 
 test('offline check-ins are applied with the device time; the first one wins', function (): void {
@@ -563,18 +546,6 @@ test('device time is limited to the last 48 hours and never in the future', func
     ]);
     same(true, row($future)['checked_in_at'] <= db_time(now_utc()), 'not in the future');
     same(true, row($old)['checked_in_at'] >= db_time(now_utc()->modify('-49 hours')), 'not older than 48 h');
-});
-
-test('offline VIP arrivals: first wins, undo takes an arrival back', function (): void {
-    db()->exec('DELETE FROM scan_conflicts');
-    add_vip_guest(1, 'VIP Offline', ['BR-2-4'], '');
-    $vip = (int) db_query("SELECT id FROM vip_guests WHERE name = 'VIP Offline'")->fetchColumn();
-    $at = iso_utc(now_utc()->modify('-5 minutes'));
-    same('ok', apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [['type' => 'vip-checkin', 'id' => $vip, 'at' => $at]])['results'][0]['status'], 'arrival');
-    $res = apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [['type' => 'vip-checkin', 'id' => $vip, 'at' => iso_utc(now_utc())]]);
-    same('already_checked_in', $res['results'][0]['reason'] ?? null, 'second device');
-    apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [['type' => 'vip-undo', 'id' => $vip]]);
-    same(null, db_query("SELECT checked_in_at FROM vip_guests WHERE id = {$vip}")->fetchColumn(), 'undone');
 });
 
 // ---------------------------------------------------------------------- run

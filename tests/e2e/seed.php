@@ -2,8 +2,8 @@
 // Fresh test database for the Playwright tests; prints the data the tests need as JSON.
 //   run 1 "Premiéra" in a month – bookable, one pending reservation for the admin test,
 //   three unused discount codes for the customer tests
-//   run 2 "Dnes" starting in 20 minutes – inside the scan window: two paid tickets and two VIP guests
-//   (one of each for the online and one for the offline scanner test)
+//   run 2 "Dnes" starting in 20 minutes – inside the scan window: two paid reservations
+//   (one for the online and one for the offline scanner test)
 declare(strict_types=1);
 
 require __DIR__ . '/../php/fixtures.php';
@@ -17,8 +17,6 @@ runs(true);
 $pending = reservation(['MR-5-1', 'MR-5-2'], 'pending', 1, 'Platící');
 $paid = reservation(['BC-1-1', 'BC-1-2'], 'paid', 2, 'Vstupenka', ['BC-1-2']);
 $offline = reservation(['BC-2-1', 'BC-2-2'], 'paid', 2, 'Offline');
-add_vip_guest(2, 'Mons. Testovací', ['ML-1-1', 'ML-1-2'], '');
-add_vip_guest(2, 'Paní Offline', ['ML-2-1'], '');
 create_discount_codes("zakaznik@example.com\nzakaznik@example.com\nzakaznik@example.com", 'seed');
 
 $row = static function (int $id): array {
