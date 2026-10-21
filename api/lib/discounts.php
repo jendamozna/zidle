@@ -97,7 +97,7 @@ function send_discount_code_email(int $id): bool
         'Vstupenky na TZG 2026',
         ...(contact_line() !== '' ? [contact_line()] : []),
     ]);
-    $ok = deliver_mail($c['email'], 'Slevový kód – Vstupenky na TZG 2026', $body);
+    $ok = deliver_mail($c['email'], mail_subject('Slevový kód'), $body);
     if ($ok) {
         db()->prepare('UPDATE discount_codes SET emailed_at = ? WHERE id = ?')->execute([db_time(now_utc()), $id]);
     } else {

@@ -459,9 +459,9 @@ made from then on (existing ones keep their due date); `seats.php`
 
   | Status | Result | Customer e-mail |
   | --- | --- | --- |
-  | pending, kept ≥ `amount` (`complete_if_covered()`) | `paid`, `paid_at`; surplus `paid_amount − amount` → `refund_amount` | *Vstupenka* (intro adds the surplus refund line) |
+  | pending, kept ≥ `amount` (`complete_if_covered()`) | `paid`, `paid_at`; surplus `paid_amount − amount` → `refund_amount` | *Platba přijata – Vaše vstupenky* (intro adds the surplus refund line) |
   | pending, less | stays pending; admin row shows *zbývá doplatit X* | *Přijata část platby* (missing amount + payment details) |
-  | expired, run not started, kept ≥ `amount`, all seats free | seats re-inserted, `paid` (surplus refunded as above; refund of an earlier partial payment cancelled unless already returned) | *Vstupenka* |
+  | expired, run not started, kept ≥ `amount`, all seats free | seats re-inserted, `paid` (surplus refunded as above; refund of an earlier partial payment cancelled unless already returned) | *Platba přijata – Vaše vstupenky* |
   | expired otherwise | stays expired; `refund_amount += received` | *Vrácení platby* |
   | cancelled | `refund_amount += received` | *Vrácení platby* |
   | paid (sent twice etc.) | `refund_amount += received` | *Vrácení platby* |
@@ -529,10 +529,10 @@ the frontend.
 - admin **Vráceno** sets `refunded_amount = refund_amount`, `refunded_at`;
   due = `refund_amount − refunded_amount`.
 
-E-mails (`send_cancellation_notice()`): paid part → *Nová vstupenka* (ticket
+E-mails (`send_cancellation_notice()`): paid part → *Nové vstupenky* (ticket
 e-mail with intro: cancelled seats, fee, refund line, *„Posíláme novou
 vstupenku na zbývající místa. Původní vstupenka už neplatí.“* – the tickets of
-the cancelled seats stop working, §11); pending part now fully paid → *Vstupenka* (intro: cancelled
+the cancelled seats stop working, §11); pending part now fully paid → *Platba přijata – Vaše vstupenky* (intro: cancelled
 seats, *„Platba za zbývající místa je kompletní, rezervace je potvrzena.“*,
 surplus refund line); other pending part → *Změna rezervace* (new payment
 details); whole → *Rezervace zrušena* with fee/refund line; pending whole
@@ -852,18 +852,22 @@ mail is sent synchronously within the request. Texts are plain
 QR per seat as inline images `cid:ticket-qr-<n>`, `vstupenky.pdf` and the
 calendar event `udalost.ics`, §11). All reservation e-mails contain `Termín: <run>`.
 
+Subjects are `mail_subject()` = *„TZG 2026: <subject>“* (the sender name already says
+*Vstupenky na TZG 2026*).
+
 | Subject | Trigger |
 | --- | --- |
 | Rezervace míst | reservation created (payment details, link if `PUBLIC_URL`) |
 | Pozvánka do správy rezervací | accountant invited or new link (`send_admin_invite_email()`: *„<inviter or Správce rezervací> Vás zve ke správě vstupenek na TZG 2026 (potvrzování plateb, vracení peněz, slevové kódy).“*, link valid 7 days, *„Přihlašovací jméno je Váš e-mail: …“*) |
 | Připomínka platby | cron: pending, due within 24 h, created ≥ 24 h before due, once |
 | Rezervace zrušena | cron: expired within the last 3 days, once (refund line for money that already arrived; *„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“*) |
-| Vstupenka | recorded payment completes the price / expired restored / pending partial cancellation now covered / resend |
-| Vstupenky | new reservation paid fully by discount codes |
+| Platba přijata – Vaše vstupenky | recorded payment completes the price / expired restored / pending partial cancellation now covered |
+| Vaše vstupenky | resend from admin |
+| Rezervace potvrzena – Vaše vstupenky | new reservation paid fully by discount codes |
 | Slevový kód | admin created or resent a code (`send_discount_code_email()`: *„posíláme Vám slevový kód na jedno místo zdarma na představení TZG 2026: XXXX-XXXX“*, where to enter it, *„Platí na libovolný termín a lze ho použít jednou. Z rezervace se odečte cena jednoho místa (nejdražšího – nejdřív dospělého, pak dětského).“*); `emailed_at` set |
 | Přijata část platby | recorded payment below the price |
 | Vrácení platby | recorded payment that can't be used (§9 reasons) |
-| Nová vstupenka | partial cancellation of a paid reservation |
+| Nové vstupenky | partial cancellation of a paid reservation |
 | Změna rezervace | partial cancellation of a pending reservation |
 | Rezervace zrušena | whole cancellation (customer or admin) |
 

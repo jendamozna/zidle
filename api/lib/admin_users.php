@@ -189,5 +189,5 @@ function send_admin_invite_email(array $user, string $token, string $invitedBy):
         '',
         'Vstupenky na TZG 2026',
     ], contact_line() !== '' ? [contact_line()] : []));
-    return deliver_mail($user['email'], 'Pozvánka do správy rezervací – Vstupenky na TZG 2026', $text);
+    return deliver_mail($user['email'], mail_subject('Pozvánka do správy rezervací'), $text);
 }

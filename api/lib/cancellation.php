@@ -162,7 +162,7 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
                 ['Zrušená místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.',
                  'Platba za zbývající místa je kompletní, rezervace je potvrzena.'],
                 $surplus > 0 ? refund_lines($r, 0, $surplus, $by) : []
-            ), 'Vstupenka');
+            ), 'Platba přijata – Vaše vstupenky');
             db()->prepare('UPDATE reservations SET ticket_sent_at = ? WHERE id = ?')->execute([db_time(now_utc()), $r['id']]);
         } catch (Throwable $e) {
             error_log('[zidle] ' . $e);

@@ -90,7 +90,7 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
     }
 
     if ($free) {
-        send_ticket_for($id, ['děkujeme za rezervaci. Všechna místa jsou hrazená slevovými kódy, rezervace je potvrzena.'], 'Vstupenky');
+        send_ticket_for($id, ['děkujeme za rezervaci. Všechna místa jsou hrazená slevovými kódy, rezervace je potvrzena.'], 'Rezervace potvrzena – Vaše vstupenky');
     }
     $r = find_reservation_by_token($token);
     if ($r === null) {

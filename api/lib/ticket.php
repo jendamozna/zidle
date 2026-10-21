@@ -96,8 +96,8 @@ function qr_png(string $text, int $scale = 8): string
  * E-mails the tickets to the customer: one QR code per seat inline in the message and
  * the printable vstupenky.pdf (ticket_pdf()) plus the calendar event. Returns true when
  * the message was handed over to the mail system.
- * $intro replaces the default first paragraph; $subject defaults to "Nová vstupenka"
- * with an intro (replacement tickets) and "Vstupenka" without.
+ * $intro replaces the default first paragraph; $subject (without the "TZG 2026: " prefix) defaults to
+ * "Nové vstupenky" with an intro (replacement tickets) and "Vaše vstupenky" without.
  */
 function send_ticket_email(array $r, array $intro = [], ?string $subject = null): bool
 {
@@ -155,7 +155,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         . (contact_line() !== '' ? '<br>' . $h(contact_line()) : '') . '</p>'
         . '</div></body></html>';
 
-    $subject = ($subject ?? ($intro ? 'Nová vstupenka' : 'Vstupenka')) . ' – Vstupenky na TZG 2026';
+    $subject = mail_subject($subject ?? ($intro ? 'Nové vstupenky' : 'Vaše vstupenky'));
     $attachments = [['data' => ticket_pdf($r), 'name' => 'vstupenky.pdf', 'type' => 'application/pdf']];
     $ics = ticket_ics($r);
     if ($ics !== null) {

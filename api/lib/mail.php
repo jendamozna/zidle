@@ -8,6 +8,12 @@ use PHPMailer\PHPMailer\PHPMailer;
 
 const MAIL_FROM_NAME = 'Vstupenky na TZG 2026';
 
+/** "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Vstupenky na TZG 2026"). */
+function mail_subject(string $subject): string
+{
+    return 'TZG 2026: ' . $subject;
+}
+
 /**
  * Sends one e-mail. $html is optional (multipart/alternative with $text);
  * $inline are embedded images: [['cid' => 'ticket-qr', 'data' => <binary>, 'name' => 'x.png', 'type' => 'image/png']];
@@ -146,7 +152,7 @@ function send_customer_email(array $r, string $subject, array $lines): bool
         ['', 'Vstupenky na TZG 2026'],
         contact_line() !== '' ? [contact_line()] : []
     ));
-    $ok = deliver_mail($r['email'], $subject . ' – Vstupenky na TZG 2026', $body);
+    $ok = deliver_mail($r['email'], mail_subject($subject), $body);
     if (!$ok) {
         error_log("[zidle] Failed to send '{$subject}' for reservation {$r['id']}");
     }

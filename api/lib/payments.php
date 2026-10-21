@@ -118,7 +118,7 @@ function record_payment(int $id, int $received): string
         }
         return "Přijato {$kc}" . ($outcome === 'restored' ? ', rezervace obnovena' : '') . ' – zaplaceno.'
             . ($surplus > 0 ? ' Přeplatek ' . format_czk($surplus) . ' k vrácení.' : '')
-            . send_ticket_for($id, $intro, 'Vstupenka');
+            . send_ticket_for($id, $intro, 'Platba přijata – Vaše vstupenky');
     }
     $mailed = send_partial_payment_email($r, $received);
     return "Přijato {$kc}, zbývá doplatit " . format_czk(amount_due($r)) . '.'
