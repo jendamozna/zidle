@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  PHP_VERSION: '8.3'
+  PHP_VERSION: '8.4'
   NODE_VERSION: '22'
 
 jobs:
@@ -86,7 +86,8 @@ jobs:
 
   e2e:
     name: E2E – Playwright
-    runs-on: ubuntu-latest
+    # Playwright 1.56 cannot install Chromium on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
     needs: [php, frontend]
     services:
       mariadb:

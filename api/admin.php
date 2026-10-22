@@ -149,7 +149,7 @@ if ($canManage && $csrfOk && in_array($action, ['user-invite', 'user-link', 'use
     $roles = array_map('strval', (array) ($_POST['roles'] ?? []));
     if ($action === 'user-invite' || $action === 'user-link') {
         if ($action === 'user-invite') {
-            $result = admin_invite((string) ($_POST['email'] ?? ''), $roles, $me['email']);
+            $result = admin_invite((string) ($_POST['email'] ?? ''), $roles, $me['email'], (array) ($_POST['runs'] ?? []));
         } else {
             $user = admin_user($id);
             $result = match (true) {
@@ -170,6 +170,9 @@ if ($canManage && $csrfOk && in_array($action, ['user-invite', 'user-link', 'use
         }
     } elseif ($action === 'user-roles') {
         $_SESSION['flash'] = admin_set_roles($id, $roles, $me['id']);
+        if (str_starts_with($_SESSION['flash'], 'Role a termíny')) {
+            save_user_runs($id, (array) ($_POST['runs'] ?? []));
+        }
     } else {
         $_SESSION['flash'] = admin_set_disabled($id, $action === 'user-disable', $me['id']);
     }
@@ -505,7 +508,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         $params[] = $runFilter;
     }
     if ($q !== '') {
-        $where[] = '(variable_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ? OR seats LIKE ?)';
+        $where[] = '(specific_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ? OR seats LIKE ?)';
         array_push($params, ...array_fill(0, 5, '%' . $q . '%'));
     }
     $sql = 'SELECT * FROM reservations' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 500';
@@ -515,7 +518,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     $totals = db_query("SELECT status, COUNT(*) n, SUM(seat_count) seats, SUM(amount) amount FROM reservations GROUP BY status")
         ->fetchAll(PDO::FETCH_UNIQUE);
     $prague = new DateTimeZone('Europe/Prague');
-    $fmt = static fn ($t) => $t ? (new DateTimeImmutable($t, new DateTimeZone('UTC')))->setTimezone($prague)->format('j. n. Y H:i') : '';
+    $fmt = static fn ($t) => $t ? new DateTimeImmutable($t, new DateTimeZone('UTC'))->setTimezone($prague)->format('j. n. Y H:i') : '';
     $kc = static fn ($n) => number_format((int) $n, 0, ',', ' ') . ' Kč';
 ?>
   <header>
@@ -624,8 +627,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $q = trim((string) ($_GET['q'] ?? ''));
       $codeSearch = normalize_discount_code($q);
       $stmt = db()->prepare(
-          'SELECT c.*, r.variable_symbol, r.run_id FROM discount_codes c LEFT JOIN reservations r ON r.id = c.reservation_id'
-          . ($q !== '' ? ' WHERE c.email LIKE ? OR c.code LIKE ? OR r.variable_symbol LIKE ?' : '')
+          'SELECT c.*, r.specific_symbol, r.run_id FROM discount_codes c LEFT JOIN reservations r ON r.id = c.reservation_id'
+          . ($q !== '' ? ' WHERE c.email LIKE ? OR c.code LIKE ? OR r.specific_symbol LIKE ?' : '')
           . ' ORDER BY c.id DESC LIMIT 1000'
       );
       $stmt->execute($q !== '' ? ['%' . $q . '%', '%' . ($codeSearch !== '' ? $codeSearch : $q) . '%', '%' . $q . '%'] : []);
@@ -652,7 +655,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <form class="filters" method="get">
     <input type="hidden" name="view" value="codes">
-    <input type="search" name="q" value="<?= $h($q) ?>" placeholder="E-mail, kód nebo VS">
+    <input type="search" name="q" value="<?= $h($q) ?>" placeholder="E-mail, kód nebo SS">
     <button class="secondary">Hledat</button>
   </form>
 
@@ -668,7 +671,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td><?= $h($fmt($c['emailed_at'])) ?: '–' ?></td>
           <td><?php if ($c['used_at']): ?>
               <span class="badge s-paid">Použitý</span><br><small><?= $h($fmt($c['used_at'])) ?> ·
-                <?php if ($c['variable_symbol'] !== null): ?><a href="admin.php?q=<?= $h($c['variable_symbol']) ?>">VS <?= $h($c['variable_symbol']) ?></a><?php endif ?>
+                <?php if ($c['specific_symbol'] !== null): ?><a href="admin.php?q=<?= $h($c['specific_symbol']) ?>">SS <?= $h($c['specific_symbol']) ?></a><?php endif ?>
                 <?= ($cr = run_by_id((int) $c['run_id'])) ? '· ' . $h(run_label($cr)) : '' ?>
                 <?= $c['seat_id'] ? '· ' . $h($c['seat_id']) : '' ?></small>
             <?php elseif ($c['revoked_at']): ?>
@@ -712,11 +715,21 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           }
           return $out;
       };
+      // Runs an Odbavovatel checks in (a Správce checks in every run).
+      $runChecks = static function (array $selected) use ($h): string {
+          $out = '<span class="hint">Odbavuje termíny:</span>';
+          foreach (runs() as $run) {
+              $out .= '<label class="check"><input type="checkbox" name="runs[]" value="' . (int) $run['id'] . '"'
+                  . (in_array($run['id'], $selected, true) ? ' checked' : '') . '> ' . $h(run_label($run)) . '</label>';
+          }
+          return $out;
+      };
   ?>
   <p class="hint settings-intro">Uživatele zve správce zadáním e-mailu a rolí. Pozvaný dostane e-mail s odkazem
     (platí <?= ADMIN_INVITE_DAYS ?> dní); účet vznikne, až si na něm vytvoří heslo. Přihlašovací jméno je e-mail.
     <strong>Správce</strong> může vše, <strong>Účetní</strong> vidí jen rezervace a platby, <strong>Odbavovatel</strong>
-    jen odbavuje (scanner). Kdo má víc rolí, vidí všechny jejich možnosti v menu. Zapomenuté heslo si každý obnoví
+    jen odbavuje (scanner) – a to jen termíny, které mu tu přiřadíte (žádný, jeden i víc); správce odbavuje
+    všechny termíny. Kdo má víc rolí, vidí všechny jejich možnosti v menu. Zapomenuté heslo si každý obnoví
     sám na přihlašovací stránce.</p>
 
   <?php if ($newLink): ?>
@@ -735,12 +748,13 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <h2>Pozvat uživatele</h2>
     <label>E-mail (bude přihlašovací jméno)<input type="email" name="email" required maxlength="190" placeholder="jana@example.cz"></label>
     <div class="checks"><?= $roleChecks([]) ?></div>
+    <div class="checks"><?= $runChecks([]) ?></div>
     <button name="action" value="user-invite">Poslat pozvánku</button>
   </form>
 
   <div class="card table">
     <table>
-      <thead><tr><th>E-mail (login)</th><th>Role</th><th>Pozvánka</th><th>Pozval(a)</th><th>Naposledy přihlášen(a)</th><th></th></tr></thead>
+      <thead><tr><th>E-mail (login)</th><th>Role</th><th>Pozvánka</th><th>Naposledy přihlášen(a)</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($users as $u):
           $pending = $u['password_hash'] === null;
@@ -757,17 +771,22 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td><strong><?= $h($u['email']) ?></strong><?= $self ? ' <small>(vy)</small>' : '' ?></td>
           <td>
             <?= $h(implode(', ', array_map(static fn ($r) => USER_ROLES[$r], user_roles($u)))) ?>
+            <?php $userRuns = user_run_ids((int) $u['id']);
+                if (in_array('scanner', user_roles($u), true) && !in_array('admin', user_roles($u), true)): ?>
+              <br><small class="<?= $userRuns ? '' : 'overdue' ?>">odbavuje: <?= $userRuns ? $h(implode(', ', array_map(static fn ($r) => run_label(runs()[$r]), $userRuns))) : 'žádný termín' ?></small>
+            <?php endif ?>
             <details class="edit-email"><summary>změnit</summary>
               <form method="post" class="roles-edit">
                 <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                 <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
                 <div class="checks"><?= $roleChecks(user_roles($u)) ?></div>
-                <button name="action" value="user-roles">Uložit role</button>
+                <div class="checks"><?= $runChecks($userRuns) ?></div>
+                <button name="action" value="user-roles">Uložit</button>
               </form>
             </details>
           </td>
-          <td><span class="badge <?= $badge ?>"><?= $h($label) ?></span></td>
-          <td><?= $h($u['invited_by']) ?><br><small><?= $h($fmt($u['created_at'])) ?></small></td>
+          <td><span class="badge <?= $badge ?>"><?= $h($label) ?></span>
+            <br><small><?= $u['invited_by'] === 'deploy' ? 'první správce (deploy)' : 'pozval(a) ' . $h($u['invited_by']) ?>, <?= $h($fmt($u['created_at'])) ?></small></td>
           <td><?= $h($fmt($u['last_login_at'])) ?: '–' ?></td>
           <td>
             <div class="actions">
@@ -871,6 +890,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <?php if ($locked): ?>
       <p class="hint locked">Představení už má rezervace – začátek nelze měnit (zákazníci rezervovali na tento čas).</p>
     <?php endif ?>
+    <?php if ($run['id']): $scanners = run_scanner_emails((int) $run['id']); ?>
+      <p class="hint">Odbavují: <?= $scanners ? $h(implode(', ', $scanners)) : 'zatím nikdo' ?> (a všichni správci) – přiřazení v záložce
+        <a href="admin.php?view=users">Uživatelé</a>.</p>
+    <?php endif ?>
     <div class="actions">
       <button name="action" value="run-save"><?= $run['id'] ? 'Uložit termín' : 'Přidat termín' ?></button>
       <?php if ($run['id']): ?>
@@ -921,17 +944,17 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <option value="refund" <?= $status === 'refund' ? 'selected' : '' ?>>K vrácení peněz</option>
       <option value="onsite" <?= $status === 'onsite' ? 'selected' : '' ?>>Na místě – ověřit platbu</option>
     </select>
-    <input type="search" name="q" value="<?= $h($q) ?>" placeholder="VS, jméno, e-mail, místo">
+    <input type="search" name="q" value="<?= $h($q) ?>" placeholder="SS, jméno, e-mail, místo">
     <button class="secondary">Filtrovat</button>
   </form>
 
   <div class="card table">
     <table>
-      <thead><tr><th>VS</th><th>Termín</th><th>Jméno</th><th>Místa</th><th>Částka</th><th>Stav</th><th>Vytvořeno</th><th>Splatnost</th><th></th></tr></thead>
+      <thead><tr><th>SS</th><th>Termín</th><th>Jméno</th><th>Místa</th><th>Částka</th><th>Stav</th><th>Vytvořeno</th><th>Splatnost</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($rows as $r): ?>
         <tr>
-          <td><strong><?= $h($r['variable_symbol']) ?></strong></td>
+          <td><strong><?= $h($r['specific_symbol']) ?></strong></td>
           <td class="seats"><?= ($rr = run_by_id((int) $r['run_id'])) ? $h(run_label($rr)) : '–' ?></td>
           <td><?= $h($r['first_name'] . ' ' . $r['last_name']) ?><br><a href="mailto:<?= $h($r['email']) ?>"><?= $h($r['email']) ?></a>
             <?php if ($r['sold_by'] !== null): ?><small>prodal(a) <?= $h($r['sold_by']) ?></small><?php endif ?>
@@ -996,7 +1019,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                 </form>
               <?php endif ?>
               <?php if ($r['sold_by'] !== null && $r['status'] === 'paid' && !$r['payment_checked_at']): ?>
-                <form method="post" onsubmit="return confirm('Platba <?= $h(format_czk((int) $r['amount'])) ?> s VS <?= $h($r['variable_symbol']) ?> dorazila na účet?')">
+                <form method="post" onsubmit="return confirm('Platba <?= $h(format_czk((int) $r['amount'])) ?> s SS <?= $h($r['specific_symbol']) ?> dorazila na účet?')">
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
                   <button name="action" value="onsite-checked">Platba dorazila</button>

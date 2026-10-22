@@ -130,7 +130,7 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
         return;
     }
     send_customer_email($r, 'Rezervace zrušena', array_merge(
-        ['Vaše rezervace (VS ' . $r['variable_symbol'] . ') byla zrušena a místa uvolněna:',
+        ['Vaše rezervace (SS ' . $r['specific_symbol'] . ') byla zrušena a místa uvolněna:',
          implode('; ', seat_labels($r['seats'])) . '.',
          run_line($r)],
         $refundLines,
@@ -200,7 +200,7 @@ function data_deletion_at(): ?DateTimeImmutable
 
 /**
  * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails
- * (payment records – VS, amount, seats – stay for accounting), delete the
+ * (payment records – SS, amount, seats – stay for accounting), delete the
  * offline scan conflicts and empty the e-mails of discount codes. Reservations with money still to return keep their
  * contact until the refund is marked as done (the next run then removes it).
  * Returns the number of anonymized reservations.

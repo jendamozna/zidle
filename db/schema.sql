@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   child_price     INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK per child seat when the reservation was made',
   amount          INT UNSIGNED NOT NULL COMMENT 'CZK, price of the seats currently in the reservation',
   paid_amount     INT UNSIGNED NULL COMMENT 'CZK received',
-  variable_symbol VARCHAR(10)  NULL,
+  specific_symbol VARCHAR(10)  NULL COMMENT 'SS of the payment (unique, 10 digits); the VS is PAYMENT_VARIABLE_SYMBOL for all',
   status          ENUM('pending', 'paid', 'expired', 'cancelled') NOT NULL DEFAULT 'pending',
   created_at      DATETIME     NOT NULL,
   expires_at      DATETIME     NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   payment_checked_at DATETIME  NULL COMMENT 'UTC; accountant confirmed that the payment of an on-site sale arrived',
   PRIMARY KEY (id),
   UNIQUE KEY uq_token (token),
-  UNIQUE KEY uq_vs (variable_symbol),
+  UNIQUE KEY uq_ss (specific_symbol),
   KEY idx_status_expires (status, expires_at),
   KEY idx_run (run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS scan_conflicts (
   id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
   run_id         INT UNSIGNED NOT NULL,
   reservation_id INT UNSIGNED NULL,
-  label          VARCHAR(250) NOT NULL COMMENT 'Which ticket it was about (VS + name + seat), kept for display',
+  label          VARCHAR(250) NOT NULL COMMENT 'Which ticket it was about (SS + name + seat), kept for display',
   reason         ENUM('already_checked_in', 'not_paid', 'unknown') NOT NULL,
   scanned_at     DATETIME     NOT NULL COMMENT 'UTC, time of the offline scan on the device',
   scanned_by     VARCHAR(200) NOT NULL,
@@ -147,4 +147,15 @@ CREATE TABLE IF NOT EXISTS admin_users (
   UNIQUE KEY uq_email (email),
   UNIQUE KEY uq_invite (invite_hash),
   UNIQUE KEY uq_reset (reset_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
+-- Runs an Odbavovatel may check in (0..n per account, 0..n accounts per run).
+-- A Správce checks in every run without rows here.
+CREATE TABLE IF NOT EXISTS user_runs (
+  user_id INT UNSIGNED NOT NULL,
+  run_id  INT UNSIGNED NOT NULL,
+  PRIMARY KEY (user_id, run_id),
+  KEY idx_run (run_id),
+  CONSTRAINT fk_user_runs_user FOREIGN KEY (user_id) REFERENCES admin_users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_runs_run FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;

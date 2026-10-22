@@ -99,13 +99,8 @@ function create_reservation(): void
         $errors['codes'] = 'Slevových kódů může být nejvýše tolik, kolik je míst.';
     } elseif (count($codes) !== count(array_unique($codes))) {
         $errors['codes'] = 'Každý slevový kód lze zadat jen jednou.';
-    } else {
-        foreach ($codes as $code) {
-            if (!preg_match('/^[' . DISCOUNT_ALPHABET . ']{8}$/', $code)) {
-                $errors['codes'] = 'Slevový kód ' . $code . ' neplatí nebo už byl použit.';
-                break;
-            }
-        }
+    } elseif (($bad = array_find($codes, static fn ($code) => !preg_match('/^[' . DISCOUNT_ALPHABET . ']{8}$/', $code))) !== null) {
+        $errors['codes'] = 'Slevový kód ' . $bad . ' neplatí nebo už byl použit.';
     }
     if ($errors) {
         json_error($errors['seats'] ?? $errors['codes'] ?? $errors['children'] ?? 'Zkontrolujte zadané údaje.', 422, ['fields' => $errors]);

@@ -9,7 +9,7 @@ return [
     'BANK_IBAN' => 'CZ0000000000000000000000',
     'BANK_ACCOUNT_DISPLAY' => '000000000/0000',
     'PAYMENT_RECIPIENT' => 'Farnost',
-    'PAYMENT_SPECIFIC_SYMBOL' => '2026',
+    'PAYMENT_VARIABLE_SYMBOL' => '3211', // VS of all payments; reservations are told apart by their SS
 
     // Fill in before the first start (min. 32 characters each), e.g. the output of: php -r "echo bin2hex(random_bytes(32));"
     'TICKET_SECRET' => '',

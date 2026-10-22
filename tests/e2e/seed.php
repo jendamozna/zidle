@@ -4,7 +4,7 @@
 //   three unused discount codes for the customer tests
 //   run 2 "Dnes" starting in 20 minutes – inside the scan window: two paid reservations
 //   (one for the online and one for the offline scanner test)
-//   accounts: Správce spravce@example.cz (created like deploy.php does), Odbavovatel vchod@example.cz
+//   accounts: Správce spravce@example.cz (created like deploy.php does), Odbavovatel vchod@example.cz (both runs)
 declare(strict_types=1);
 
 require __DIR__ . '/../php/fixtures.php';
@@ -20,7 +20,7 @@ $paid = reservation(['BC-1-1', 'BC-1-2'], 'paid', 2, 'Vstupenka', ['BC-1-2']);
 $offline = reservation(['BC-2-1', 'BC-2-2'], 'paid', 2, 'Offline');
 create_discount_codes("zakaznik@example.com\nzakaznik@example.com\nzakaznik@example.com", 'seed');
 create_first_admin('spravce@example.cz', 'e2e-spravce-heslo');
-$invite = admin_invite('vchod@example.cz', ['scanner'], 'seed');
+$invite = admin_invite('vchod@example.cz', ['scanner'], 'seed', [1, 2]); // checks in both runs
 admin_accept_invite(is_array($invite) ? $invite['token'] : '', 'e2e-vchod-heslo', 'e2e-vchod-heslo');
 
 $row = static function (int $id): array {
@@ -29,7 +29,7 @@ $row = static function (int $id): array {
     return $stmt->fetch();
 };
 echo json_encode([
-    'pendingVs' => $row($pending)['variable_symbol'],
+    'pendingVs' => $row($pending)['specific_symbol'],
     'ticket' => ticket_code($row($paid), 'BC-1-1'),
     'offlineTicket' => ticket_code($row($offline), 'BC-2-1'),
     'codes' => array_map('format_discount_code', db_query('SELECT code FROM discount_codes ORDER BY id')->fetchAll(PDO::FETCH_COLUMN)),

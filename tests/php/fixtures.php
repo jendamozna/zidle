@@ -45,7 +45,7 @@ function reservation(array $seats, string $status = 'pending', int $run = 1, str
     $amount = seats_value($prices, $seats);
     $pdo->prepare(
         "INSERT INTO reservations (token, run_id, first_name, last_name, email, seats, child_seats, free_seats, seat_count,
-           adult_price, child_price, amount, variable_symbol, status, created_at, expires_at, paid_at, paid_amount)
+           adult_price, child_price, amount, specific_symbol, status, created_at, expires_at, paid_at, paid_amount)
          VALUES (?, ?, 'Test', ?, ?, ?, ?, ?, ?, 300, 150, ?, ?, ?, ?, ?, ?, ?)"
     )->execute([
         bin2hex(random_bytes(16)), $run, $lastName ?: "T{$n}", "test{$n}@example.com", implode(',', $seats),

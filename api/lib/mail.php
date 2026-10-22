@@ -105,7 +105,7 @@ function format_czk(int $amount): string
 
 function format_prague(string $utc): string
 {
-    return (new DateTimeImmutable($utc, new DateTimeZone('UTC')))
+    return new DateTimeImmutable($utc, new DateTimeZone('UTC'))
         ->setTimezone(new DateTimeZone('Europe/Prague'))->format('j. n. Y H:i');
 }
 
@@ -131,11 +131,9 @@ function payment_lines(array $r): array
         ...$lines,
         'Částka: ' . format_czk(amount_due($r)),
         'Účet: ' . config('BANK_ACCOUNT_DISPLAY'), // no IBAN – it is in the QR code on the reservation page
-        'Variabilní symbol: ' . $r['variable_symbol'],
+        'Variabilní symbol: ' . payment_variable_symbol(),
+        'Specifický symbol: ' . $r['specific_symbol'],
     ];
-    if (specific_symbol() !== '') {
-        $lines[] = 'Specifický symbol: ' . specific_symbol();
-    }
     $lines[] = 'Splatnost: ' . format_prague($r['expires_at']);
     return $lines;
 }
@@ -190,8 +188,8 @@ function send_partial_payment_email(array $r, int $received): bool
 {
     $link = reservation_link($r);
     return send_customer_email($r, 'Přijata část platby', array_merge(
-        ['přijali jsme Vaši platbu ' . format_czk($received) . ' (VS ' . $r['variable_symbol'] . '), na celou částku ale chybí '
-            . format_czk(amount_due($r)) . '.', run_line($r), '', 'Doplaťte prosím se stejným variabilním symbolem:'],
+        ['přijali jsme Vaši platbu ' . format_czk($received) . ' (SS ' . $r['specific_symbol'] . '), na celou částku ale chybí '
+            . format_czk(amount_due($r)) . '.', run_line($r), '', 'Doplaťte prosím se stejným variabilním a specifickým symbolem:'],
         payment_lines($r),
         ['', 'Vstupenku pošleme, jakmile dorazí celá částka.'],
         $link ? ['', "QR kód pro doplatek: {$link}"] : []
@@ -203,7 +201,7 @@ function send_payment_refund_email(array $r, int $received, string $reason): boo
 {
     $due = (int) $r['refund_amount'] - (int) $r['refunded_amount'];
     return send_customer_email($r, 'Vrácení platby', [
-        'přijali jsme Vaši platbu ' . format_czk($received) . ' (VS ' . $r['variable_symbol'] . '), ale '
+        'přijali jsme Vaši platbu ' . format_czk($received) . ' (SS ' . $r['specific_symbol'] . '), ale '
             . REFUND_REASONS[$reason] . '.',
         run_line($r),
         '',
@@ -216,7 +214,7 @@ function send_expiry_email(array $r): bool
 {
     $base = rtrim((string) config('PUBLIC_URL'), '/');
     return send_customer_email($r, 'Rezervace zrušena', array_merge(
-        ['platba za Vaši rezervaci (VS ' . $r['variable_symbol'] . ') nedorazila včas, proto byla rezervace zrušena a místa uvolněna:',
+        ['platba za Vaši rezervaci (SS ' . $r['specific_symbol'] . ') nedorazila včas, proto byla rezervace zrušena a místa uvolněna:',
          implode('; ', seat_labels($r['seats'])) . '.',
          run_line($r)],
         (int) $r['refund_amount'] > (int) $r['refunded_amount']

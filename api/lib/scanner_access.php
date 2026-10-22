@@ -1,7 +1,8 @@
 <?php
 // Access to the ticket scanner (scanner.html): accounts with the role Odbavovatel or Správce
 // (admin_users.php) sign in with their e-mail and password – on the scanner's login screen, or
-// in the admin (the scanner then takes over the admin session). All runs.
+// in the admin (the scanner then takes over the admin session). An Odbavovatel checks in only
+// the runs assigned to the account (user_runs, 0..n); a Správce every run.
 // The device keeps a signed cookie (no PHP session, so it survives idle hours and offline use):
 //   "u:<account id>:<expiry>:<hmac>" – the hmac covers the password fingerprint, so a new
 //   password, a disabled account or a removed role locks the device out on its next request.
@@ -49,10 +50,18 @@ function scanner_cookie_for(array $me): string
     return "u:{$me['id']}:{$expiry}:" . scanner_cookie_mac($me['id'], $expiry, $me['pw']);
 }
 
-/** Scanner access of a signed-in user: ['id', 'name' => e-mail (recorded with check-ins and sales), 'roles', 'runIds' => null (all runs)]. */
+/**
+ * Scanner access of a signed-in user: ['id', 'name' => e-mail (recorded with check-ins and sales), 'roles',
+ * 'runIds' => the assigned runs (user_runs, may be none), null for a Správce (every run)].
+ */
 function scanner_access_of(array $me): array
 {
-    return ['id' => $me['id'], 'name' => $me['email'], 'roles' => $me['roles'], 'runIds' => null];
+    return [
+        'id' => $me['id'],
+        'name' => $me['email'],
+        'roles' => $me['roles'],
+        'runIds' => in_array('admin', $me['roles'], true) ? null : user_run_ids($me['id']),
+    ];
 }
 
 /** Current scanner user (cookie of this request), or null. */

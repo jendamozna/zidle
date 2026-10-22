@@ -48,7 +48,8 @@ function onsite_sale_payload(array $r): array
     return [
         'id' => (int) $r['id'],
         'status' => $r['status'],
-        'variableSymbol' => $r['variable_symbol'],
+        'variableSymbol' => payment_variable_symbol(),
+        'specificSymbol' => $r['specific_symbol'],
         'amount' => (int) $r['amount'],
         'seats' => seat_list((string) $r['seats']),
         'tickets' => reservation_seat_items($r),
