@@ -920,7 +920,9 @@ SMTPS, otherwise opportunistic STARTTLS; connect timeout and per-reply limit
 15 s), otherwise PHP `mail()` from `MAIL_FROM` (`mail_sender()`). Sender name *Koncert TZG 2026*;
 `Reply-To` = `CONTACT_EMAIL` when set. Every e-mail ends with *„Kontakt: <e-mail> ·
 <phone>“* (`contact_line()`) when a contact is configured.
-Failures return false and are logged as `[zidle] Mail to … failed: <reason>`;
+Failures return false and are logged as `[zidle] Mail to … failed: <reason>`
+(PHPMailer errors and any other error, e.g. `mail()` disabled by the host, so a
+failed e-mail never turns into a 500; the invitation then shows its link);
 mail is sent synchronously within the request. Texts are plain
 (`send_customer_email()`) except the ticket (HTML + text alternative with one
 QR per seat as inline images `cid:ticket-qr-<n>`, `vstupenky.pdf` and the
@@ -1084,7 +1086,7 @@ removed role or a new password, forged cookie refused); security:
 a seat has one id (leading zeros / trailing new line refused, the same chair
 written differently not bookable), seats per IP per hour and day (refused
 requests and released seats not counted), names cleaned of line breaks and
-invisible characters, the same payment submitted twice recorded once; error log in `LOG_DIR` (monthly file, deny-all `.htaccess`); layout (order, seats per row of the
+invisible characters, the same payment submitted twice recorded once; a failing mail transport returns false; error log in `LOG_DIR` (monthly file, deny-all `.htaccess`); layout (order, seats per row of the
 wings, main sections and balcony, the benches split 5 | 7 and 6 | 5, the
 left reserve rows 5 | 6, 195 + 106 = 301
 seats, reserve rows, a plan per level, last seat of each section valid, one more

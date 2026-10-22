@@ -68,6 +68,10 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
     } catch (MailerException $e) {
         error_log('[zidle] Mail to ' . $to . ' failed: ' . $mail->ErrorInfo);
         return false;
+    } catch (Throwable $e) {
+        // E.g. mail() disabled by the host: the caller must still get false, never a 500.
+        error_log('[zidle] Mail to ' . $to . ' failed: ' . $e);
+        return false;
     }
 }
 
