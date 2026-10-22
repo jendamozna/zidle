@@ -103,7 +103,7 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
                 ['Posíláme novou vstupenku na zbývající místa. Původní vstupenka už neplatí.']
             ));
         } catch (Throwable $e) {
-            error_log('[zidle] ' . $e);
+            app_log((string) $e);
         }
         return;
     }
@@ -117,7 +117,7 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
             ), 'Platba přijata – Vaše vstupenky');
             db()->prepare('UPDATE reservations SET ticket_sent_at = ? WHERE id = ?')->execute([db_time(now_utc()), $r['id']]);
         } catch (Throwable $e) {
-            error_log('[zidle] ' . $e);
+            app_log((string) $e);
         }
         return;
     }

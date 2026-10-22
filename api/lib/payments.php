@@ -175,7 +175,7 @@ function send_ticket_for(int $id, array $intro = [], ?string $subject = null): s
     try {
         $sent = send_ticket_email($r, $intro, $subject);
     } catch (Throwable $e) {
-        error_log('[zidle] ' . $e);
+        app_log((string) $e);
         $sent = false;
     }
     if (!$sent) {

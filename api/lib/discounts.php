@@ -101,7 +101,7 @@ function send_discount_code_email(int $id): bool
     if ($ok) {
         db()->prepare('UPDATE discount_codes SET emailed_at = ? WHERE id = ?')->execute([db_time(now_utc()), $id]);
     } else {
-        error_log("[zidle] Failed to send discount code {$id}");
+        app_log("Failed to send discount code {$id}");
     }
     return $ok;
 }

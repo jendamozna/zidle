@@ -166,7 +166,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
     }
     $ok = deliver_mail($r['email'], $subject, $text, $html, $inline, $attachments);
     if (!$ok) {
-        error_log('[zidle] Failed to send ticket e-mail for reservation ' . $r['id']);
+        app_log('Failed to send ticket e-mail for reservation ' . $r['id']);
     }
     return $ok;
 }
