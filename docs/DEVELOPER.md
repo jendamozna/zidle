@@ -40,7 +40,7 @@ https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV.
 | Reservation page | same app, `/?r=<token>` | customer | mobile-first | React |
 | Scanner | `scanner.html` → `src/scanner/main.jsx` | Odbavovatel, Správce | mobile only | React, `jsqr` |
 | Admin | `api/admin.php` | Správce, Účetní | desktop-first | server-rendered PHP |
-| API | `api/*.php` | apps above | – | PHP 8.1+, PDO MySQL |
+| API | `api/*.php` | apps above | – | PHP 8.4+, PDO MySQL |
 | Jobs | `api/cron.php` (CLI) | cron, every 10 min | – | PHP |
 | Database | `db/schema.sql` | – | – | MariaDB 10.5+ |
 
@@ -115,6 +115,13 @@ mariadb -e "CREATE DATABASE zidle CHARACTER SET utf8mb4"
 mariadb -e "CREATE USER 'zidle'@'localhost' IDENTIFIED BY '…'; GRANT ALL ON zidle.* TO 'zidle'@'localhost'"
 mariadb zidle < db/schema.sql
 (cd api && composer install --no-dev)   # chillerlan/php-qrcode (needs GD), phpmailer/phpmailer, altcha-org/altcha, dompdf/dompdf
+```
+
+`api/composer.json` requires PHP ≥ 8.4 with `ext-gd`, `ext-pdo_mysql` and
+`ext-mbstring` (`config.platform.php` 8.4.0, so the lock resolves for 8.4);
+`intl` is optional (`Transliterator` for ASCII names, with a fallback).
+
+```bash
 cp api/config.local.example.php api/config.local.php   # fill in TICKET_SECRET, DEPLOY_TOKEN, …
 
 npm install
@@ -999,7 +1006,7 @@ ticket format kept identical, DB changes only in `db/schema.sql`, Czech UI.
 ## 21. Tests and CI
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`
-(older runs of the same ref are cancelled). PHP 8.3, Node 22, MariaDB 10.11
+(older runs of the same ref are cancelled). PHP 8.4, Node 22, MariaDB 10.11
 service (`root`/`root`, database `zidle_test`); the php job sets `DEPLOY_TOKEN` for the deploy test and `BANK_IBAN` for the on-site sale test.
 
 | Job | Steps |
@@ -1008,7 +1015,7 @@ service (`root`/`root`, database `zidle_test`); the php job sets `DEPLOY_TOKEN` 
 | **frontend** | `npm ci`, `npm audit --omit=dev --audit-level=high`, `npm run lint`, `npm run build`, `npm run test:consistency` |
 | **e2e** (after both) | `composer install --no-dev`, `npm ci`, Playwright Chromium, `npm run test:e2e`; on failure the HTML report and traces are uploaded as artifact `playwright-report` (7 days) |
 
-**PHPStan** (`phpstan.neon`): level 8 over `api/` (without `vendor/`,
+**PHPStan** (`phpstan.neon`): level 8, `phpVersion` 8.4, over `api/` (without `vendor/`,
 `config.local.php`) and `tests/php/`; `missingType.iterableValue` is ignored
 (database rows and payloads are plain arrays). `db_query()` wraps
 `db()->query()` for fixed SQL so the result is typed `PDOStatement`.

@@ -1,6 +1,7 @@
 # Static analysis of the PHP backend: vendor/bin/phpstan analyse (run from api/ with -c ../phpstan.neon)
 parameters:
     level: 8
+    phpVersion: 80400
     paths:
         - api
         - tests/php

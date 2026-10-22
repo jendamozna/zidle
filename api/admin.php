@@ -518,7 +518,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     $totals = db_query("SELECT status, COUNT(*) n, SUM(seat_count) seats, SUM(amount) amount FROM reservations GROUP BY status")
         ->fetchAll(PDO::FETCH_UNIQUE);
     $prague = new DateTimeZone('Europe/Prague');
-    $fmt = static fn ($t) => $t ? (new DateTimeImmutable($t, new DateTimeZone('UTC')))->setTimezone($prague)->format('j. n. Y H:i') : '';
+    $fmt = static fn ($t) => $t ? new DateTimeImmutable($t, new DateTimeZone('UTC'))->setTimezone($prague)->format('j. n. Y H:i') : '';
     $kc = static fn ($n) => number_format((int) $n, 0, ',', ' ') . ' Kč';
 ?>
   <header>

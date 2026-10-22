@@ -92,7 +92,7 @@ function qr_png(string $text, int $scale = 8): string
         'scale' => $scale,
         'quietzoneSize' => 3,
     ]);
-    return (new QRCode($options))->render($text);
+    return new QRCode($options)->render($text);
 }
 
 /**

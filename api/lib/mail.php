@@ -105,7 +105,7 @@ function format_czk(int $amount): string
 
 function format_prague(string $utc): string
 {
-    return (new DateTimeImmutable($utc, new DateTimeZone('UTC')))
+    return new DateTimeImmutable($utc, new DateTimeZone('UTC'))
         ->setTimezone(new DateTimeZone('Europe/Prague'))->format('j. n. Y H:i');
 }
 

@@ -73,7 +73,7 @@ function iso_time(?string $dbTime): ?string
     if ($dbTime === null) {
         return null;
     }
-    return (new DateTimeImmutable($dbTime, new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z');
+    return new DateTimeImmutable($dbTime, new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
 }
 
 // ---------------------------------------------------------------- HTTP
@@ -196,7 +196,7 @@ function spd_string(array $r): string
         'CC:CZK',
         'X-VS:' . payment_variable_symbol(),
         'X-SS:' . $r['specific_symbol'],
-        'DT:' . (new DateTimeImmutable($r['expires_at'], new DateTimeZone('UTC')))
+        'DT:' . new DateTimeImmutable($r['expires_at'], new DateTimeZone('UTC'))
             ->setTimezone(new DateTimeZone('Europe/Prague'))->format('Ymd'),
         'MSG:' . $clean(config('PAYMENT_MESSAGE') . ' ' . $r['last_name'], 60),
     ];
