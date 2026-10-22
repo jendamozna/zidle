@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+setup_error_log();
+
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/pricing.php';
 require_once __DIR__ . '/ticket.php';
@@ -18,6 +20,44 @@ require_once __DIR__ . '/offline.php';
 require_once __DIR__ . '/admin_users.php';
 require_once __DIR__ . '/scanner_access.php';
 require_once __DIR__ . '/altcha.php';
+
+/**
+ * Sends PHP errors, warnings and uncaught exceptions to LOG_DIR/php-error-YYYY-MM.log
+ * (UTC month) and never to the visitor. The folder is created with a deny-all .htaccess.
+ */
+function setup_error_log(): void
+{
+    ini_set('log_errors', '1');
+    if (PHP_SAPI !== 'cli') {
+        ini_set('display_errors', '0');
+    }
+    $dir = rtrim((string) config('LOG_DIR'), '/');
+    if ($dir !== '') {
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0750, true);
+        }
+        if (is_dir($dir) && !is_file($dir . '/.htaccess')) {
+            @file_put_contents($dir . '/.htaccess', "Require all denied\n");
+        }
+        if (is_dir($dir) && is_writable($dir)) {
+            ini_set('error_log', $dir . '/php-error-' . gmdate('Y-m') . '.log');
+        }
+    }
+    set_exception_handler(static function (Throwable $e): void {
+        $request = PHP_SAPI === 'cli' ? 'CLI ' . implode(' ', (array) ($_SERVER['argv'] ?? []))
+            : ($_SERVER['REQUEST_METHOD'] ?? '') . ' ' . ($_SERVER['REQUEST_URI'] ?? '');
+        error_log('[zidle] Uncaught on ' . $request . ': ' . $e);
+        if (PHP_SAPI === 'cli') {
+            fwrite(STDERR, $e . "\n");
+            exit(255);
+        }
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: text/plain; charset=utf-8');
+        }
+        echo 'Chyba serveru. Zkuste to prosím znovu, případně kontaktujte pořadatele.';
+    });
+}
 
 function config(string $key): mixed
 {

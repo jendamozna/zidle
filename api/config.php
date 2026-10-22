@@ -70,6 +70,10 @@ return (static function (): array {
         'CONTACT_PHONE' => '',
         'PUBLIC_URL' => '',              // e.g. https://example.com/zidle/ – used for links in e-mails
 
+        // Folder for the PHP error log (php-error-YYYY-MM.log). Best outside the web root;
+        // the default api/logs/ is closed to the web by .htaccess. '' = the server's own log.
+        'LOG_DIR' => __DIR__ . '/logs',
+
         // Allowed CORS origin when the frontend runs on another domain ('' = same origin only)
         'CORS_ORIGIN' => '',
     ];

@@ -5,3 +5,4 @@ api/vendor
 test-results
 playwright-report
 tests/e2e/.seed.json
+api/logs/*.log

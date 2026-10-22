@@ -28,4 +28,7 @@ return [
     'CONTACT_EMAIL' => 'farnost@example.com',
     'CONTACT_PHONE' => '+420 123 456 789',
     'PUBLIC_URL' => 'https://example.com/zidle/',
+
+    // PHP error log php-error-YYYY-MM.log; best a folder outside the web root (default api/logs/, closed by .htaccess)
+    // 'LOG_DIR' => '/home/user/logs/zidle',
 ];

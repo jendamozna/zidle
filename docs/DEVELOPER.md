@@ -61,7 +61,8 @@ api/
   organizer.php        scanner API (access, verify, offline, on-site sale)
   cron.php             scheduled jobs (CLI only); cron-expire.php = alias
   config.php           defaults (+ config.local.php / env overrides)
-  lib/bootstrap.php    config(), db(), db_query(), JSON helpers (json_response/json_error end the request), expire_reservations(), QR payment, reservation_payload()
+  logs/                PHP error log php-error-YYYY-MM.log (default LOG_DIR; .htaccess denies all, *.log git-ignored)
+  lib/bootstrap.php    setup_error_log(), config(), db(), db_query(), JSON helpers (json_response/json_error end the request), expire_reservations(), QR payment, reservation_payload()
   lib/layout.php       LEVELS, PLAN, SECTIONS (the only layout definition), layout_public(), total_capacity(),
                        section_rows(), section_capacity(), section_seat_ids(), default_reserve_seats(), section_name(),
                        is_valid_seat_id(), compare_seat_ids()
@@ -133,7 +134,7 @@ npm run build                # dist/index.html, dist/scanner.html
 Deployment: upload `dist/` and `api/` (including `api/vendor/`) side by side,
 so the apps reach the API at `./api/`. HTTPS is required (camera access).
 `.htaccess` files deny `config*.php`, `cron*.php`, `composer.*`, `api/lib/`,
-`api/vendor/`. Behind a proxy/CDN the real client IP must reach
+`api/vendor/`, `api/logs/`. Behind a proxy/CDN the real client IP must reach
 `REMOTE_ADDR` (e.g. Apache `mod_remoteip`), otherwise rate limits are shared.
 
 First Správce (once, while no account has the Správce role; §12):
@@ -192,6 +193,7 @@ name override them (local file wins).
 | `PAYMENT_RECIPIENT` | `Farnost` | SPD `RN` |
 | `PAYMENT_MESSAGE` | `Koncert TZG 2026` | SPD `MSG` prefix (+ last name) |
 | `PAYMENT_VARIABLE_SYMBOL` | `3211` | variable symbol (VS) of every payment (SPD `X-VS`, e-mails, payment page), digits only, max 10; reservations differ by their own specific symbol (SS) |
+| `LOG_DIR` | `api/logs` | folder of the PHP error log (see below); best outside the web root; `''` = the server's own log |
 | `DEPLOY_TOKEN` | `''` | token for `POST api/deploy.php` that creates the first Správce (§12); ≥ 32 characters, `''` = disabled; may be removed afterwards |
 | `SCAN_WINDOW_BEFORE_MINUTES` / `SCAN_WINDOW_AFTER_MINUTES` | 60 / 60 | check-in window around the run start |
 | `TICKET_SECRET` | **required** | ≥ 32 chars without spaces (`ticket_secret()` throws otherwise, so the placeholder can't be left in); HMAC key for tickets, form tokens, master cookie; never change after tickets are sent |
@@ -207,6 +209,19 @@ name override them (local file wins).
 | `CONTACT_PHONE` | `''` | organizers' phone: website footer and e-mails |
 | `PUBLIC_URL` | `''` | base URL for links in e-mails, invitations and the admin's *Odbavení* link (else derived from the request) |
 | `CORS_ORIGIN` | `''` | allowed origin when the apps run elsewhere |
+
+**Error log.** `setup_error_log()` (first thing `lib/bootstrap.php` runs, so
+every entry point and `cron.php`) sets `log_errors`, turns `display_errors` off
+outside the CLI and points `error_log` to `LOG_DIR/php-error-YYYY-MM.log` (UTC
+month, one file per month, never rotated or deleted by the app). The folder is
+created when missing, with a `.htaccess` `Require all denied`; when it is not
+writable PHP keeps the server's log. Uncaught exceptions are logged as
+`[zidle] Uncaught on <METHOD URI>: <exception with stack trace>` (CLI: the
+command line, also printed to stderr, exit code 255) and the visitor gets a
+plain-text 500 *„Chyba serveru. Zkuste to prosím znovu, případně kontaktujte
+pořadatele.“*; JSON endpoints keep their own 500 from `run_api()`. Warnings,
+notices and the app's own `[zidle] …` lines go to the same file. Nginx ignores
+`.htaccess`: there set `LOG_DIR` outside the web root or deny `/api/logs/`.
 
 ## 5. Domain model
 
@@ -1069,7 +1084,7 @@ removed role or a new password, forged cookie refused); security:
 a seat has one id (leading zeros / trailing new line refused, the same chair
 written differently not bookable), seats per IP per hour and day (refused
 requests and released seats not counted), names cleaned of line breaks and
-invisible characters, the same payment submitted twice recorded once; layout (order, seats per row of the
+invisible characters, the same payment submitted twice recorded once; error log in `LOG_DIR` (monthly file, deny-all `.htaccess`); layout (order, seats per row of the
 wings, main sections and balcony, the benches split 5 | 7 and 6 | 5, the
 left reserve rows 5 | 6, 195 + 106 = 301
 seats, reserve rows, a plan per level, last seat of each section valid, one more
