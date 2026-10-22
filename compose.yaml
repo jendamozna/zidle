@@ -1,0 +1,86 @@
+# Local development only: docker compose up -d, then open http://localhost:5180 (Vite).
+# Host ports can be changed with WEB_PORT, APP_PORT, DB_PORT, ADMINER_PORT, MAILPIT_PORT.
+services:
+  web:
+    image: node:22
+    working_dir: /app
+    depends_on:
+      - app
+    ports:
+      - "127.0.0.1:${WEB_PORT:-5180}:${WEB_PORT:-5180}"
+    volumes:
+      - .:/app
+      # Linux node_modules, kept apart from the host's
+      - node-modules:/app/node_modules
+    environment:
+      PHP_SERVER: http://app
+    command: sh -c "npm ci && exec npx vite --host 0.0.0.0 --port ${WEB_PORT:-5180} --strictPort"
+
+  app:
+    build: docker/php
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${APP_PORT:-8100}:80"
+    volumes:
+      - .:/var/www/html
+      - ./docker/config.local.php:/var/www/html/api/config.local.php:ro
+    environment:
+      DB_HOST: db
+      DB_NAME: zidle
+      DB_USER: zidle
+      DB_PASS: zidle
+      BANK_IBAN: CZ6508000000192000145399
+      BANK_ACCOUNT_DISPLAY: 19-2000145399/0800
+      # Dev-only secrets, never use them in production
+      TICKET_SECRET: dev-ticket-secret-0123456789-abcdefghijklmnopqrstuv
+      DEPLOY_TOKEN: dev-deploy-token-0123456789-abcdefghijklmnopqrstuv
+      MAIL_ENABLED: "1"
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_AUTH: "0"
+      SMTP_SENDER: rezervace@example.com
+      CONTACT_EMAIL: farnost@example.com
+      CONTACT_PHONE: +420 123 456 789
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:5180/}
+    command: sh -c "[ -d api/vendor ] || composer install -d api; exec apache2-foreground"
+
+  db:
+    image: mariadb:10.11
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_czech_ci
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: zidle
+      MARIADB_USER: zidle
+      MARIADB_PASSWORD: zidle
+      TZ: UTC
+    ports:
+      - "127.0.0.1:${DB_PORT:-3307}:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+      - ./docker/db/01-test-db.sql:/docker-entrypoint-initdb.d/01-test-db.sql:ro
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  adminer:
+    image: adminer
+    depends_on:
+      - db
+    ports:
+      - "127.0.0.1:${ADMINER_PORT:-8180}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8125}:8025"
+
+volumes:
+  db-data:
+  node-modules:

@@ -2,15 +2,21 @@
    added with min-width media queries. */
 
 :root {
-  --bg: #f5f1ea;
-  --surface: #fffdf9;
-  --surface-2: #efe9df;
-  --wall: #d9cfbf;
-  --ink: #2b2620;
-  --ink-2: #6b6256;
-  --ink-3: #8e8577;
-  --accent: #8a5a2b;
-  --accent-ink: #fffaf2;
+  /* Palette from tesinzpivagospel.cz, inverted to a light theme. */
+  --bg: #fbf6f1;
+  --surface: #ffffff;
+  --surface-2: #f3ebf4;
+  --wall: #e2d6ea;
+  --ink: #140a24;
+  --ink-2: #5a4f6b;
+  --ink-3: #8a8099;
+  --accent: #c42aae;
+  --accent-dark: #a8208f;
+  --accent-ink: #ffffff;
+  --magenta: #e03cc8;
+  --violet: #6b2cf5;
+  --violet-dark: #5420c9;
+  --plum: #8a1f78;
 
   --occ-low-bg: #dcefd9;
   --occ-low-ink: #1f5a2c;
@@ -25,19 +31,21 @@
   --seat-free: #d8f0d9;
   --seat-free-edge: #a4d4a8;
   --seat-free-ink: #24572f;
-  --seat-mine: #cf3f34;
+  --seat-mine: var(--violet);
   --seat-mine-ink: #ffffff;
-  --seat-taken: #efb3aa;
-  --seat-taken-ink: #7a2a20;
+  --seat-taken: #f6d6ef;
+  --seat-taken-edge: #e7a9da;
+  --seat-taken-ink: var(--plum);
 
   --radius: 18px;
   --radius-sm: 10px;
-  --shadow: 0 1px 2px rgba(60, 45, 25, 0.06), 0 6px 20px rgba(60, 45, 25, 0.07);
-  --shadow-lift: 0 2px 4px rgba(60, 45, 25, 0.1), 0 10px 24px rgba(60, 45, 25, 0.14);
+  --shadow: 0 1px 2px rgba(20, 10, 36, 0.05), 0 6px 20px rgba(20, 10, 36, 0.07);
+  --shadow-lift:
+    0 2px 4px rgba(20, 10, 36, 0.08), 0 10px 24px rgba(20, 10, 36, 0.13);
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 
-  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-display: 'Fraunces', Georgia, serif;
+  --font: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Bricolage Grotesque", system-ui, sans-serif;
 }
 
 * {
@@ -80,7 +88,11 @@ h2 {
   padding: 0.7rem 1.4rem;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.15s var(--ease), box-shadow 0.2s var(--ease), background 0.2s, opacity 0.2s;
+  transition:
+    transform 0.15s var(--ease),
+    box-shadow 0.2s var(--ease),
+    background 0.2s,
+    opacity 0.2s;
 }
 
 .btn:focus-visible,
@@ -88,19 +100,19 @@ h2 {
 .seat:focus-visible,
 .seat-chip:focus-visible,
 .link:focus-visible {
-  outline: 3px solid #b07a3f;
+  outline: 3px solid var(--violet);
   outline-offset: 2px;
 }
 
 .btn-primary {
   background: var(--accent);
   color: var(--accent-ink);
-  box-shadow: 0 4px 14px rgba(138, 90, 43, 0.28);
+  box-shadow: 0 8px 28px rgba(224, 60, 200, 0.35);
 }
 
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  background: #7a4e24;
+  background: var(--accent-dark);
 }
 
 .btn-primary:disabled {
@@ -146,9 +158,9 @@ h2 {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: rgba(245, 241, 234, 0.88);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(217, 207, 191, 0.6);
+  background: rgba(251, 246, 241, 0.85);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(226, 214, 234, 0.7);
 }
 
 .topbar-inner {
@@ -164,13 +176,13 @@ h2 {
 
 .brand {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 800;
   font-size: 1.5rem;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.03em;
 }
 
 .brand span {
-  color: var(--accent);
+  color: var(--magenta);
 }
 
 .summary {
@@ -298,7 +310,9 @@ h2 {
   border-radius: 1.6cqw;
   background: var(--occ-low-bg);
   cursor: pointer;
-  transition: box-shadow 0.2s var(--ease), border-color 0.2s;
+  transition:
+    box-shadow 0.2s var(--ease),
+    border-color 0.2s;
 }
 
 .occ-low .plan-hit {
@@ -581,7 +595,10 @@ h2 {
   font-weight: 600;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  transition: box-shadow 0.15s var(--ease), background 0.2s, border-color 0.2s;
+  transition:
+    box-shadow 0.15s var(--ease),
+    background 0.2s,
+    border-color 0.2s;
 }
 
 .seat-available {
@@ -592,13 +609,13 @@ h2 {
 
 .seat-selected {
   background: var(--seat-mine);
-  border-color: #a92f26;
+  border-color: var(--violet-dark);
   color: var(--seat-mine-ink);
 }
 
 .seat-taken {
   background: var(--seat-taken);
-  border-color: #e39a90;
+  border-color: var(--seat-taken-edge);
   color: var(--seat-taken-ink);
   cursor: not-allowed;
 }
@@ -681,7 +698,7 @@ h2 {
 
 .panel-group.is-current {
   border-color: var(--wall);
-  background: #f9f3e9;
+  background: #faf4fb;
 }
 
 .panel-group-head {
@@ -710,7 +727,9 @@ h2 {
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s, transform 0.15s var(--ease);
+  transition:
+    background 0.2s,
+    transform 0.15s var(--ease);
 }
 
 .seat-chip span {
@@ -720,7 +739,7 @@ h2 {
 }
 
 .seat-chip:hover {
-  background: #b0332a;
+  background: var(--violet-dark);
   transform: translateY(-1px);
 }
 
@@ -759,7 +778,7 @@ h2 {
   max-width: calc(100% - 32px);
   padding: 0.8rem 1.2rem;
   border-radius: 999px;
-  background: #2f5d3a;
+  background: var(--ink);
   color: #fff;
   font-weight: 600;
   font-size: 0.9rem;
@@ -767,7 +786,9 @@ h2 {
   transform: translate(-50%, 20px);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.25s, transform 0.25s var(--ease);
+  transition:
+    opacity 0.25s,
+    transform 0.25s var(--ease);
 }
 
 .toast.is-visible {
@@ -795,7 +816,7 @@ h2 {
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgba(43, 38, 32, 0.38);
+  background: rgba(20, 10, 36, 0.4);
   backdrop-filter: blur(3px);
   animation: fade-in 0.2s ease;
 }
@@ -813,7 +834,7 @@ h2 {
   background: var(--surface);
   border-radius: 24px;
   padding: 1.5rem;
-  box-shadow: 0 24px 60px rgba(43, 38, 32, 0.25);
+  box-shadow: 0 24px 60px rgba(20, 10, 36, 0.25);
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -904,14 +925,16 @@ h2 {
   border-radius: var(--radius-sm);
   border: 1.5px solid var(--wall);
   background: #fff;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
   min-width: 0;
 }
 
 .field input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(138, 90, 43, 0.18);
+  box-shadow: 0 0 0 3px rgba(196, 42, 174, 0.18);
 }
 
 .field.has-error input {
@@ -1031,8 +1054,6 @@ h2 {
   background: transparent;
 }
 
-
-
 /* ---------- Payment ---------- */
 
 .payment {
@@ -1108,7 +1129,7 @@ h2 {
 }
 
 .pay-row + .pay-row {
-  border-top: 1px solid rgba(217, 207, 191, 0.7);
+  border-top: 1px solid rgba(226, 214, 234, 0.8);
 }
 
 .pay-row dt {
@@ -1138,7 +1159,9 @@ h2 {
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s;
 }
 
 .copy-btn:hover {
@@ -1406,7 +1429,10 @@ h2 {
   box-shadow: var(--shadow);
   text-align: left;
   cursor: pointer;
-  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), border-color 0.2s;
+  transition:
+    transform 0.2s var(--ease),
+    box-shadow 0.2s var(--ease),
+    border-color 0.2s;
 }
 
 .run-card:hover:not(:disabled) {
@@ -1416,7 +1442,7 @@ h2 {
 }
 
 .run-card:focus-visible {
-  outline: 3px solid #b07a3f;
+  outline: 3px solid var(--violet);
   outline-offset: 2px;
 }
 

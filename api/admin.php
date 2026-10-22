@@ -732,17 +732,6 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     všechny termíny. Kdo má víc rolí, vidí všechny jejich možnosti v menu. Zapomenuté heslo si každý obnoví
     sám na přihlašovací stránce.</p>
 
-  <?php if ($newLink): ?>
-    <div class="card invite-new">
-      <div>
-        <h2>Odkaz pro <?= $h($newLink['email']) ?></h2>
-        <p class="hint">Zobrazí se jen teď. Pokud e-mail nedorazí, pošlete odkaz sami.</p>
-        <input class="invite-link" readonly value="<?= $h($newLink['link']) ?>" onclick="this.select()">
-        <button type="button" class="secondary" onclick="navigator.clipboard.writeText(this.previousElementSibling.value).then(() => this.textContent = 'Zkopírováno')">Kopírovat odkaz</button>
-      </div>
-    </div>
-  <?php endif ?>
-
   <form class="card settings" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <h2>Pozvat uživatele</h2>
