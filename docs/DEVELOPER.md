@@ -1013,7 +1013,7 @@ service (`root`/`root`, database `zidle_test`); the php job sets `DEPLOY_TOKEN` 
 | --- | --- |
 | **php** | `composer install` (with dev: PHPStan), `composer audit`, `php -l` on `api/` and `tests/` (without vendor), PHPStan, `db/schema.sql` applied to an empty database, `php tests/php/run.php` |
 | **frontend** | `npm ci`, `npm audit --omit=dev --audit-level=high`, `npm run lint`, `npm run build`, `npm run test:consistency` |
-| **e2e** (after both) | `composer install --no-dev`, `npm ci`, Playwright Chromium, `npm run test:e2e`; on failure the HTML report and traces are uploaded as artifact `playwright-report` (7 days) |
+| **e2e** (after both, on `ubuntu-24.04`: Playwright 1.56 has no Chromium for 26.04) | `composer install --no-dev`, `npm ci`, Playwright Chromium, `npm run test:e2e`; on failure the HTML report and traces are uploaded as artifact `playwright-report` (7 days) |
 
 **PHPStan** (`phpstan.neon`): level 8, `phpVersion` 8.4, over `api/` (without `vendor/`,
 `config.local.php`) and `tests/php/`; `missingType.iterableValue` is ignored
