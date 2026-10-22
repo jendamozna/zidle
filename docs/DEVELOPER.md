@@ -62,7 +62,7 @@ api/
   cron.php             scheduled jobs (CLI only); cron-expire.php = alias
   config.php           defaults (+ config.local.php / env overrides)
   logs/                PHP error log php-error-YYYY-MM.log (default LOG_DIR; .htaccess denies all, *.log git-ignored)
-  lib/bootstrap.php    setup_error_log(), config(), db(), db_query(), JSON helpers (json_response/json_error end the request), expire_reservations(), QR payment, reservation_payload()
+  lib/bootstrap.php    setup_error_log(), app_log(), log_file(), config(), db(), db_query(), JSON helpers (json_response/json_error end the request), expire_reservations(), QR payment, reservation_payload()
   lib/layout.php       LEVELS, PLAN, SECTIONS (the only layout definition), layout_public(), total_capacity(),
                        section_rows(), section_capacity(), section_seat_ids(), default_reserve_seats(), section_name(),
                        is_valid_seat_id(), compare_seat_ids()
@@ -193,6 +193,7 @@ name override them (local file wins).
 | `PAYMENT_RECIPIENT` | `Farnost` | SPD `RN` |
 | `PAYMENT_MESSAGE` | `Koncert TZG 2026` | SPD `MSG` prefix (+ last name) |
 | `PAYMENT_VARIABLE_SYMBOL` | `3211` | variable symbol (VS) of every payment (SPD `X-VS`, e-mails, payment page), digits only, max 10; reservations differ by their own specific symbol (SS) |
+| `DEBUG` | `false` | the 500 page also shows the uncaught exception and the log file; only briefly for diagnosis |
 | `LOG_DIR` | `api/logs` | folder of the PHP error log (see below); best outside the web root; `''` = the server's own log |
 | `DEPLOY_TOKEN` | `''` | token for `POST api/deploy.php` that creates the first Správce (§12); ≥ 32 characters, `''` = disabled; may be removed afterwards |
 | `SCAN_WINDOW_BEFORE_MINUTES` / `SCAN_WINDOW_AFTER_MINUTES` | 60 / 60 | check-in window around the run start |
@@ -212,15 +213,24 @@ name override them (local file wins).
 
 **Error log.** `setup_error_log()` (first thing `lib/bootstrap.php` runs, so
 every entry point and `cron.php`) sets `log_errors`, turns `display_errors` off
-outside the CLI and points `error_log` to `LOG_DIR/php-error-YYYY-MM.log` (UTC
-month, one file per month, never rotated or deleted by the app). The folder is
-created when missing, with a `.htaccess` `Require all denied`; when it is not
-writable PHP keeps the server's log. Uncaught exceptions are logged as
-`[zidle] Uncaught on <METHOD URI>: <exception with stack trace>` (CLI: the
-command line, also printed to stderr, exit code 255) and the visitor gets a
-plain-text 500 *„Chyba serveru. Zkuste to prosím znovu, případně kontaktujte
-pořadatele.“*; JSON endpoints keep their own 500 from `run_api()`. Warnings,
-notices and the app's own `[zidle] …` lines go to the same file. Nginx ignores
+outside the CLI and installs its own handlers, so the log does not depend on
+PHP's `error_log` setting (hosts often fix it with `php_admin_value`). The app
+writes the file itself: `app_log()` appends `[YYYY-MM-DD HH:MM:SS UTC] [zidle]
+<message>` to `log_file()` = `LOG_DIR/php-error-YYYY-MM.log` (UTC month, one
+file per month, never rotated or deleted by the app). The folder is created
+when missing, with a `.htaccess` `Require all denied`; when `LOG_DIR` is `''`
+or not writable, lines go to PHP's `error_log()` (the server's log). Logged:
+warnings, notices and deprecations as `PHP Warning: <message> in
+<file>:<line> (<request>)` (the CLI still prints them too), fatal errors at
+shutdown as `PHP Fatal error: …`, uncaught exceptions as `[zidle] Uncaught on
+<request>: <exception with stack trace>`, errors caught by `run_api()` as
+`[zidle] Error on <request>: …`, and the app's own lines (failed e-mails,
+rejected bots, …). `<request>` is `<METHOD URI>`, or `CLI <command line>`.
+An uncaught exception in the CLI is also printed to stderr (exit code 255);
+on the web the visitor gets a plain-text 500 *„Chyba serveru. Zkuste to
+prosím znovu, případně kontaktujte pořadatele.“* (with `DEBUG` on followed by
+`[DEBUG] <exception>` and `Log: <file>` or *log serveru (LOG_DIR nelze
+použít)*); JSON endpoints keep their own 500 from `run_api()`. Nginx ignores
 `.htaccess`: there set `LOG_DIR` outside the web root or deny `/api/logs/`.
 
 ## 5. Domain model
@@ -736,7 +746,9 @@ have several; `user_can(me, what)`):
   E-mail *Pozvánka* (§15) with `admin_invite_link()` =
   `app_base_url()/api/admin.php?pozvanka=<token>`; the link is also shown once
   in the tab (*Kopírovat odkaz*). Flash *„Pozvánka pro X vytvořena. E-mail
-  odeslán.“* / *„… E-mail se neodeslal – předejte odkaz sami.“*
+  odeslán.“* / *„… E-mail se neodeslal (důvod je v logu) – předejte odkaz
+  sami.“* / with `MAIL_ENABLED` off *„… E-maily jsou vypnuté (MAIL_ENABLED) –
+  předejte odkaz sami.“*
 - **Accepting** (`admin.php?pozvanka=<token>`, also when signed in): valid
   link (`admin_invited_user()`: hash, not expired, account not disabled) →
   *„Dobrý den, vytvořte si heslo – tím vznikne Váš účet (role: …).
@@ -1086,7 +1098,7 @@ removed role or a new password, forged cookie refused); security:
 a seat has one id (leading zeros / trailing new line refused, the same chair
 written differently not bookable), seats per IP per hour and day (refused
 requests and released seats not counted), names cleaned of line breaks and
-invisible characters, the same payment submitted twice recorded once; a failing mail transport returns false; error log in `LOG_DIR` (monthly file, deny-all `.htaccess`); layout (order, seats per row of the
+invisible characters, the same payment submitted twice recorded once; a failing mail transport returns false; error log written by the app to `LOG_DIR` even when PHP's `error_log` points elsewhere (app line, warning, uncaught exception; monthly file, deny-all `.htaccess`); layout (order, seats per row of the
 wings, main sections and balcony, the benches split 5 | 7 and 6 | 5, the
 left reserve rows 5 | 6, 195 + 106 = 301
 seats, reserve rows, a plan per level, last seat of each section valid, one more

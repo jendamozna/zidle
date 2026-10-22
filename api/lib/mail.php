@@ -66,11 +66,11 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
         }
         return $mail->send();
     } catch (MailerException $e) {
-        error_log('[zidle] Mail to ' . $to . ' failed: ' . $mail->ErrorInfo);
+        app_log('Mail to ' . $to . ' failed: ' . $mail->ErrorInfo);
         return false;
     } catch (Throwable $e) {
         // E.g. mail() disabled by the host: the caller must still get false, never a 500.
-        error_log('[zidle] Mail to ' . $to . ' failed: ' . $e);
+        app_log('Mail to ' . $to . ' failed: ' . $e);
         return false;
     }
 }
@@ -156,7 +156,7 @@ function send_customer_email(array $r, string $subject, array $lines): bool
     ));
     $ok = deliver_mail($r['email'], mail_subject($subject), $body);
     if (!$ok) {
-        error_log("[zidle] Failed to send '{$subject}' for reservation {$r['id']}");
+        app_log("Failed to send '{$subject}' for reservation {$r['id']}");
     }
     return $ok;
 }

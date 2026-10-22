@@ -22,8 +22,10 @@ require_once __DIR__ . '/scanner_access.php';
 require_once __DIR__ . '/altcha.php';
 
 /**
- * Sends PHP errors, warnings and uncaught exceptions to LOG_DIR/php-error-YYYY-MM.log
- * (UTC month) and never to the visitor. The folder is created with a deny-all .htaccess.
+ * Writes PHP errors, warnings, fatal errors, uncaught exceptions and app_log() lines
+ * to LOG_DIR/php-error-YYYY-MM.log (UTC month) itself, so it works also where the host
+ * fixes PHP's error_log setting; never shows them to the visitor. The folder is created
+ * with a deny-all .htaccess.
  */
 function setup_error_log(): void
 {
@@ -31,22 +33,27 @@ function setup_error_log(): void
     if (PHP_SAPI !== 'cli') {
         ini_set('display_errors', '0');
     }
-    $dir = rtrim((string) config('LOG_DIR'), '/');
-    if ($dir !== '') {
-        if (!is_dir($dir)) {
-            @mkdir($dir, 0750, true);
+    set_error_handler(static function (int $level, string $message, string $file, int $line): bool {
+        if (!(error_reporting() & $level)) {
+            return false;
         }
-        if (is_dir($dir) && !is_file($dir . '/.htaccess')) {
-            @file_put_contents($dir . '/.htaccess', "Require all denied\n");
+        $kind = match ($level) {
+            E_WARNING, E_USER_WARNING => 'Warning',
+            E_NOTICE, E_USER_NOTICE => 'Notice',
+            E_DEPRECATED, E_USER_DEPRECATED => 'Deprecated',
+            default => 'Error',
+        };
+        app_log("PHP {$kind}: {$message} in {$file}:{$line} (" . log_request() . ')', false);
+        return PHP_SAPI !== 'cli'; // the CLI (cron, tests) still prints it
+    });
+    register_shutdown_function(static function (): void {
+        $error = error_get_last();
+        if ($error !== null && ($error['type'] & (E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR)) !== 0) {
+            app_log("PHP Fatal error: {$error['message']} in {$error['file']}:{$error['line']} (" . log_request() . ')', false);
         }
-        if (is_dir($dir) && is_writable($dir)) {
-            ini_set('error_log', $dir . '/php-error-' . gmdate('Y-m') . '.log');
-        }
-    }
+    });
     set_exception_handler(static function (Throwable $e): void {
-        $request = PHP_SAPI === 'cli' ? 'CLI ' . implode(' ', (array) ($_SERVER['argv'] ?? []))
-            : ($_SERVER['REQUEST_METHOD'] ?? '') . ' ' . ($_SERVER['REQUEST_URI'] ?? '');
-        error_log('[zidle] Uncaught on ' . $request . ': ' . $e);
+        app_log('Uncaught on ' . log_request() . ': ' . $e);
         if (PHP_SAPI === 'cli') {
             fwrite(STDERR, $e . "\n");
             exit(255);
@@ -56,7 +63,47 @@ function setup_error_log(): void
             header('Content-Type: text/plain; charset=utf-8');
         }
         echo 'Chyba serveru. Zkuste to prosím znovu, případně kontaktujte pořadatele.';
+        if (filter_var(config('DEBUG'), FILTER_VALIDATE_BOOLEAN)) {
+            $file = log_file();
+            echo "\n\n[DEBUG] " . $e . "\n\nLog: " . ($file ?? 'log serveru (LOG_DIR nelze použít)');
+        }
     });
+}
+
+/** The current log file, or null when LOG_DIR is '' or cannot be written (then PHP's own log is used). */
+function log_file(): ?string
+{
+    static $dir = false;
+    if ($dir === false) {
+        $dir = rtrim((string) config('LOG_DIR'), '/');
+        if ($dir !== '') {
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0750, true);
+            }
+            if (is_dir($dir) && !is_file($dir . '/.htaccess')) {
+                @file_put_contents($dir . '/.htaccess', "Require all denied\n");
+            }
+        }
+        $dir = $dir !== '' && is_dir($dir) && is_writable($dir) ? $dir : null;
+    }
+    return $dir === null ? null : $dir . '/php-error-' . gmdate('Y-m') . '.log';
+}
+
+/** "GET /api/admin.php?…" or "CLI api/cron.php …" for log lines. */
+function log_request(): string
+{
+    return PHP_SAPI === 'cli' ? 'CLI ' . implode(' ', array_map('strval', (array) ($_SERVER['argv'] ?? [])))
+        : ($_SERVER['REQUEST_METHOD'] ?? '') . ' ' . ($_SERVER['REQUEST_URI'] ?? '');
+}
+
+/** One line in the log: "[2026-10-22 13:31:55 UTC] [zidle] <message>" ($app = false: PHP's own messages). */
+function app_log(string $message, bool $app = true): void
+{
+    $message = ($app ? '[zidle] ' : '') . $message;
+    $file = log_file();
+    if ($file === null || @file_put_contents($file, '[' . gmdate('Y-m-d H:i:s') . ' UTC] ' . $message . "\n", FILE_APPEND | LOCK_EX) === false) {
+        error_log($message);
+    }
 }
 
 function config(string $key): mixed
@@ -163,7 +210,7 @@ function run_api(callable $handler): void
     try {
         $handler();
     } catch (Throwable $e) {
-        error_log('[zidle] ' . $e);
+        app_log('Error on ' . log_request() . ': ' . $e);
         json_error('Chyba serveru. Zkuste to prosím znovu.', 500);
     }
 }

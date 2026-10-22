@@ -729,18 +729,26 @@ test('device time is limited to the last 48 hours and never in the future', func
 test('a mail that cannot be handed over returns false instead of a 500 (mail() disabled by the host)', function (): void {
     $code = 'require ' . var_export(dirname(__DIR__, 2) . '/api/lib/bootstrap.php', true) . ';'
         . " echo var_export(deliver_mail('test@example.com', 'Pozvánka', 'text'), true);";
-    $out = (string) shell_exec(escapeshellarg(PHP_BINARY) . ' -d disable_functions=mail -r ' . escapeshellarg($code) . ' 2>/dev/null');
+    $out = (string) shell_exec('LOG_DIR= ' . escapeshellarg(PHP_BINARY) . ' -d disable_functions=mail -r ' . escapeshellarg($code) . ' 2>/dev/null');
     same('false', $out, 'deliver_mail() result');
 });
 
-test('PHP errors go to LOG_DIR/php-error-YYYY-MM.log, closed to the web', function (): void {
-    $dir = rtrim((string) config('LOG_DIR'), '/');
-    $file = $dir . '/php-error-' . gmdate('Y-m') . '.log';
-    same($file, ini_get('error_log'), 'error_log path');
-    same("Require all denied\n", file_get_contents($dir . '/.htaccess'), 'deny-all .htaccess');
-    $marker = 'log-test-' . bin2hex(random_bytes(4));
-    error_log('[zidle] ' . $marker);
-    same(true, str_contains((string) file_get_contents($file), $marker), 'line written');
+test('errors are written to LOG_DIR/php-error-YYYY-MM.log by the app itself, closed to the web', function (): void {
+    $dir = sys_get_temp_dir() . '/zidle-log-' . bin2hex(random_bytes(4));
+    // PHP's own error_log points elsewhere, as when a host fixes it: the app still writes its file.
+    $script = $dir . '.php'; // a script file: `php -r` skips exception handlers
+    file_put_contents($script, '<?php require ' . var_export(dirname(__DIR__, 2) . '/api/lib/bootstrap.php', true) . ';'
+        . " app_log('hello'); trigger_error('careful', E_USER_WARNING); throw new RuntimeException('boom');");
+    shell_exec('LOG_DIR=' . escapeshellarg($dir) . ' ' . escapeshellarg(PHP_BINARY) . ' -d error_log=/dev/null ' . escapeshellarg($script) . ' 2>&1');
+    unlink($script);
+    $log = (string) @file_get_contents($dir . '/php-error-' . gmdate('Y-m') . '.log');
+    same("Require all denied\n", @file_get_contents($dir . '/.htaccess'), 'deny-all .htaccess');
+    contains('UTC] [zidle] hello', $log, 'app_log line');
+    contains('PHP Warning: careful in ' . $script . ':1', $log, 'warning');
+    contains('[zidle] Uncaught on CLI', $log, 'uncaught exception');
+    contains('RuntimeException: boom', $log, 'exception text');
+    array_map(static fn ($f) => @unlink($f), [$dir . '/.htaccess', $dir . '/php-error-' . gmdate('Y-m') . '.log']);
+    @rmdir($dir);
 });
 
 // ---------------------------------------------------------------------- run

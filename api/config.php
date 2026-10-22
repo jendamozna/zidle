@@ -73,6 +73,9 @@ return (static function (): array {
         // Folder for the PHP error log (php-error-YYYY-MM.log). Best outside the web root;
         // the default api/logs/ is closed to the web by .htaccess. '' = the server's own log.
         'LOG_DIR' => __DIR__ . '/logs',
+        // Show uncaught errors on the 500 page (with file paths) – only briefly, to find a problem
+        // when the log cannot be read; never leave on.
+        'DEBUG' => false,
 
         // Allowed CORS origin when the frontend runs on another domain ('' = same origin only)
         'CORS_ORIGIN' => '',

@@ -165,7 +165,7 @@ if ($canManage && $csrfOk && in_array($action, ['user-invite', 'user-link', 'use
             $user = $result['user'] ?? [];
             $mailed = send_admin_invite_email($user, $result['token'], $me['email']);
             $_SESSION['flash'] = ($action === 'user-invite' ? "Pozvánka pro {$user['email']} vytvořena." : "Nová pozvánka pro {$user['email']} vytvořena, původní odkaz přestal platit.")
-                . ($mailed ? ' E-mail odeslán.' : ' E-mail se neodeslal – předejte odkaz sami.');
+                . ($mailed ? ' E-mail odeslán.' : (mail_enabled() ? ' E-mail se neodeslal (důvod je v logu) – předejte odkaz sami.' : ' E-maily jsou vypnuté (MAIL_ENABLED) – předejte odkaz sami.'));
             $_SESSION['user_link'] = ['email' => $user['email'], 'link' => admin_invite_link($result['token'])];
         }
     } elseif ($action === 'user-roles') {
