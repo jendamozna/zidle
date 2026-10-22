@@ -193,6 +193,7 @@ name override them (local file wins).
 | `PAYMENT_RECIPIENT` | `Farnost` | SPD `RN` |
 | `PAYMENT_MESSAGE` | `Koncert TZG 2026` | SPD `MSG` prefix (+ last name) |
 | `PAYMENT_VARIABLE_SYMBOL` | `3211` | variable symbol (VS) of every payment (SPD `X-VS`, e-mails, payment page), digits only, max 10; reservations differ by their own specific symbol (SS) |
+| `DEBUG` | `false` | the 500 page also shows the uncaught exception and the log path (*(nelze zapisovat)* when not writable); only briefly for diagnosis |
 | `LOG_DIR` | `api/logs` | folder of the PHP error log (see below); best outside the web root; `''` = the server's own log |
 | `DEPLOY_TOKEN` | `''` | token for `POST api/deploy.php` that creates the first Správce (§12); ≥ 32 characters, `''` = disabled; may be removed afterwards |
 | `SCAN_WINDOW_BEFORE_MINUTES` / `SCAN_WINDOW_AFTER_MINUTES` | 60 / 60 | check-in window around the run start |
@@ -219,7 +220,7 @@ writable PHP keeps the server's log. Uncaught exceptions are logged as
 `[zidle] Uncaught on <METHOD URI>: <exception with stack trace>` (CLI: the
 command line, also printed to stderr, exit code 255) and the visitor gets a
 plain-text 500 *„Chyba serveru. Zkuste to prosím znovu, případně kontaktujte
-pořadatele.“*; JSON endpoints keep their own 500 from `run_api()`. Warnings,
+pořadatele.“* (with `DEBUG` on followed by `[DEBUG] <exception>` and `Log: <path>`); JSON endpoints keep their own 500 from `run_api()`. Warnings,
 notices and the app's own `[zidle] …` lines go to the same file. Nginx ignores
 `.htaccess`: there set `LOG_DIR` outside the web root or deny `/api/logs/`.
 
@@ -736,7 +737,9 @@ have several; `user_can(me, what)`):
   E-mail *Pozvánka* (§15) with `admin_invite_link()` =
   `app_base_url()/api/admin.php?pozvanka=<token>`; the link is also shown once
   in the tab (*Kopírovat odkaz*). Flash *„Pozvánka pro X vytvořena. E-mail
-  odeslán.“* / *„… E-mail se neodeslal – předejte odkaz sami.“*
+  odeslán.“* / *„… E-mail se neodeslal (důvod je v logu) – předejte odkaz
+  sami.“* / with `MAIL_ENABLED` off *„… E-maily jsou vypnuté (MAIL_ENABLED) –
+  předejte odkaz sami.“*
 - **Accepting** (`admin.php?pozvanka=<token>`, also when signed in): valid
   link (`admin_invited_user()`: hash, not expired, account not disabled) →
   *„Dobrý den, vytvořte si heslo – tím vznikne Váš účet (role: …).

@@ -26,6 +26,7 @@ test('admin invites an accountant, who sets a password, sees only reservations a
   await page.locator('form', { hasText: 'Pozvat uživatele' }).getByLabel('Účetní').check();
   await page.getByRole('button', { name: 'Poslat pozvánku' }).click();
   await expect(page.locator('.flash')).toContainText('Pozvánka pro jana.ucetni@example.cz vytvořena.');
+  await expect(page.locator('.flash')).toContainText('E-maily jsou vypnuté (MAIL_ENABLED) – předejte odkaz sami.');
   const link = await page.locator('.invite-link').inputValue();
   await expect(page.locator('tr', { hasText: 'jana.ucetni@example.cz' })).toContainText('Nepřijata');
 

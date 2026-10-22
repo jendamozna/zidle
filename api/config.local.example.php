@@ -31,4 +31,5 @@ return [
 
     // PHP error log php-error-YYYY-MM.log; best a folder outside the web root (default api/logs/, closed by .htaccess)
     // 'LOG_DIR' => '/home/user/logs/zidle',
+    // 'DEBUG' => true,             // only briefly: the 500 page shows the error itself
 ];

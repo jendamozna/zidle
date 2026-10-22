@@ -56,6 +56,10 @@ function setup_error_log(): void
             header('Content-Type: text/plain; charset=utf-8');
         }
         echo 'Chyba serveru. Zkuste to prosím znovu, případně kontaktujte pořadatele.';
+        if (filter_var(config('DEBUG'), FILTER_VALIDATE_BOOLEAN)) {
+            $log = (string) ini_get('error_log');
+            echo "\n\n[DEBUG] " . $e . "\n\nLog: " . ($log !== '' ? $log . (is_writable($log) || is_writable(dirname($log)) ? '' : ' (nelze zapisovat)') : 'log serveru');
+        }
     });
 }
 
