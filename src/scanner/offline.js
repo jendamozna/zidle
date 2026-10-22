@@ -101,7 +101,7 @@ export function clearOffline() {
  */
 export function verifyOffline(decoded, snapshot, queue) {
   const found = snapshot.tickets.find((t) => t.id === decoded.id);
-  if (!found || found.variableSymbol !== decoded.variableSymbol) {
+  if (!found || found.specificSymbol !== decoded.specificSymbol) {
     return { result: 'unknown', ticket: decoded };
   }
   const queuedFor = (seat) =>
@@ -109,7 +109,7 @@ export function verifyOffline(decoded, snapshot, queue) {
   const checkedIn = (seat) => found.checkedIn?.[seat]?.at ?? queuedFor(seat)?.at ?? null;
   const ticket = {
     id: found.id,
-    variableSymbol: found.variableSymbol,
+    specificSymbol: found.specificSymbol,
     seat: decoded.seat,
     kind: found.childSeats?.includes(decoded.seat) ? 'child' : found.seats.includes(decoded.seat) ? 'adult' : decoded.kind,
     name: found.ticketNames?.[decoded.seat] || found.name || decoded.name,

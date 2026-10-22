@@ -33,7 +33,7 @@ function ticket_pdf(array $r): string
             . '<div class="place">řada <b>' . $h($row) . '</b> &nbsp; místo <b>' . $h($seat) . '</b></div>'
             . '<div class="kind">' . $h(SEAT_KIND_LABELS[$item['kind']]) . '</div>'
             . '<div class="holder">' . $h(ticket_holder($r, $item['seat'])) . '</div>'
-            . '<div class="meta">VS ' . $h($r['variable_symbol']) . ' · vstupenka ' . ($n + 1) . ' z ' . $count . '</div>'
+            . '<div class="meta">SS ' . $h($r['specific_symbol']) . ' · vstupenka ' . ($n + 1) . ' z ' . $count . '</div>'
             . '</td></tr></table>';
     }
 

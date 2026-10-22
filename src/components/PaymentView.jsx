@@ -265,7 +265,7 @@ export default function PaymentView({ reservation, onChange, onBack }) {
           ←<span className="wide-only"> Zpět na mapu</span>
         </button>
         <div className="detail-title">
-          <span className="detail-level">Rezervace {payment.variableSymbol}</span>
+          <span className="detail-level">Rezervace {payment.specificSymbol}</span>
           <h2>
             {reservation.firstName} {reservation.lastName}
           </h2>
@@ -299,13 +299,13 @@ export default function PaymentView({ reservation, onChange, onBack }) {
               <dl className="pay-list">
                 {payment.account && <CopyValue label="Číslo účtu" value={payment.account} />}
                 <CopyValue label="Variabilní symbol" value={payment.variableSymbol} />
-                {payment.specificSymbol && <CopyValue label="Specifický symbol" value={payment.specificSymbol} />}
+                <CopyValue label="Specifický symbol" value={payment.specificSymbol} />
                 <CopyValue label="Částka" value={String(payment.amount)} />
               </dl>
               {payment.received > 0 && (
                 <p className="deadline">
                   Už jsme přijali <strong>{formatCzk(payment.received)}</strong> z {formatCzk(reservation.amount)}. Doplaťte
-                  prosím zbývajících <strong>{formatCzk(payment.amount)}</strong> se stejným variabilním symbolem.
+                  prosím zbývajících <strong>{formatCzk(payment.amount)}</strong> se stejným variabilním a specifickým symbolem.
                 </p>
               )}
               {new Date(reservation.expiresAt) < new Date() ? (

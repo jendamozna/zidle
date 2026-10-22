@@ -2,7 +2,7 @@
 // Ticket QR codes sent to the customer after the payment is confirmed – one code per seat
 // (one QR = one chair), so a printed sheet can be cut and the tickets handed out.
 //
-// Format (UTF-8 text):  Z26M|<reservation id>|<variable symbol>|<seat>|<kind>|<name>|<signature>
+// Format (UTF-8 text):  Z26M|<reservation id>|<specific symbol>|<seat>|<kind>|<name>|<signature>
 // e.g.                  Z26M|42|2600000002|ML-1-2|C|Jana Dvořáková|Xb3...
 // kind: A = adult, C = child (4–17 years). The signature (HMAC-SHA256 with TICKET_SECRET)
 // lets the scanner detect forged or altered codes. The scanner looks the reservation up by
@@ -48,7 +48,7 @@ function ticket_code(array $r, string $seat): string
     $payload = implode('|', [
         TICKET_PREFIX,
         (string) (int) $r['id'],
-        $r['variable_symbol'],
+        $r['specific_symbol'],
         $seat,
         TICKET_KINDS[seat_kind($r, $seat)],
         ticket_name($r, $seat),
@@ -63,13 +63,13 @@ function parse_ticket_code(string $code): ?array
     if (count($parts) !== 7 || $parts[0] !== TICKET_PREFIX) {
         return null;
     }
-    [, $id, $vs, $seat, $kind, $name, $sig] = $parts;
+    [, $id, $ss, $seat, $kind, $name, $sig] = $parts;
     if (!hash_equals(ticket_signature(implode('|', array_slice($parts, 0, 6))), $sig)) {
         return null;
     }
     return [
         'id' => (int) $id,
-        'variableSymbol' => $vs,
+        'specificSymbol' => $ss,
         'seat' => $seat,
         'kind' => array_search($kind, TICKET_KINDS, true) ?: 'adult',
         'name' => $name,
@@ -123,7 +123,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         'Vstupenky: ' . seat_kinds_summary($r),
         ...array_map(static fn ($i) => '- ' . seat_label($i['seat']) . ' – ' . SEAT_KIND_LABELS[$i['kind']]
             . ($i['holder'] !== null ? ' – ' . $i['holder'] : ''), $items),
-        'Variabilní symbol: ' . $r['variable_symbol'],
+        'Specifický symbol: ' . $r['specific_symbol'],
         '',
         'Každé místo má vlastní QR kód (1 QR kód = 1 židle). ' . $printNote,
         ...(contact_line() !== '' ? ['', contact_line()] : []),
@@ -146,7 +146,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         . '<div style="max-width:480px;margin:0 auto;padding:24px 16px">'
         . '<div style="background:#fffdf9;border-radius:18px;padding:24px;text-align:center">'
         . '<h1 style="margin:0 0 4px;font-family:Georgia,serif;font-size:24px">Koncert TZG <span style="color:#8a5a2b">2026</span></h1>'
-        . '<p style="margin:0 0 20px;color:#6b6256">Vstupenky · VS ' . $h($r['variable_symbol']) . '</p>'
+        . '<p style="margin:0 0 20px;color:#6b6256">Vstupenky · SS ' . $h($r['specific_symbol']) . '</p>'
         . ($intro ? '<p style="margin:0 0 20px;text-align:left;line-height:1.5">' . implode('<br>', array_map($h, $intro)) . '</p>' : '')
         . '<p style="margin:0 0 8px;font-size:20px;font-weight:bold;color:#8a5a2b">' . $h(preg_replace('/^Termín: /', '', run_line($r))) . '</p>'
         . '<p style="margin:0 0 4px;font-size:18px;font-weight:bold">' . $h($r['first_name'] . ' ' . $r['last_name']) . '</p>'
@@ -193,7 +193,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
     $link = reservation_link($r);
     $description = implode("\n", [
         'Místa: ' . implode('; ', $seats),
-        'Variabilní symbol: ' . $r['variable_symbol'],
+        'Specifický symbol: ' . $r['specific_symbol'],
         'Při vstupu prosím ukažte QR kódy vstupenek z e-mailu (1 QR kód = 1 místo).',
         ...($link ? ['Rezervace: ' . $link] : []),
         ...(contact_line() !== '' ? [contact_line()] : []),

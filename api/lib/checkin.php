@@ -24,9 +24,9 @@ function verify_ticket(string $code, array $run, array $access, bool $confirmOut
 
     $pdo = db();
     $pdo->beginTransaction();
-    // Current state is always loaded from the database by reservation id; the VS must match as well.
-    $stmt = $pdo->prepare('SELECT * FROM reservations WHERE id = ? AND variable_symbol = ? FOR UPDATE');
-    $stmt->execute([$ticket['id'], $ticket['variableSymbol']]);
+    // Current state is always loaded from the database by reservation id; the SS must match as well.
+    $stmt = $pdo->prepare('SELECT * FROM reservations WHERE id = ? AND specific_symbol = ? FOR UPDATE');
+    $stmt->execute([$ticket['id'], $ticket['specificSymbol']]);
     $r = $stmt->fetch();
 
     if (!$r) {
@@ -65,7 +65,7 @@ function verify_ticket(string $code, array $run, array $access, bool $confirmOut
         'result' => $result,
         'ticket' => [
             'id' => (int) $r['id'],
-            'variableSymbol' => $r['variable_symbol'],
+            'specificSymbol' => $r['specific_symbol'],
             'seat' => $seat,
             'kind' => in_array($seat, $seats, true) || in_array($seat, seat_list((string) $r['cancelled_seats']), true)
                 ? seat_kind($r, $seat) : $ticket['kind'],

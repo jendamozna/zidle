@@ -174,10 +174,10 @@ function strip_diacritics(string $text): string
     return (string) $converted;
 }
 
-/** Specific symbol from config, digits only (max 10), '' when not set. */
-function specific_symbol(): string
+/** Variable symbol of all payments from config, digits only (max 10). Reservations differ by their specific symbol. */
+function payment_variable_symbol(): string
 {
-    return substr(preg_replace('/\D/', '', (string) config('PAYMENT_SPECIFIC_SYMBOL')) ?? '', 0, 10);
+    return substr(preg_replace('/\D/', '', (string) config('PAYMENT_VARIABLE_SYMBOL')) ?? '', 0, 10);
 }
 
 /** Czech QR payment string (Short Payment Descriptor, "QR Platba"). */
@@ -194,15 +194,12 @@ function spd_string(array $r): string
         'ACC:' . $acc . ($bic !== '' ? '+' . $bic : ''),
         'AM:' . number_format((float) amount_due($r), 2, '.', ''),
         'CC:CZK',
-        'X-VS:' . $r['variable_symbol'],
+        'X-VS:' . payment_variable_symbol(),
+        'X-SS:' . $r['specific_symbol'],
         'DT:' . (new DateTimeImmutable($r['expires_at'], new DateTimeZone('UTC')))
             ->setTimezone(new DateTimeZone('Europe/Prague'))->format('Ymd'),
         'MSG:' . $clean(config('PAYMENT_MESSAGE') . ' ' . $r['last_name'], 60),
     ];
-    $ss = specific_symbol();
-    if ($ss !== '') {
-        $parts[] = 'X-SS:' . $ss;
-    }
     $recipient = $clean((string) config('PAYMENT_RECIPIENT'), 35);
     if ($recipient !== '') {
         $parts[] = 'RN:' . $recipient;
@@ -253,8 +250,8 @@ function reservation_payload(array $r): array
         'payment' => [
             'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
             'recipient' => (string) config('PAYMENT_RECIPIENT'),
-            'variableSymbol' => $r['variable_symbol'],
-            'specificSymbol' => specific_symbol() ?: null,
+            'specificSymbol' => $r['specific_symbol'],
+            'variableSymbol' => payment_variable_symbol(),
             'amount' => amount_due($r),
             'received' => max(0, (int) $r['paid_amount'] - (int) $r['refund_amount']),
             'currency' => 'CZK',

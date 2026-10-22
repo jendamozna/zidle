@@ -29,7 +29,7 @@ $row = static function (int $id): array {
     return $stmt->fetch();
 };
 echo json_encode([
-    'pendingVs' => $row($pending)['variable_symbol'],
+    'pendingVs' => $row($pending)['specific_symbol'],
     'ticket' => ticket_code($row($paid), 'BC-1-1'),
     'offlineTicket' => ticket_code($row($offline), 'BC-2-1'),
     'codes' => array_map('format_discount_code', db_query('SELECT code FROM discount_codes ORDER BY id')->fetchAll(PDO::FETCH_COLUMN)),

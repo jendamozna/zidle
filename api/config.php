@@ -42,7 +42,7 @@ return (static function (): array {
         'BANK_ACCOUNT_DISPLAY' => '',   // e.g. 19-2000145399/0800
         'PAYMENT_RECIPIENT' => 'Farnost',
         'PAYMENT_MESSAGE' => 'Koncert TZG 2026',
-        'PAYMENT_SPECIFIC_SYMBOL' => '', // specific symbol (SS) used for all payments, max 10 digits
+        'PAYMENT_VARIABLE_SYMBOL' => '3211', // variable symbol (VS) of all payments, max 10 digits; each reservation has its own specific symbol (SS)
 
         // One-time token for api/deploy.php, which creates the first Správce (admin account) while
         // none exists; at least 32 characters, '' = deploy disabled. Everybody else is invited in the admin.

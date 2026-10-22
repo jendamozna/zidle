@@ -184,7 +184,7 @@ function ResultCard({ scan, onNext }) {
             <p className="small">Vstupenka není v seznamu tohoto termínu – může být na jiný termín, nebo neplatná.</p>
           )}
           <p className="muted small">
-            Rezervace č. {ticket.id ?? '–'} · VS {ticket.variableSymbol}
+            Rezervace č. {ticket.id ?? '–'} · SS {ticket.specificSymbol}
             {result === 'offline'
               ? ' · údaje z QR kódu, neověřeno'
               : scan.offlineAt
@@ -299,7 +299,7 @@ function Scanner({ runs, name, admin, onLogout, onUnauthorized }) {
         fail(err);
         const res = verifyOffline(decoded, snapshot, getQueue());
         if (res.result === 'valid') {
-          enqueue({ type: 'ticket', id: res.ticket.id, variableSymbol: res.ticket.variableSymbol, seat: res.ticket.seat });
+          enqueue({ type: 'ticket', id: res.ticket.id, specificSymbol: res.ticket.specificSymbol, seat: res.ticket.seat });
         }
         setScan({ raw, ...res, offlineAt: snapshot.at });
       }

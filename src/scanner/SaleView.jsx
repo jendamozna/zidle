@@ -23,7 +23,7 @@ function SalePayment({ sale, busy, onPaid, onCancel }) {
       {qr ? <img src={qr} alt="QR kód pro platbu" width="280" height="280" /> : <div className="qr-placeholder" />}
       <p className="sale-amount">{formatCzk(sale.amount)}</p>
       <p className="small">
-        VS <strong>{sale.variableSymbol}</strong>
+        VS <strong>{sale.variableSymbol}</strong> · SS <strong>{sale.specificSymbol}</strong>
         {sale.account && ` · účet ${sale.account}`}
       </p>
       <ul className="sale-tickets small">

@@ -14,7 +14,7 @@ run_api(function (): void {
     }
     $pdf = ticket_pdf($r);
     header('Content-Type: application/pdf');
-    header('Content-Disposition: attachment; filename="vstupenky-' . $r['variable_symbol'] . '.pdf"');
+    header('Content-Disposition: attachment; filename="vstupenky-' . $r['specific_symbol'] . '.pdf"');
     header('Cache-Control: no-store');
     header('Content-Length: ' . strlen($pdf));
     echo $pdf;

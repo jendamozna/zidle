@@ -43,7 +43,7 @@ export const getSnapshot = (runId) => call({ action: 'snapshot', runId });
 export const syncScans = (runId, events) => call({ action: 'sync', runId, events });
 /** Selling on site: {taken, price, childPrice, maxSeats} of the run. */
 export const saleSeats = (runId) => call({ action: 'sale-seats', runId });
-/** {sale: {id, variableSymbol, amount, seats, tickets, spd, account}} */
+/** {sale: {id, variableSymbol, specificSymbol, amount, seats, tickets, spd, account}} */
 export const saleCreate = (runId, seats, children) => call({ action: 'sale-create', runId, seats, children });
 export const salePaid = (runId, id) => call({ action: 'sale-paid', runId, id });
 export const saleCancel = (runId, id) => call({ action: 'sale-cancel', runId, id });

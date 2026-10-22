@@ -62,7 +62,7 @@ test('customer books two seats and sees the QR payment; only the admin can cance
   const admin = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   await adminLogin(admin);
   admin.once('dialog', (d) => d.accept());
-  await admin.locator('tr', { hasText: reservation.payment.variableSymbol }).getByRole('button', { name: 'Zrušit', exact: true }).click();
+  await admin.locator('tr', { hasText: reservation.payment.specificSymbol }).getByRole('button', { name: 'Zrušit', exact: true }).click();
   await expect(admin.locator('.flash')).toContainText('Rezervace zrušena, místa uvolněna.');
   await page.reload();
   await expect(page.getByText('Rezervace byla zrušena.')).toBeVisible();

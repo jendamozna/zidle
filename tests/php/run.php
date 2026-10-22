@@ -79,10 +79,14 @@ test('partial payment stays pending, the rest completes it and a surplus is refu
     same(['paid', 700, 100, 0], money($id), 'after 700');
 });
 
-test('payment code (SPD) asks only for the missing amount', function (): void {
+test('payment code (SPD) asks only for the missing amount, with VS 3211 and the reservation\'s SS', function (): void {
     $id = reservation(['WL-1-3', 'WL-1-4']);
     record_payment($id, 200);
     contains('*AM:400.00*', spd_string(row($id)), 'SPD');
+    $ss = row($id)['specific_symbol'];
+    contains('*X-VS:3211*X-SS:' . $ss . '*', spd_string(row($id)), 'fixed VS, the reservation\'s own SS');
+    contains("Variabilní symbol: 3211\nSpecifický symbol: {$ss}", implode("\n", payment_lines(row($id))), 'e-mail payment details');
+    same(['3211', $ss], [reservation_payload(row($id))['payment']['variableSymbol'], reservation_payload(row($id))['payment']['specificSymbol']], 'payload symbols');
     same(400, reservation_payload(row($id))['payment']['amount'], 'payload amount');
     same(200, reservation_payload(row($id))['payment']['received'], 'payload received');
 });
@@ -330,12 +334,12 @@ test('each seat ticket is checked in once; cancelled seats and other runs are re
 test('offline: seats of one reservation are checked in separately', function (): void {
     db()->exec('DELETE FROM scan_conflicts');
     $id = reservation(['MR-7-1', 'MR-7-2'], 'paid');
-    $vs = row($id)['variable_symbol'];
+    $ss = row($id)['specific_symbol'];
     $at = iso_utc(now_utc()->modify('-3 minutes'));
     $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [
-        ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'MR-7-1', 'at' => $at],
-        ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'MR-7-2', 'at' => $at],
-        ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'MR-7-3', 'at' => $at],
+        ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'MR-7-1', 'at' => $at],
+        ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'MR-7-2', 'at' => $at],
+        ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'MR-7-3', 'at' => $at],
     ]);
     same(['ok', 'ok', 'conflict'], array_column($res['results'], 'status'), 'two seats in, unknown seat refused');
     same(['MR-7-1', 'MR-7-2'], array_keys(reservation_checkins($id)), 'both seats checked in');
@@ -387,7 +391,7 @@ test('personal data is purged after the event except while money is still to ret
 test('one ticket code per seat round-trips with its kind and rejects tampering', function (): void {
     $r = row(reservation(['BC-1-1', 'BC-1-2'], 'paid', 1, '', ['BC-1-2']));
     $code = ticket_code($r, 'BC-1-2');
-    same(['id' => (int) $r['id'], 'variableSymbol' => $r['variable_symbol'], 'seat' => 'BC-1-2', 'kind' => 'child', 'name' => 'Test ' . $r['last_name']],
+    same(['id' => (int) $r['id'], 'specificSymbol' => $r['specific_symbol'], 'seat' => 'BC-1-2', 'kind' => 'child', 'name' => 'Test ' . $r['last_name']],
         parse_ticket_code($code), 'parsed');
     same('adult', parse_ticket_code(ticket_code($r, 'BC-1-1'))['kind'] ?? null, 'adult seat');
     same(null, parse_ticket_code(str_replace('BC-1-2', 'BC-1-3', $code)), 'tampered');
@@ -432,7 +436,7 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
     contains('SEQUENCE:' . $now->getTimestamp(), $ics, 'sequence');
     contains('ATTENDEE;CN="Test Nováková, Jana";', $unfolded, 'attendee');
     contains('SUMMARY:TZG 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels($r['seats']))), $unfolded, 'summary');
-    contains('Variabilní symbol: ' . $r['variable_symbol'], $unfolded, 'description');
+    contains('Specifický symbol: ' . $r['specific_symbol'], $unfolded, 'description');
     same(true, str_ends_with($ics, "END:VCALENDAR\r\n"), 'CRLF');
     foreach (explode("\r\n", $ics) as $line) {
         same(true, strlen($line) <= 75 && mb_check_encoding($line, 'UTF-8'), "line length: {$line}");
@@ -678,16 +682,16 @@ test('snapshot lists the run\'s tickets without e-mails', function (): void {
 test('offline check-ins are applied with the device time; the first one wins', function (): void {
     db()->exec('DELETE FROM scan_conflicts');
     $id = reservation(['BR-1-3'], 'paid');
-    $vs = row($id)['variable_symbol'];
+    $ss = row($id)['specific_symbol'];
     $at = now_utc()->modify('-10 minutes');
-    $event = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'BR-1-3', 'at' => iso_utc($at)];
+    $event = ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'BR-1-3', 'at' => iso_utc($at)];
     $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event]);
     same([['status' => 'ok']], $res['results'], 'applied');
     same([db_time($at), 'Vchod A (offline)'], [row($id)['checked_in_at'], row($id)['checked_in_by']], 'stored');
     // The same event sent again (response lost) is not a conflict.
     same(0, apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event])['conflicts'], 'resend');
     // Another device let the same ticket in offline too.
-    $other = ['type' => 'ticket', 'id' => $id, 'variableSymbol' => $vs, 'seat' => 'BR-1-3', 'at' => iso_utc($at->modify('+2 minutes'))];
+    $other = ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'BR-1-3', 'at' => iso_utc($at->modify('+2 minutes'))];
     $res = apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [$other]);
     same([1, 'already_checked_in'], [$res['conflicts'], $res['results'][0]['reason'] ?? null], 'conflict');
     same(db_time($at), row($id)['checked_in_at'], 'first check-in kept');
@@ -702,9 +706,9 @@ test('offline scans of unpaid, unknown or other-run tickets become conflicts', f
     $pending = reservation(['BR-1-4']);
     $otherRun = reservation(['BR-1-5'], 'paid', 2);
     $events = [
-        ['type' => 'ticket', 'id' => $pending, 'variableSymbol' => row($pending)['variable_symbol'], 'seat' => 'BR-1-4', 'at' => iso_utc(now_utc())],
-        ['type' => 'ticket', 'id' => $otherRun, 'variableSymbol' => row($otherRun)['variable_symbol'], 'seat' => 'BR-1-5', 'at' => iso_utc(now_utc())],
-        ['type' => 'ticket', 'id' => 999999, 'variableSymbol' => '1', 'seat' => 'BR-1-6', 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => $pending, 'specificSymbol' => row($pending)['specific_symbol'], 'seat' => 'BR-1-4', 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => $otherRun, 'specificSymbol' => row($otherRun)['specific_symbol'], 'seat' => 'BR-1-5', 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => 999999, 'specificSymbol' => '1', 'seat' => 'BR-1-6', 'at' => iso_utc(now_utc())],
     ];
     $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], $events);
     same(['not_paid', 'unknown', 'unknown'], array_column($res['results'], 'reason'), 'reasons');
@@ -715,8 +719,8 @@ test('device time is limited to the last 48 hours and never in the future', func
     $future = reservation(['BR-1-8'], 'paid');
     $old = reservation(['BR-1-9'], 'paid');
     apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [
-        ['type' => 'ticket', 'id' => $future, 'variableSymbol' => row($future)['variable_symbol'], 'seat' => 'BR-1-8', 'at' => iso_utc(now_utc()->modify('+3 hours'))],
-        ['type' => 'ticket', 'id' => $old, 'variableSymbol' => row($old)['variable_symbol'], 'seat' => 'BR-1-9', 'at' => '2001-01-01T00:00:00Z'],
+        ['type' => 'ticket', 'id' => $future, 'specificSymbol' => row($future)['specific_symbol'], 'seat' => 'BR-1-8', 'at' => iso_utc(now_utc()->modify('+3 hours'))],
+        ['type' => 'ticket', 'id' => $old, 'specificSymbol' => row($old)['specific_symbol'], 'seat' => 'BR-1-9', 'at' => '2001-01-01T00:00:00Z'],
     ]);
     same(true, row($future)['checked_in_at'] <= db_time(now_utc()), 'not in the future');
     same(true, row($old)['checked_in_at'] >= db_time(now_utc()->modify('-49 hours')), 'not older than 48 h');

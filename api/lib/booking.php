@@ -1,6 +1,6 @@
 <?php
 // Creating a reservation (after the request was validated in reservations.php):
-// prices, discount codes, seat locking, variable symbol and the first e-mail.
+// prices, discount codes, seat locking, specific symbol (SS) and the first e-mail.
 declare(strict_types=1);
 
 /**
@@ -69,8 +69,8 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
             $free ? 'paid' : 'pending', db_time($now), db_time($expires), $free ? db_time($now) : null, $soldBy,
         ]);
         $id = (int) $pdo->lastInsertId();
-        $pdo->prepare('UPDATE reservations SET variable_symbol = ? WHERE id = ?')
-            ->execute([generate_variable_symbol($pdo), $id]);
+        $pdo->prepare('UPDATE reservations SET specific_symbol = ? WHERE id = ?')
+            ->execute([generate_specific_symbol($pdo), $id]);
         $useCode = $pdo->prepare('UPDATE discount_codes SET used_at = ?, reservation_id = ?, seat_id = ? WHERE id = ?');
         foreach ($codeIds as $i => $codeId) {
             $useCode->execute([db_time($now), $id, $freeSeats[$i], $codeId]);
@@ -106,19 +106,19 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
 }
 
 /**
- * Random 10-digit variable symbol that is not used by any reservation yet.
+ * Random 10-digit specific symbol (SS) that is not used by any reservation yet.
  * Random instead of sequential so it does not reveal the number of
- * reservations and cannot be guessed; uq_vs guarantees uniqueness.
+ * reservations and cannot be guessed; uq_ss guarantees uniqueness.
  */
-function generate_variable_symbol(PDO $pdo): string
+function generate_specific_symbol(PDO $pdo): string
 {
-    $check = $pdo->prepare('SELECT 1 FROM reservations WHERE variable_symbol = ?');
+    $check = $pdo->prepare('SELECT 1 FROM reservations WHERE specific_symbol = ?');
     for ($i = 0; $i < 20; $i++) {
-        $vs = (string) random_int(1_000_000_000, 9_999_999_999);
-        $check->execute([$vs]);
+        $ss = (string) random_int(1_000_000_000, 9_999_999_999);
+        $check->execute([$ss]);
         if (!$check->fetchColumn()) {
-            return $vs;
+            return $ss;
         }
     }
-    throw new RuntimeException('Could not generate a unique variable symbol.');
+    throw new RuntimeException('Could not generate a unique specific symbol.');
 }

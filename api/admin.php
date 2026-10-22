@@ -508,7 +508,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         $params[] = $runFilter;
     }
     if ($q !== '') {
-        $where[] = '(variable_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ? OR seats LIKE ?)';
+        $where[] = '(specific_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ? OR seats LIKE ?)';
         array_push($params, ...array_fill(0, 5, '%' . $q . '%'));
     }
     $sql = 'SELECT * FROM reservations' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 500';
@@ -627,8 +627,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $q = trim((string) ($_GET['q'] ?? ''));
       $codeSearch = normalize_discount_code($q);
       $stmt = db()->prepare(
-          'SELECT c.*, r.variable_symbol, r.run_id FROM discount_codes c LEFT JOIN reservations r ON r.id = c.reservation_id'
-          . ($q !== '' ? ' WHERE c.email LIKE ? OR c.code LIKE ? OR r.variable_symbol LIKE ?' : '')
+          'SELECT c.*, r.specific_symbol, r.run_id FROM discount_codes c LEFT JOIN reservations r ON r.id = c.reservation_id'
+          . ($q !== '' ? ' WHERE c.email LIKE ? OR c.code LIKE ? OR r.specific_symbol LIKE ?' : '')
           . ' ORDER BY c.id DESC LIMIT 1000'
       );
       $stmt->execute($q !== '' ? ['%' . $q . '%', '%' . ($codeSearch !== '' ? $codeSearch : $q) . '%', '%' . $q . '%'] : []);
@@ -655,7 +655,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <form class="filters" method="get">
     <input type="hidden" name="view" value="codes">
-    <input type="search" name="q" value="<?= $h($q) ?>" placeholder="E-mail, kód nebo VS">
+    <input type="search" name="q" value="<?= $h($q) ?>" placeholder="E-mail, kód nebo SS">
     <button class="secondary">Hledat</button>
   </form>
 
@@ -671,7 +671,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           <td><?= $h($fmt($c['emailed_at'])) ?: '–' ?></td>
           <td><?php if ($c['used_at']): ?>
               <span class="badge s-paid">Použitý</span><br><small><?= $h($fmt($c['used_at'])) ?> ·
-                <?php if ($c['variable_symbol'] !== null): ?><a href="admin.php?q=<?= $h($c['variable_symbol']) ?>">VS <?= $h($c['variable_symbol']) ?></a><?php endif ?>
+                <?php if ($c['specific_symbol'] !== null): ?><a href="admin.php?q=<?= $h($c['specific_symbol']) ?>">SS <?= $h($c['specific_symbol']) ?></a><?php endif ?>
                 <?= ($cr = run_by_id((int) $c['run_id'])) ? '· ' . $h(run_label($cr)) : '' ?>
                 <?= $c['seat_id'] ? '· ' . $h($c['seat_id']) : '' ?></small>
             <?php elseif ($c['revoked_at']): ?>
@@ -944,17 +944,17 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <option value="refund" <?= $status === 'refund' ? 'selected' : '' ?>>K vrácení peněz</option>
       <option value="onsite" <?= $status === 'onsite' ? 'selected' : '' ?>>Na místě – ověřit platbu</option>
     </select>
-    <input type="search" name="q" value="<?= $h($q) ?>" placeholder="VS, jméno, e-mail, místo">
+    <input type="search" name="q" value="<?= $h($q) ?>" placeholder="SS, jméno, e-mail, místo">
     <button class="secondary">Filtrovat</button>
   </form>
 
   <div class="card table">
     <table>
-      <thead><tr><th>VS</th><th>Termín</th><th>Jméno</th><th>Místa</th><th>Částka</th><th>Stav</th><th>Vytvořeno</th><th>Splatnost</th><th></th></tr></thead>
+      <thead><tr><th>SS</th><th>Termín</th><th>Jméno</th><th>Místa</th><th>Částka</th><th>Stav</th><th>Vytvořeno</th><th>Splatnost</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($rows as $r): ?>
         <tr>
-          <td><strong><?= $h($r['variable_symbol']) ?></strong></td>
+          <td><strong><?= $h($r['specific_symbol']) ?></strong></td>
           <td class="seats"><?= ($rr = run_by_id((int) $r['run_id'])) ? $h(run_label($rr)) : '–' ?></td>
           <td><?= $h($r['first_name'] . ' ' . $r['last_name']) ?><br><a href="mailto:<?= $h($r['email']) ?>"><?= $h($r['email']) ?></a>
             <?php if ($r['sold_by'] !== null): ?><small>prodal(a) <?= $h($r['sold_by']) ?></small><?php endif ?>
@@ -1019,7 +1019,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                 </form>
               <?php endif ?>
               <?php if ($r['sold_by'] !== null && $r['status'] === 'paid' && !$r['payment_checked_at']): ?>
-                <form method="post" onsubmit="return confirm('Platba <?= $h(format_czk((int) $r['amount'])) ?> s VS <?= $h($r['variable_symbol']) ?> dorazila na účet?')">
+                <form method="post" onsubmit="return confirm('Platba <?= $h(format_czk((int) $r['amount'])) ?> s SS <?= $h($r['specific_symbol']) ?> dorazila na účet?')">
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
                   <button name="action" value="onsite-checked">Platba dorazila</button>
