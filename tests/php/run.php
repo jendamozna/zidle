@@ -726,6 +726,23 @@ test('device time is limited to the last 48 hours and never in the future', func
     same(true, row($old)['checked_in_at'] >= db_time(now_utc()->modify('-49 hours')), 'not older than 48 h');
 });
 
+test('a mail that cannot be handed over returns false instead of a 500 (mail() disabled by the host)', function (): void {
+    $code = 'require ' . var_export(dirname(__DIR__, 2) . '/api/lib/bootstrap.php', true) . ';'
+        . " echo var_export(deliver_mail('test@example.com', 'Pozvánka', 'text'), true);";
+    $out = (string) shell_exec(escapeshellarg(PHP_BINARY) . ' -d disable_functions=mail -r ' . escapeshellarg($code) . ' 2>/dev/null');
+    same('false', $out, 'deliver_mail() result');
+});
+
+test('PHP errors go to LOG_DIR/php-error-YYYY-MM.log, closed to the web', function (): void {
+    $dir = rtrim((string) config('LOG_DIR'), '/');
+    $file = $dir . '/php-error-' . gmdate('Y-m') . '.log';
+    same($file, ini_get('error_log'), 'error_log path');
+    same("Require all denied\n", file_get_contents($dir . '/.htaccess'), 'deny-all .htaccess');
+    $marker = 'log-test-' . bin2hex(random_bytes(4));
+    error_log('[zidle] ' . $marker);
+    same(true, str_contains((string) file_get_contents($file), $marker), 'line written');
+});
+
 // ---------------------------------------------------------------------- run
 
 reset_database();
