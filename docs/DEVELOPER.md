@@ -88,8 +88,9 @@ api/
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
   lib/scanner_access.php  scanner sign-in (accounts), device cookie, app_base_url()
 db/schema.sql          full schema for a new database
-compose.yaml           local Docker stack: web (Vite), app (PHP 8.4 + Apache), db (MariaDB 10.11), adminer, mailpit
-docker/                Dockerfile + php.ini, config.local.php (empty, mounted over api/config.local.php), db init (zidle_test)
+compose.yaml           local Docker stack: web (Vite), app (PHP 8.4 + Apache), db (MariaDB 10.11), adminer, mailpit; test (prepare.sh)
+docker/                Dockerfile (stages app, test) + php.ini, config.local.php (empty, mounted over api/config.local.php), db init (zidle_test)
+prepare.sh             format + all checks + production build into build/ in Docker (§21)
 src/                   customer app
   App.jsx              views: run picker / map / section / reservation page; form; toasts
   hooks/useSeats.js    seat state of one run, polling, reserve()
@@ -110,6 +111,7 @@ tests/e2e/             Playwright tests (customer, admin, scanner), seed.php, gl
 tests/consistency.mjs  layout and ticket format identical in PHP and JS
 phpstan.neon           PHPStan config (level 8)
 eslint.config.js       ESLint config (src/ + tests)
+.prettierrc.json       Prettier config (.prettierignore)
 playwright.config.js   Playwright config (starts php -S and vite preview)
 .github/workflows/ci.yml  CI
 ```
@@ -160,7 +162,8 @@ docker compose exec -e DB_NAME=zidle_test -e MAIL_ENABLED=0 -e SMTP_HOST= app ph
 docker compose down -v   # also deletes the database (schema change → recreate)
 ```
 
-Deployment: upload `dist/` and `api/` (including `api/vendor/`) side by side,
+Deployment: upload `dist/` and `api/` (including `api/vendor/`) side by side
+(`./prepare.sh` prepares both in `build/`, §21; add `api/config.local.php` on the server),
 so the apps reach the API at `./api/`. HTTPS is required (camera access).
 `.htaccess` files deny `config*.php`, `cron*.php`, `composer.*`, `api/lib/`,
 `api/vendor/`, `api/logs/`. Behind a proxy/CDN the real client IP must reach
@@ -178,7 +181,7 @@ Then sign in at `api/admin.php` and invite everybody else (tab _Uživatelé_).
 
 Cron: `*/10 * * * * php /path/to/api/cron.php`.
 
-Checks before a commit (the same as CI, §21): `npm run lint`, `npm run build`,
+Checks before a commit (the same as CI, §21): `./prepare.sh` – or one by one `npx prettier --check .`, `npm run lint`, `npm run build`,
 `npm run test:consistency`, `api/vendor/bin/phpstan analyse -c phpstan.neon`,
 `DB_NAME=zidle_test php tests/php/run.php`, `npm run test:e2e`.
 
@@ -1078,8 +1081,23 @@ service (`root`/`root`, database `zidle_test`); the php job sets `DEPLOY_TOKEN` 
 | Job                                                                                | Steps                                                                                                                                                                                      |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **php**                                                                            | `composer install` (with dev: PHPStan), `composer audit`, `php -l` on `api/` and `tests/` (without vendor), PHPStan, `db/schema.sql` applied to an empty database, `php tests/php/run.php` |
-| **frontend**                                                                       | `npm ci`, `npm audit --omit=dev --audit-level=high`, `npm run lint`, `npm run build`, `npm run test:consistency`                                                                           |
+| **frontend**                                                                       | `npm ci`, `npm audit --omit=dev --audit-level=high`, `npx prettier --check .`, `npm run lint`, `npm run build`, `npm run test:consistency`                                                 |
 | **e2e** (after both, on `ubuntu-24.04`: Playwright 1.56 has no Chromium for 26.04) | `composer install --no-dev`, `npm ci`, Playwright Chromium, `npm run test:e2e`; on failure the HTML report and traces are uploaded as artifact `playwright-report` (7 days)                |
+
+**`./prepare.sh`** (local, needs only Docker): builds the `test` image (stage `test` of
+`docker/php/Dockerfile` = the PHP 8.4 app image + Debian `nodejs`, `npm`, `chromium`,
+`mariadb-client`) and runs itself in the `test` service of `compose.yaml` (profile `test`, not
+started by `docker compose up`; own volume `test-node-modules`; env `DB_NAME=zidle_test`,
+`MAIL_ENABLED=0`, `SMTP_HOST=''`, test `TICKET_SECRET` / `BANK_IBAN`,
+`PUBLIC_URL=http://127.0.0.1:4173`, `PLAYWRIGHT_CHROMIUM=/usr/bin/chromium`). Steps, stopping at
+the first failure: `npm ci`, `composer install`, **Prettier `--write`** (`.prettierrc.json`:
+single quotes, 120 columns; `.prettierignore`: `package-lock.json`, `api/vendor`,
+`api/composer.*`, `build`; PHP is not formatted), `eslint --fix`, `npm audit` + `composer audit`,
+`php -l`, PHPStan, `db/schema.sql` applied to an empty `zidle_schema` (dropped again), PHP
+integration tests, consistency, Playwright, then the production build: `npm run build`, a fresh
+`build/` with `dist/` and a copy of `api/` (without `vendor/`, `config.local.php`, `logs/*.log`)
+and `composer install -d build/api --no-dev --optimize-autoloader`. `build/` is the deploy package
+(git-ignored); the development `api/vendor/` is left untouched.
 
 **PHPStan** (`phpstan.neon`): level 8, `phpVersion` 8.4, over `api/` (without `vendor/`,
 `config.local.php`) and `tests/php/`; `missingType.iterableValue` is ignored

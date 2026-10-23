@@ -65,7 +65,7 @@ jobs:
         run: php tests/php/run.php
 
   frontend:
-    name: Frontend – ESLint, build, PHP/JS consistency
+    name: Frontend – Prettier, ESLint, build, PHP/JS consistency
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -79,6 +79,7 @@ jobs:
           coverage: none
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
+      - run: npx prettier --check .
       - run: npm run lint
       - run: npm run build
       - name: Layout and ticket format identical in PHP and JS

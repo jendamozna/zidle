@@ -1,5 +1,6 @@
 node_modules
 dist
+build
 api/config.local.php
 api/vendor
 test-results

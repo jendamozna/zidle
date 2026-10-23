@@ -33,9 +33,10 @@ step 'PHPStan'
 api/vendor/bin/phpstan analyse -c phpstan.neon --no-progress
 
 step 'Schema applies to an empty database'
-mariadb -h"$DB_HOST" -uroot -p"$DB_ROOT_PASS" -e 'DROP DATABASE IF EXISTS zidle_schema; CREATE DATABASE zidle_schema CHARACTER SET utf8mb4'
-mariadb -h"$DB_HOST" -uroot -p"$DB_ROOT_PASS" zidle_schema < db/schema.sql
-mariadb -h"$DB_HOST" -uroot -p"$DB_ROOT_PASS" -e 'DROP DATABASE zidle_schema'
+sql() { mariadb --skip-ssl -h"$DB_HOST" -uroot -p"$DB_ROOT_PASS" "$@"; }
+sql -e 'DROP DATABASE IF EXISTS zidle_schema; CREATE DATABASE zidle_schema CHARACTER SET utf8mb4'
+sql zidle_schema < db/schema.sql
+sql -e 'DROP DATABASE zidle_schema'
 
 step 'PHP integration tests'
 php tests/php/run.php
@@ -48,6 +49,9 @@ npm run test:e2e
 
 step 'Production build'
 npm run build
-composer install -d api --no-dev --optimize-autoloader --no-interaction --no-progress
+rm -rf build && mkdir -p build/api
+cp -R dist build/
+tar -C api --exclude=./vendor --exclude=./config.local.php --exclude='./logs/*.log' -cf - . | tar -C build/api -xf -
+composer install -d build/api --no-dev --optimize-autoloader --no-interaction --no-progress
 
-printf '\n\033[1;32mAll checks passed – dist/ and api/vendor/ (without dev packages) are ready to deploy.\033[0m\n'
+printf '\n\033[1;32mAll checks passed – build/ (dist/ + api/ with production vendor/) is ready to deploy.\033[0m\n'
