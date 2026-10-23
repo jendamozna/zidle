@@ -6,7 +6,7 @@ import { compareSeatIds } from './data/layout.js';
 
 export const KIND_LABELS = { adult: 'Dospělý', child: 'Dítě 4–17 let' };
 
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWX23456789';
 
 /** "abcd efgh" → "ABCDEFGH" */
 export const normalizeCode = (input) =>

@@ -16,15 +16,7 @@ function validate(values) {
   return errors;
 }
 
-export default function ReservationForm({
-  stats,
-  deadlineHours,
-  run,
-  dataRetentionDays,
-  submitting,
-  onSubmit,
-  onClose,
-}) {
+export default function ReservationForm({ stats, deadlineHours, run, submitting, onSubmit, onClose }) {
   const [values, setValues] = useState({ firstName: '', lastName: '', email: '', hp: '' });
   const [children, setChildren] = useState(0);
   const [codes, setCodes] = useState([]);
@@ -228,8 +220,7 @@ export default function ReservationForm({
 
         <div className="modal-notes">
           {deadlineHours && prices.total > 0 ? <p>Zaplaťte do {deadlineHours} hodin, jinak se místa uvolní.</p> : null}
-          <p>Vstupenky přijdou e-mailem, na každé místo jedna.</p>
-          <p>Jméno a e-mail smažeme{dataRetentionDays ? ` ${dataRetentionDays} dnů` : ''} po posledním představení.</p>
+          <p>Vstupenky přijdou e-mailem.</p>
         </div>
         {formError && (
           <p className="form-error" role="alert">

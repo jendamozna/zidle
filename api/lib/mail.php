@@ -7,6 +7,9 @@ use PHPMailer\PHPMailer\Exception as MailerException;
 use PHPMailer\PHPMailer\PHPMailer;
 
 const MAIL_FROM_NAME = 'Koncert TZG 2026';
+const MAIL_INK = '#140a24';
+const MAIL_MUTED = '#5f5570';
+const MAIL_ACCENT = '#c42aae';
 
 /** "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Koncert TZG 2026"). */
 function mail_subject(string $subject): string
@@ -14,8 +17,39 @@ function mail_subject(string $subject): string
     return 'TZG 2026: ' . $subject;
 }
 
+/** The one HTML layout of every e-mail: header with $subtitle, white card with $content, optional $footer. */
+function mail_layout(string $content, string $subtitle = '', string $footer = ''): string
+{
+    $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    return '<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>'
+        . '<body style="margin:0;background:#fbf6f1;font-family:Arial,Helvetica,sans-serif;color:' . MAIL_INK . '">'
+        . '<div style="max-width:520px;margin:0 auto;padding:24px 16px">'
+        . '<p style="margin:0 0 4px;font-size:22px;font-weight:bold">Koncert TZG <span style="color:' . MAIL_ACCENT . '">2026</span></p>'
+        . ($subtitle !== '' ? '<p style="margin:0 0 16px;color:' . MAIL_MUTED . '">' . $h($subtitle) . '</p>' : '<div style="height:12px"></div>')
+        . '<div style="background:#ffffff;border-radius:18px;padding:24px;font-size:15px;line-height:1.55">' . $content . '</div>'
+        . ($footer !== '' ? '<p style="margin:16px 0 0;text-align:center;color:' . MAIL_MUTED . ';font-size:13px;line-height:1.5">' . $footer . '</p>' : '')
+        . '</div></body></html>';
+}
+
+/** Plain e-mail text → HTML for mail_layout(): paragraphs, line breaks, links; indented lines (codes) stand out. */
+function mail_text_html(string $text): string
+{
+    $html = '';
+    foreach (preg_split('/\n{2,}/', trim($text)) ?: [] as $paragraph) {
+        $lines = array_map(static function (string $line): string {
+            $safe = htmlspecialchars(trim($line), ENT_QUOTES, 'UTF-8');
+            if (str_starts_with($line, '    ')) {
+                return '<strong style="font-family:Consolas,Menlo,monospace;font-size:20px;letter-spacing:0.08em">' . $safe . '</strong>';
+            }
+            return preg_replace('~https?://[^\s<]*[^\s<.,;:)]~', '<a href="$0" style="color:' . MAIL_ACCENT . '">$0</a>', $safe) ?? $safe;
+        }, explode("\n", $paragraph));
+        $html .= '<p style="margin:0 0 14px">' . implode('<br>', $lines) . '</p>';
+    }
+    return $html;
+}
+
 /**
- * Sends one e-mail. $html is optional (multipart/alternative with $text);
+ * Sends one e-mail: $text plus HTML ($html, or $text in mail_layout() when null).
  * $inline are embedded images: [['cid' => 'ticket-qr', 'data' => <binary>, 'name' => 'x.png', 'type' => 'image/png']];
  * $attachments are files: [['data' => <binary>, 'name' => 'udalost.ics', 'type' => 'text/calendar; method=REQUEST']].
  * Returns false (and logs the reason) when the message could not be handed over.
@@ -51,13 +85,9 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
         }
         $mail->addAddress($to);
         $mail->Subject = $subject;
-        if ($html !== null) {
-            $mail->isHTML(true);
-            $mail->Body = $html;
-            $mail->AltBody = $text;
-        } else {
-            $mail->Body = $text;
-        }
+        $mail->isHTML(true);
+        $mail->Body = $html ?? mail_layout(mail_text_html($text), preg_replace('/^TZG 2026: /', '', $subject) ?? '');
+        $mail->AltBody = $text;
         foreach ($inline as $file) {
             $mail->addStringEmbeddedImage($file['data'], $file['cid'], $file['name'], PHPMailer::ENCODING_BASE64, $file['type']);
         }
@@ -142,8 +172,8 @@ function payment_lines(array $r): array
     return $lines;
 }
 
-/** Sends a plain-text e-mail to the reservation's customer; false when not sent. */
-function send_customer_email(array $r, string $subject, array $lines): bool
+/** Sends an e-mail (text + mail_layout() HTML) to the reservation's customer; false when not sent. */
+function send_customer_email(array $r, string $subject, array $lines, array $attachments = []): bool
 {
     if (!mail_enabled() || $r['email'] === '') {
         return false;
@@ -154,22 +184,33 @@ function send_customer_email(array $r, string $subject, array $lines): bool
         ['', 'Koncert TZG 2026'],
         contact_line() !== '' ? [contact_line()] : []
     ));
-    $ok = deliver_mail($r['email'], mail_subject($subject), $body);
+    $ok = deliver_mail($r['email'], mail_subject($subject), $body, null, [], $attachments);
     if (!$ok) {
         app_log("Failed to send '{$subject}' for reservation {$r['id']}");
     }
     return $ok;
 }
 
+/** QR Platba image as an attachment "QR_platba_<SS>.png", or null without BANK_IBAN. */
+function payment_qr_attachment(array $r): ?array
+{
+    if (trim((string) config('BANK_IBAN')) === '') {
+        return null;
+    }
+    return ['data' => qr_png(spd_string($r)), 'name' => 'QR_platba_' . $r['specific_symbol'] . '.png', 'type' => 'image/png'];
+}
+
 function send_payment_email(array $r): void
 {
     $link = reservation_link($r);
+    $qr = payment_qr_attachment($r);
     send_customer_email($r, 'Rezervace míst', array_merge(
         ['děkujeme za rezervaci míst: ' . implode('; ', seat_labels($r['seats'])) . '.', run_line($r), '', 'Platební údaje:'],
         payment_lines($r),
         ['', 'Pokud platba nedorazí, rezervace bude zrušena a místa uvolněna.'],
-        $link ? ['', "QR kód pro platbu: {$link}"] : []
-    ));
+        $qr ? ['', 'QR kód pro platbu je v příloze ' . $qr['name'] . ' – načtěte ho v aplikaci banky.'] : [],
+        $link ? ['', "Rezervace a QR kód online: {$link}"] : []
+    ), $qr ? [$qr] : []);
 }
 
 function send_reminder_email(array $r): bool

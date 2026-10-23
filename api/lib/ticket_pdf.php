@@ -1,5 +1,5 @@
 <?php
-// Printable tickets (vstupenky.pdf): A4, the reservation's seat tickets one below
+// Printable tickets (TZG_2026_vstupenky_<SS>.pdf): A4, the reservation's seat tickets one below
 // another (four per page) with dashed cut lines, so they can be printed, cut apart and
 // handed out – each ticket is one seat with its own QR code (ticket_code()).
 declare(strict_types=1);
@@ -8,6 +8,12 @@ use Dompdf\Dompdf;
 use Dompdf\Options;
 
 const TICKETS_PER_PAGE = 4;
+
+/** "TZG_2026_vstupenky_<specific symbol>.pdf" – download and e-mail attachment. */
+function ticket_pdf_name(array $r): string
+{
+    return 'TZG_2026_vstupenky_' . $r['specific_symbol'] . '.pdf';
+}
 
 /** PDF (binary) with one ticket per current seat of the reservation. */
 function ticket_pdf(array $r): string

@@ -300,6 +300,8 @@ h2 {
   border-top: 0;
   border-radius: 0 0 50% 50% / 0 0 45% 45%;
   letter-spacing: 0.04em;
+  align-items: start;
+  padding-top: 1.5cqw;
 }
 
 .plan-hit {
@@ -1282,13 +1284,14 @@ h2 {
   overflow-wrap: anywhere;
 }
 
-.names-form {
+.ticket-name {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
 }
 
-/* name on a seat ticket, edited right in the seat list */
 .seat-name {
   width: 100%;
   min-width: 0;
@@ -1299,21 +1302,6 @@ h2 {
   border-radius: 8px;
   background: var(--surface);
   color: var(--ink);
-}
-
-.names-link {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem 1rem;
-}
-
-.names-link .link {
-  color: var(--accent);
-  font-size: inherit;
-}
-
-.names-link .link.muted {
-  color: var(--ink-2);
 }
 
 .ticket-card.is-used {

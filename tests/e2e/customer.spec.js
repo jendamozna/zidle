@@ -136,14 +136,16 @@ test('a reservation paid by discount codes is confirmed at once with one ticket 
   await expect(page.getByText('Zaplaceno').first()).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.ticket-card img')).toHaveCount(2);
 
-  // Own names on the tickets.
-  await page.getByRole('button', { name: 'Jména na vstupenkách' }).click();
-  await page.locator('.pay-seats input').first().fill('Petr Testový');
-  await page.getByRole('button', { name: 'Uložit jména' }).click();
-  await expect(page.getByText('QR kódy i PDF už jména obsahují.')).toBeVisible();
+  // Own names on the tickets, edited right under the QR code.
+  const nameInput = page.locator('.ticket-card').first().getByLabel('Jméno na vstupence');
+  await nameInput.fill('Petr Testový');
+  await nameInput.press('Enter');
+  await expect(page.locator('.ticket-card').first().getByText('Uloženo')).toBeVisible();
   await expect(page.locator('.pay-seats li').first()).toContainText('Petr Testový');
-  await expect(page.locator('.ticket-card').first()).toContainText('Petr Testový');
+  await expect(nameInput).toHaveValue('Petr Testový');
+  await expect(page.locator('.ticket-card').first()).toContainText('řada');
   const pdf = await request.get(await page.getByRole('link', { name: 'PDF k tisku' }).getAttribute('href'));
   expect(pdf.headers()['content-type']).toBe('application/pdf');
+  expect(pdf.headers()['content-disposition']).toMatch(/filename="TZG_2026_vstupenky_\d+\.pdf"/);
   expect((await pdf.body()).subarray(0, 5).toString()).toBe('%PDF-');
 });

@@ -1,8 +1,13 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { ENV } from '../../playwright.config.js';
 
 export const seed = () => JSON.parse(readFileSync(new URL('./.seed.json', import.meta.url), 'utf8'));
 export { ENV };
+
+/** Invitation link like the one in the e-mail (e-mails are off in the tests): a fresh token for the account. */
+export const inviteLink = (email) =>
+  execFileSync('php', ['tests/e2e/invite-link.php', email], { env: ENV, encoding: 'utf8' }).trim();
 
 /** Seeded accounts (tests/e2e/seed.php). */
 export const ADMIN = { email: 'spravce@example.cz', password: 'e2e-spravce-heslo' };

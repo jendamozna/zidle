@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { adminLogin, seed } from './helpers.js';
+import { adminLogin, inviteLink, seed } from './helpers.js';
 
 test.use({ viewport: { width: 1360, height: 900 }, isMobile: false, hasTouch: false });
 
@@ -19,6 +19,23 @@ test('accountant records a partial payment and then the rest', async ({ page }) 
   await expect(row.locator('.badge')).toHaveText('Zaplaceno');
 });
 
+test('reservations sort by a clicked column, a second click reverses it', async ({ page }) => {
+  seed();
+  await adminLogin(page);
+  const amounts = async () =>
+    (await page.locator('tbody tr td:nth-child(5)').allInnerTexts()).map((t) => parseInt(t.replace(/\s/g, ''), 10));
+  const header = page.locator('th a.sort', { hasText: 'Částka' });
+
+  await header.click();
+  await expect(page.locator('th[aria-sort="ascending"]')).toContainText('Částka');
+  const asc = await amounts();
+  expect(asc).toEqual([...asc].sort((a, b) => a - b));
+
+  await header.click();
+  await expect(page.locator('th[aria-sort="descending"]')).toContainText('Částka');
+  expect(await amounts()).toEqual([...asc].sort((a, b) => b - a));
+});
+
 test('admin invites an accountant, who sets a password, sees only reservations and signs in with the e-mail', async ({
   page,
   browser,
@@ -29,8 +46,8 @@ test('admin invites an accountant, who sets a password, sees only reservations a
   await page.locator('form', { hasText: 'Pozvat uživatele' }).getByLabel('Účetní').check();
   await page.getByRole('button', { name: 'Poslat pozvánku' }).click();
   await expect(page.locator('.flash')).toContainText('Pozvánka pro jana.ucetni@example.cz vytvořena.');
-  await expect(page.locator('.flash')).toContainText('E-maily jsou vypnuté (MAIL_ENABLED) – předejte odkaz sami.');
-  const link = await page.locator('.invite-link').inputValue();
+  await expect(page.locator('.flash')).toContainText('E-maily jsou vypnuté (MAIL_ENABLED) – pozvánka nebyla dodaná.');
+  const link = inviteLink('jana.ucetni@example.cz');
   await expect(page.locator('tr', { hasText: 'jana.ucetni@example.cz' })).toContainText('Nepřijata');
 
   // The invitee, on another computer.
@@ -87,7 +104,9 @@ test('admin sends discount codes to e-mails and revokes an unused one', async ({
   await expect(page.locator('.flash')).toContainText('Vytvořeno 2 kódy');
   const rows = page.locator('tr', { hasText: 'rodina@example.com' });
   await expect(rows).toHaveCount(2);
-  await expect(rows.first().locator('.code')).toHaveText(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  await expect(rows.first().locator('.code')).toHaveText(
+    /^(?:[B-DF-HJ-NP-TV-X][AEU]|[2-9]{2}){2}-(?:[B-DF-HJ-NP-TV-X][AEU]|[2-9]{2}){2}$/,
+  );
 
   page.once('dialog', (dialog) => dialog.accept());
   await rows.first().getByRole('button', { name: 'Zrušit' }).click();
@@ -119,19 +138,19 @@ test('admin switches seats of a run between for sale and "Záložní" on the pla
   const premiere = await page.locator('select[name=run] option', { hasText: 'Premiéra' }).getAttribute('value');
   await page.locator('select[name=run]').selectOption(premiere);
   await expect(page.locator('select[name=run] option:checked')).toContainText('Premiéra');
-  const seat = page.locator('.ps:has(input[value="ML-1-1"])');
+  const seat = page.locator('.ps:has(input[value="LH-1-1"])');
   await seat.click();
   await expect(seat.locator('input')).toBeChecked();
   await page.getByRole('button', { name: 'Uložit plánek' }).click();
   await expect(page.locator('.flash')).toContainText('Plánek uložen. V prodeji 266 míst, záložních 35.');
   let runs = (await (await request.get('http://127.0.0.1:8000/api/seats.php')).json()).runs;
-  expect(runs.find((r) => r.label === 'Premiéra').reserveSeats).toContain('ML-1-1');
+  expect(runs.find((r) => r.label === 'Premiéra').reserveSeats).toContain('LH-1-1');
 
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Výchozí rozložení' }).click();
   await expect(page.locator('.flash')).toContainText('Obnoveno výchozí rozložení. V prodeji 267 míst, záložních 34.');
   runs = (await (await request.get('http://127.0.0.1:8000/api/seats.php')).json()).runs;
-  expect(runs.find((r) => r.label === 'Premiéra').reserveSeats).not.toContain('ML-1-1');
+  expect(runs.find((r) => r.label === 'Premiéra').reserveSeats).not.toContain('LH-1-1');
 });
 
 test('forgotten password: the login page sends a link without telling whether the e-mail exists', async ({ page }) => {

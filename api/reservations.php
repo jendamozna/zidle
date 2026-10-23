@@ -1,6 +1,6 @@
 <?php
 // POST api/reservations.php        – create a reservation
-//      body: {runId, firstName, lastName, email, seats: ["ML-1-1", ...], children, codes: ["ABCD-EFGH"],
+//      body: {runId, firstName, lastName, email, seats: ["LH-1-1", ...], children, codes: ["ABCD-EFGH"],
 //             formToken, hp, altcha}
 // GET  api/reservations.php?token= – reservation status and payment details
 declare(strict_types=1);

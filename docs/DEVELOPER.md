@@ -49,7 +49,9 @@ is used only for admin input and for display.
 
 Look: customer app light (palette and fonts after tesinzpivagospel.cz, variables
 in `src/styles.css`); the scanner is dark – `src/scanner/scanner.css` overrides
-the same variables on `:root` (`color-scheme: dark`).
+the same variables on `:root` (`color-scheme: dark`). The admin uses the same
+light palette and fonts (its own inline `<style>` in `admin.php`, same variable
+names and values, accent `#c42aae`).
 
 ## 2. Repository layout
 
@@ -82,7 +84,7 @@ api/
   lib/offline.php      scanning without a connection: scanner_snapshot(), apply_offline_scans(), conflicts
   lib/admin_users.php  accounts and roles: user_can(), admin_login(), create_first_admin(), admin_invite(), admin_accept_invite(), request_password_reset(), reset_password()
   lib/ticket.php       seat ticket QR code (sign/parse), qr_png(), ticket e-mail + calendar event (ticket_ics()), seat_label(s)()
-  lib/ticket_pdf.php   printable tickets vstupenky.pdf (dompdf)
+  lib/ticket_pdf.php   printable tickets TZG_2026_vstupenky_<SS>.pdf (dompdf)
   lib/antispam.php     form token, rate limits, login limits
   lib/altcha.php       invisible ALTCHA: challenge, verification, replay protection
   lib/mail.php         deliver_mail() (SMTP via PHPMailer, else PHP mail()) and customer e-mails
@@ -107,7 +109,7 @@ public/sw.js           service worker: keeps the scanner on the device for offli
 docs/DEVELOPER.md      this file
 docs/prehled/          stakeholder overview (Czech, index.html + screenshots), published as an Artifact
 tests/php/run.php      PHP integration tests (needs a *_test database); fixtures.php = shared helpers
-tests/e2e/             Playwright tests (customer, admin, scanner), seed.php, global-setup.js
+tests/e2e/             Playwright tests (customer, admin, scanner), seed.php, invite-link.php, global-setup.js
 tests/consistency.mjs  layout and ticket format identical in PHP and JS
 phpstan.neon           PHPStan config (level 8)
 eslint.config.js       ESLint config (src/ + tests)
@@ -298,23 +300,23 @@ x2, y2}]}]}]}`
 
   | Id | Name (short) | Level | Seats per row (row 1 first) | Capacity |
   | --- | ------------------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------- | -------------------- | --------------- |
-  | WL | Levé křídlo (L. křídlo) – just below the band, its name above the band level with the other names | main | 5, 5, 5, 5 | 20 |
-  | ML | Levá hlavní (L. hlavní) – a narrow aisle to MR | main | 9 × 8 | 72 |
-  | MR | Pravá hlavní (P. hlavní) | main | 9 × 8 | 72 |
-  | WR | Pravé křídlo (P. křídlo) | main | 4, 4, 4, 5, 5, 5, 4 (the last row set apart) | 31 |
+  | LK | Levé křídlo (L. křídlo) – just below the band, its name above the band level with the other names | main | 5, 5, 5, 5 | 20 |
+  | LH | Levá hlavní (L. hlavní) – a narrow aisle to PH | main | 9 × 8 | 72 |
+  | PH | Pravá hlavní (P. hlavní) | main | 9 × 8 | 72 |
+  | PK | Pravé křídlo (P. křídlo) | main | 4, 4, 4, 5, 5, 5, 4 (the last row set apart) | 31 |
   | BL | Balkon vlevo (Balkon L) | balcony | 12 (bench along the railing, seats 1–5 and 6–12 split by a gap); reserve rows 2–4: 11, 11, 6 (rows 2 and 3 split 1–5 | 6–11 like the bench) | 40 (28 reserve) |
-  | BC | Balkon střed (Balkon S) | balcony | 7, 14, 14, 7, 7 (rows 4–5 shifted by 5 seats) | 49 |
-  | BR | Balkon vpravo (Balkon P) | balcony | 11 (bench along the railing, seats 1–6 and 7–11 split by a gap, mirroring the left part); reserve rows 2–3: 3, 3 | 17 (6 reserve) |
+  | BS | Balkon střed (Balkon S) | balcony | 7, 14, 14, 7, 7 (rows 4–5 shifted by 5 seats) | 49 |
+  | BP | Balkon vpravo (Balkon P) | balcony | 11 (bench along the railing, seats 1–6 and 7–11 split by a gap, mirroring the left part); reserve rows 2–3: 3, 3 | 17 (6 reserve) |
   | | total (main 195, balcony 106) | | | 301 |
 
-  Seat id `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-2-14`; `is_valid_seat_id()`
+  Seat id `SECTION-ROW-SEAT`, e.g. `LH-1-1`, `BS-2-14`; `is_valid_seat_id()`
   accepts only this exact form (no leading zeros, nothing after it – one chair
   has one id) and checks the row and the seat count of that row;
   `book_reservation()` checks it again.
 
 - **„Záložní“ seats** (reserve): shown on the map but not for sale. Per run
   `runs.reserve_seats` (JSON seat ids; NULL = `default_reserve_seats()` = the
-  reserve rows of `BL` and `BR`, 34 seats); the admin switches any seat of a
+  reserve rows of `BL` and `BP`, 34 seats); the admin switches any seat of a
   run between for sale and „Záložní“ on the plan (tab _Plánek_, §14).
   `run['reserve_seats']`, `seat_closed_in_run(run, seat)`, `run_capacity(run)`
   = all seats − „Záložní“ (267 by default). „Záložní“ seats cannot be booked
@@ -374,18 +376,24 @@ Until the first `seats.php` answer (layout) the app shows _Načítám…_.
 **Map** (`Overview.jsx`): one card per level (_Balkon_ with its heading),
 each a `LevelMap` drawn from `PLAN` and the section rows with % positions
 (aspect ratio 100 : `height`): decorations (stage, band, U-shaped balcony
-void), every seat as a small square (white = free, light red = taken, red =
+void with _↑ pódium_ at its top), every seat as a small square (white = free, light red = taken, red =
 own selection, grey dashed = reserve seat not for sale; size = 0.78 × the
 section's seat spacing), the section's area as a button coloured by `occupancyLevel` (`< 50`
 low/green, `50–84` medium/amber, `≥ 85` high/red) that opens the section, and
-the label (short name + _N volných_, red count of own seats). Run bar above the map
+the label (short name + _N volných_, red count of own seats; _Balkon L_ and
+_Balkon P_ centred above their areas in the top 8 units of the balcony plan,
+_Balkon střed_ below its area). Run bar above the map
 (one line: run, **Změnit termín**; on phones < 641 px the words _Termín_ /
 _termín_ are hidden – `.wide-only`) (asks `confirm()` when seats are
 selected; selection is cleared on run change).
 
 **Section detail** (`SectionDetail.jsx`): one header row – back button (**←**,
 _Zpět na mapu_ shown from 641 px), level + section name, chip _N volných_
-coloured by occupancy; _Pódium_ (main floor) or _↑ Směr k pódiu_ (balcony);
+coloured by occupancy; _Pódium_ with a direction arrow from the plan: a
+section whose seats centre left of the main stage / the balcony void (`PLAN`
+item `stage` / `void`) gets _↗ Pódium_ (L. křídlo, Balkon L), right of it
+_↖ Pódium_ (P. křídlo, Balkon P), within it no arrow on the main floor and
+_↑ Pódium_ on the balcony;
 the seats laid out as on the map (`SeatPlan.jsx`: the same row geometry,
 scaled so a seat is 30–44 px – wider sections such as _Balkon střed_ scroll
 sideways – row numbers before seat 1 of each row, seat number on each
@@ -425,8 +433,7 @@ starts when the form opens; submit waits for it with the button text
 _Ověřuji…_; on an `altcha` error it solves a new challenge and retries once),
 notes (_„Zaplaťte do N hodin, jinak se místa uvolní.“_ with the hours in
 effect now – only when there is something to pay, _„Vstupenky přijdou
-e-mailem, na každé místo jedna.“_, _„Jméno a
-e-mail smažeme N dnů po posledním představení.“_), submit **Rezervovat a
+e-mailem.“_), submit **Rezervovat a
 zaplatit** (total 0: **Rezervovat zdarma**). Sent as `children`, `codes`.
 Server field errors (incl. `codes`) are shown at the fields. 409/403 close
 the form with a toast and refresh.
@@ -437,15 +444,15 @@ of seats with kind and price (_„kód, zdarma“_ for a seat paid by a code); p
 (amount = still to pay, `payment.amount`) + due date (red overdue notice
 after it); after a partial payment also _„Už jsme přijali X z Y. Doplaťte
 prosím zbývajících Z se stejným variabilním a specifickým symbolem.“_; paid → section
-_Vstupenky_ (_„1 QR kód = 1 židle. Ukažte je u vchodu v mobilu, nebo
+_Vstupenky_ (_„1 QR kód = 1 místo. Ukažte je u vchodu v mobilu, nebo
 vytiskněte.“_, button **PDF k tisku** → `tickets.php`): cards two per row on
-phones (name on the ticket when set, QR, short section name, _ř. · m._, kind,
-_odbaveno_ when checked in); while `ticketNamesEditable` (pending/paid, run
-not started) the text link **Jména na vstupenkách** under the seat list
-turns the same list into a small input under each seat (placeholder = the
-reservation name, max 100) with the links **Uložit jména** →
-`ticket-names.php` and **Zrušit**; then _„Uloženo.“_ (+ _„QR kódy i PDF už
-jména obsahují.“_ when paid); the seat list shows the name after each seat;
+phones (QR, full section name, _řada · místo_, kind, _odbaveno_ when checked
+in); while `ticketNamesEditable` (run not started) each card ends with
+the input _Jméno na vstupence_ (always editable, placeholder = the
+reservation name, max 100), saved on blur / Enter when changed →
+`ticket-names.php` with that one seat, then _„Ukládám…“_ → _„Uloženo“_ or
+the error under it; otherwise the card shows the name when set; the seat list
+(full section name · _řada_ · _místo_) shows the name after each seat;
 cancellation info after the organizers cancelled (`CancellationInfo`:
 _„Rezervace byla zrušena.“_ / _„Zrušená místa: …“_, _Vráceno X_ and the refund
 line; for an expired reservation with money to return _„Rezervace propadla,
@@ -606,11 +613,11 @@ and the tickets handed out; each seat is checked in separately.
   `{id, specificSymbol, seat, kind, name}`; anything else is `invalid`. JS mirror:
   `src/scanner/ticket.js` (display/offline only).
 - **Ticket e-mail** (`send_ticket_email()`, HTML + text): run, name, summary
-  (`seat_kinds_summary()`, e.g. _„2 dospělí, 1 dítě 4–17 let“_), _„Každé místo má vlastní QR kód – 1 QR kód = 1 židle.“_, then
+  (`seat_kinds_summary()`, e.g. _„2 dospělí, 1 dítě 4–17 let“_), _„Každé místo má vlastní QR kód – 1 QR kód = 1 místo.“_, then
   per seat the name on the ticket (when set), an inline PNG (`cid:ticket-qr-<n>`), `seat_label()` (_„Levá hlavní ·
   řada 1 · místo 2“_) and _„<kind> · vstupenka n z N“_; footer _„V příloze je
-  soubor vstupenky.pdf k vytištění – vstupenky rozstříhejte, každá platí pro
-  jedno místo. Při vstupu můžete QR kódy ukázat i na mobilu.“_. Attachments `vstupenky.pdf` and
+  soubor TZG_2026_vstupenky_<SS>.pdf k vytištění – vstupenky rozstříhejte, každá platí pro
+  jedno místo. Při vstupu můžete QR kódy ukázat i na mobilu.“_. Attachments `TZG_2026_vstupenky_<SS>.pdf` (`ticket_pdf_name()`) and
   `udalost.ics`. Resend in admin. The paid reservation page shows the same
   QR codes.
 - **Printable PDF** (`ticket_pdf()`, dompdf, DejaVu fonts): A4, note
@@ -619,7 +626,7 @@ and the tickets handed out; each seat is checked in separately.
   `TICKETS_PER_PAGE` = 4 per page, each 60 mm high with a dashed cut line:
   QR, _Koncert TZG 2026_, run, section, _řada / místo_, kind, the name on
   the ticket (`ticket_holder()`), _„SS … · vstupenka n z N“_. `GET tickets.php?token=` downloads it
-  (`vstupenky-<SS>.pdf`) for paid reservations, else 404 _„Vstupenky nejsou
+  (`TZG_2026_vstupenky_<SS>.pdf`) for paid reservations, else 404 _„Vstupenky nejsou
   k dispozici – rezervace není zaplacená.“_
 - **Calendar event** (`ticket_ics()`): every ticket e-mail carries the
   attachment `udalost.ics` (`text/calendar; charset=UTF-8; method=REQUEST`),
@@ -779,16 +786,11 @@ roles[], runs[]}` → `admin_invite()`; `runs[]` = runs the Odbavovatel checks
   e-mailem už existuje.“_); creates the account without a password and a
   48-hex token (only its sha256 stored) valid `ADMIN_INVITE_DAYS` = 7 days.
   E-mail _Pozvánka_ (§15) with `admin_invite_link()` =
-  `app_base_url()/api/admin.php?pozvanka=<token>`; the link is also shown once
-  <<<<<<< Updated upstream
-  in the tab (_Kopírovat odkaz_). Flash _„Pozvánka pro X vytvořena. E-mail
-  odeslán.“_ / _„… E-mail se neodeslal (důvod je v logu) – předejte odkaz
-  sami.“_ / with `MAIL_ENABLED` off _„… E-maily jsou vypnuté (MAIL_ENABLED) –
-  předejte odkaz sami.“_
-  =======
-  in the tab (_Kopírovat odkaz_). Flash _„Pozvánka pro X vytvořena. E-mail
-  odeslán.“_ / _„… E-mail se neodeslal – předejte odkaz sami.“_
-  > > > > > > > Stashed changes
+  `app_base_url()/api/admin.php?pozvanka=<token>`; the link is sent only by
+  e-mail (the tab doesn't show it). Flash _„Pozvánka pro X vytvořena. E-mail
+  odeslán.“_ / _„… E-mail se neodeslal (důvod je v logu) – zkuste „Poslat
+  znovu“.“_ / with `MAIL_ENABLED` off _„… E-maily jsou vypnuté (MAIL_ENABLED) –
+  pozvánka nebyla dodaná.“_
 - **Accepting** (`admin.php?pozvanka=<token>`, also when signed in): valid
   link (`admin_invited_user()`: hash, not expired, account not disabled) →
   _„Dobrý den, vytvořte si heslo – tím vznikne Váš účet (role: …).
@@ -856,8 +858,8 @@ password}` → `scanner_login()`: wrong → 1 s, 401 _„Nesprávný e-mail nebo
 ## 13. Discount codes
 
 Free seats are given with discount codes (`lib/discounts.php`). The admin enters e-mail addresses (tab
-_Slevové kódy_, §14); each listed address gets one code by e-mail (§15), an
-address listed twice gets two. A code: 8 characters (§19), any run, used
+_Slevové kódy_, §14); each listed address gets one code, an address listed N
+times gets N codes – all codes of one address in one e-mail (§15). A code: 8 characters (§19), any run, used
 once (`used_at`, `reservation_id`, `seat_id`), can be revoked while unused.
 In a reservation each code makes one seat free – the most expensive one,
 adult seats first, then child seats (§8). Several codes can be used in one
@@ -878,8 +880,8 @@ by role: reservation actions need `reservations`, everything else `manage`.
 Tabs:
 
 - **Plánek** (`view=plan`, run select, default the first run) – hint _„Klikem
-  přepnete židli mezi v prodeji a záložní (zákazníci ji vidí, ale nemohou ji
-  koupit). Platí jen pro vybraný termín. Obsazené židle nelze přepnout. Nový
+  přepnete místo mezi v prodeji a záložní (zákazníci ho vidí, ale nemohou ho
+  koupit). Platí jen pro vybraný termín. Obsazená místa nelze přepnout. Nový
   termín začíná s výchozím rozložením (záložní řady na balkoně).“_; a sticky
   bar _„V prodeji N · záložních M · obsazených K“_ (counts update while
   clicking), legend, **Uložit plánek** (`plan-save`, checkboxes `reserve[]` →
@@ -892,16 +894,21 @@ Tabs:
   _„Obnoveno výchozí rozložení. …“_ (+ _„Obsazená místa zůstala v prodeji:
   …“_).
 
-- **Rezervace** – cards per status (pending/paid), refunds due, on-site
+- **Rezervace** – one row of cards (`.stats`: no wrapping, cards share the
+  width): per status (pending/paid), refunds due, on-site
   sales to verify (_Na místě – ověřit platbu_), per run occupancy (held / `run_capacity()`); filters run/status (incl. `refund`, `onsite`)/ search (SS,
-  name, e-mail, seat). Name column: _prodal(a) <organizer>_ for on-site sales.
+  name, e-mail, seat). Table (max 500 rows, newest first) sorted on the
+  server by clicking a column header (`?sort=ss|run|name|seats|amount|status|created|expires`
+  & `dir=asc|desc`, a second click on the same column reverses it, ▲/▼ and
+  `aria-sort` on the active one; run sorts by its start, name by surname;
+  filters keep the sort). Name column: _prodal(a) <organizer>_ for on-site sales.
   Seats column: one seat per line with _dítě_ / _kód_ chips, ✓ when
   checked in and the name on the ticket. Status column: _odbaveno K z N
   míst, poprvé <time> (<by>)_; on-site paid _na místě – ověřte, že platba
   dorazila_ / _platba ověřena <time>_. Amount column: _přijato X_ when it
   differs from the price, _zbývá doplatit Y_ for partly paid pending.
   Actions: `payment` (§9), `ticket` (send/resend; not without an e-mail),
-  **PDF vstupenek** (`tickets.php`), `cancel`, `cancel-seats` (confirm
+  **PDF vstupenky** (`tickets.php`), `cancel`, `cancel-seats` (confirm
   mentions that seats free by a code are not refunded), `refunded`, `email`
   (change), `onsite-checked` (**Platba dorazila**, §9; replaces _přišla
   platba_ for unverified on-site sales). Within 14 days of the GDPR deletion date and
@@ -914,8 +921,11 @@ Tabs:
   `code-create` → `create_discount_codes()`: max 200
   (_„Najednou lze poslat nejvýše 200 kódů.“_), any invalid address →
   _„Neplatné e-maily: … Nic nebylo vytvořeno.“_; else one random code per
-  address (8 chars of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`) e-mailed at once:
-  _„Vytvořeno N kódů, e-mailem odesláno M.“_ (+ _„Některé e-maily se
+  address (4 pairs, each at random a syllable – consonant + vowel A/E/U – or
+  two digits 2–9, in any order, e.g. `BA42-KU77`, `4827-BAKE`; accepted on input are any 8 chars of
+  `ABCDEFGHJKLMNPQRSTUVWX23456789` – no 0/O, 1/I, Y/Z), e-mailed at once,
+  one e-mail per address with all its codes (§15):
+  _„Vytvořeno N kódů pro K adres, odeslané e-maily: M z K.“_ (+ _„Některé e-maily se
   neodeslaly – zkuste „Poslat znovu“.“_ / _„E-maily jsou vypnuté
   (MAIL_ENABLED).“_). Search (e-mail, code, SS); table (last 1000): code,
   e-mail, created (+ by), sent, state _Nepoužitý_ / _Použitý_ (time, SS link,
@@ -974,10 +984,21 @@ SMTPS, otherwise opportunistic STARTTLS; connect timeout and per-reply limit
 <phone>“_ (`contact_line()`) when a contact is configured.
 Failures return false and are logged as `[zidle] Mail to … failed: <reason>`
 (PHPMailer errors and any other error, e.g. `mail()` disabled by the host, so a
-failed e-mail never turns into a 500; the invitation then shows its link);
-mail is sent synchronously within the request. Texts are plain
-(`send_customer_email()`) except the ticket (HTML + text alternative with one
-QR per seat as inline images `cid:ticket-qr-<n>`, `vstupenky.pdf` and the
+failed e-mail never turns into a 500; a failed invitation can be resent with
+_Poslat znovu_);
+mail is sent synchronously within the request. Every e-mail is HTML + the
+text as alternative, all in one layout `mail_layout(content, subtitle, footer)`
+(paper background `#fbf6f1`, header _Koncert TZG 2026_ with the year in the
+accent `#c42aae`, the subject without _„TZG 2026: “_ as subtitle, white card,
+optional small footer; colours `MAIL_INK` / `MAIL_MUTED` / `MAIL_ACCENT`).
+`deliver_mail()` with `html` = null wraps the text itself
+(`mail_text_html()`: blank line = paragraph, newline = `<br>`, escaped,
+`http(s)://` links clickable without a trailing `.,;:)`, lines indented by 4
+spaces – discount codes – big monospace); that covers all e-mails
+(`send_customer_email()`, invitations, passwords, discount codes) except the
+ticket, which puts its own content in the same layout (one QR per seat as
+inline images `cid:ticket-qr-<n>`, subtitle _Vstupenky · SS …_, footer = the
+print note + contact; attachments `TZG_2026_vstupenky_<SS>.pdf` and the
 calendar event `udalost.ics`, §11). All reservation e-mails contain `Termín: <run>`.
 Payment details (`payment_lines()`): _Už jsme přijali X z Y_ (after a partial
 payment), _Částka_, _Účet: <BANK_ACCOUNT_DISPLAY>_ (no IBAN), _Variabilní
@@ -987,22 +1008,22 @@ _Splatnost_. Other e-mails name the reservation _(SS …)_.
 Subjects are `mail_subject()` = _„TZG 2026: <subject>“_ (the sender name already says
 _Koncert TZG 2026_).
 
-| Subject                              | Trigger                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Rezervace míst                       | reservation created (payment details, link if `PUBLIC_URL`)                                                                                                                                                                                                                                                                                |
-| Pozvánka                             | user invited or invitation sent again (`send_admin_invite_email()`: _„Dobrý den,“_, _„<inviter e-mail> Vás zve do systému Koncert TZG 2026 – role: <roles>.“_, _„Účet vznikne, až si na tomto odkazu vytvoříte heslo (platí 7 dní):“_ + link, _„Přihlašovací jméno je Váš e-mail: …“_)                                                     |
-| Nové heslo                           | forgotten password requested for an active account (`request_password_reset()`: _„někdo (nejspíš Vy) požádal o nové heslo…“_, link valid 60 minut, _„Pokud jste o nové heslo nežádali, e-mail ignorujte – dosavadní heslo platí dál.“_)                                                                                                    |
-| Připomínka platby                    | cron: pending, due within 24 h, created ≥ 24 h before due, once                                                                                                                                                                                                                                                                            |
-| Rezervace zrušena                    | cron: expired within the last 3 days, once (refund line for money that already arrived; _„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“_)                                                                                                            |
-| Platba přijata – Vaše vstupenky      | recorded payment completes the price / expired restored / pending partial cancellation now covered                                                                                                                                                                                                                                         |
-| Vaše vstupenky                       | resend from admin                                                                                                                                                                                                                                                                                                                          |
-| Rezervace potvrzena – Vaše vstupenky | new reservation paid fully by discount codes                                                                                                                                                                                                                                                                                               |
-| Slevový kód                          | admin created or resent a code (`send_discount_code_email()`: _„posíláme Vám slevový kód na jedno místo zdarma na představení TZG 2026: XXXX-XXXX“_, where to enter it, _„Platí na libovolný termín a lze ho použít jednou. Z rezervace se odečte cena jednoho místa (nejdražšího – nejdřív dospělého, pak dětského).“_); `emailed_at` set |
-| Přijata část platby                  | recorded payment below the price                                                                                                                                                                                                                                                                                                           |
-| Vrácení platby                       | recorded payment that can't be used (§9 reasons)                                                                                                                                                                                                                                                                                           |
-| Nové vstupenky                       | partial cancellation of a paid reservation                                                                                                                                                                                                                                                                                                 |
-| Změna rezervace                      | partial cancellation of a pending reservation                                                                                                                                                                                                                                                                                              |
-| Rezervace zrušena                    | whole cancellation by the admin                                                                                                                                                                                                                                                                                                            |
+| Subject                              | Trigger                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rezervace míst                       | reservation created (payment details; with `BANK_IBAN` the QR Platba image attached as `QR_platba_<SS>.png` (`payment_qr_attachment()`, same SPD as the reservation page) and _„QR kód pro platbu je v příloze QR_platba_<SS>.png – načtěte ho v aplikaci banky.“_; with `PUBLIC_URL` _„Rezervace a QR kód online: <link>“_)                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Pozvánka                             | user invited or invitation sent again (`send_admin_invite_email()`: _„Dobrý den,“_, _„<inviter e-mail> Vás zve do systému Koncert TZG 2026 – role: <roles>.“_, _„Účet vznikne, až si na tomto odkazu vytvoříte heslo (platí 7 dní):“_ + link, _„Přihlašovací jméno je Váš e-mail: …“_)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Nové heslo                           | forgotten password requested for an active account (`request_password_reset()`: _„někdo (nejspíš Vy) požádal o nové heslo…“_, link valid 60 minut, _„Pokud jste o nové heslo nežádali, e-mail ignorujte – dosavadní heslo platí dál.“_)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Připomínka platby                    | cron: pending, due within 24 h, created ≥ 24 h before due, once                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Rezervace zrušena                    | cron: expired within the last 3 days, once (refund line for money that already arrived; _„Pokud platba ještě dorazí a místa budou stále volná, rezervaci obnovíme; jinak Vám peníze pošleme zpět na účet, ze kterého přišly.“_)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Platba přijata – Vaše vstupenky      | recorded payment completes the price / expired restored / pending partial cancellation now covered                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Vaše vstupenky                       | resend from admin                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Rezervace potvrzena – Vaše vstupenky | new reservation paid fully by discount codes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Slevový kód / Slevové kódy           | admin created codes (all codes of one address – compared case-insensitively – in one e-mail) or resent one code (`send_discount_codes_email()`, text `discount_codes_mail_text()`): one code _„posíláme Vám slevový kód na jedno místo zdarma na představení TZG 2026: XXXX-XXXX“_, _„Kód zadejte při rezervaci na … do pole „Slevové kódy“.“_, _„Platí na libovolný termín a lze ho použít jednou.“_; N codes _„posíláme Vám N slevové kódy / slevových kódů – každý na jedno místo zdarma …“_, one code per line, _„Kódy zadejte … – do jedné rezervace jich lze zadat víc, jeden na místo.“_, _„Každý platí na libovolný termín a lze ho použít jednou.“_; both with _„Na velikosti písmen nezáleží a pomlčku psát nemusíte.“_ after the „zadejte“ line; `emailed_at` set on all of them |
+| Přijata část platby                  | recorded payment below the price                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Vrácení platby                       | recorded payment that can't be used (§9 reasons)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Nové vstupenky                       | partial cancellation of a paid reservation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Změna rezervace                      | partial cancellation of a pending reservation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Rezervace zrušena                    | whole cancellation by the admin                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## 16. Scheduled jobs and GDPR
 
@@ -1180,11 +1201,14 @@ the built apps), test IBAN and ticket secret,
 && vite preview` on 127.0.0.1:4173 (proxies `/api`). `global-setup.js` runs
 `tests/e2e/seed.php` (fresh database: run 1 _Premiéra_ in 30 days with a
 pending reservation, run 2 _Dnes_ in 20 minutes with a paid reservation
-(BC-1-1 adult, BC-1-2 child) and a second one for the offline test, three discount codes
+(BS-1-1 adult, BS-1-2 child) and a second one for the offline test, three discount codes
 for *zakaznik@example.com*, the Správce *spravce@example.cz* created by
 `create_first_admin()` and the Odbavovatel *vchod@example.cz*; passwords in
 `helpers.js`) and stores its JSON output (`ticket` /
 `offlineTicket` = seat ticket codes, `codes`) in `tests/e2e/.seed.json`.
+`inviteLink(email)` in `helpers.js` runs `tests/e2e/invite-link.php`, which
+issues a fresh invitation token for the account and prints its link (e-mails
+are off in the tests).
 Tests:
 
 - `customer.spec.js` – choose _Premiéra_, the map has as many section areas
@@ -1197,9 +1221,10 @@ Tests:
   child (the lap note shown) and a seeded discount code (bad format message,
   _„<code> · místo zdarma“_, 450 Kč on the payment page with the seat kinds) and the used code refused next time; two seats paid by two
   codes → _Rezervovat zdarma_, _Zaplaceno_, two ticket QR codes and the PDF
-  download, a name put on the first ticket shows on its card.
+  download (`TZG_2026_vstupenky_<SS>.pdf`), a name typed under the first QR code (Enter) is saved
+  (_Uloženo_) and shows in the seat list.
 - `admin.spec.js` – record 200 Kč (_zbývá doplatit 400 Kč_, input prefilled
-  400), then the rest → _Zaplaceno_; _Plánek_: ML-1-1 of _Premiéra_ switched
+  400), then the rest → _Zaplaceno_; _Plánek_: LH-1-1 of _Premiéra_ switched
   to záložní and saved (_„V prodeji 266 míst, záložních 35.“_, in `seats.php`
   `reserveSeats`), then _Výchozí rozložení_; discount codes (invalid e-mail →
   nothing created, the same e-mail twice → two codes, revoke one); payment

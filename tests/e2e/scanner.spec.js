@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import QRCode from 'qrcode';
-import { SCANNER, adminLogin, seed } from './helpers.js';
+import { SCANNER, adminLogin, inviteLink, seed } from './helpers.js';
 
 /**
  * Replaces the camera with a canvas stream that shows the given QR code
@@ -81,7 +81,7 @@ test('without a connection the scanner checks tickets against the downloaded lis
   const snapshot = await (
     await page.request.post('/api/organizer.php', { data: { action: 'snapshot', runId: 2 } })
   ).json();
-  expect(snapshot.tickets.find((t) => t.name === 'Test Offline').checkedIn['BC-2-1'].by).toContain('(offline)');
+  expect(snapshot.tickets.find((t) => t.name === 'Test Offline').checkedIn['BS-2-1'].by).toContain('(offline)');
 });
 
 test('the scanner opens without a connection after it was used online once', async ({ page, context }) => {
@@ -128,7 +128,8 @@ test('an invited Odbavovatel lands in the scanner; without an assigned run it as
   await admin.fill('input[name=email]', 'vchod.b@example.cz');
   await admin.locator('form', { hasText: 'Pozvat uživatele' }).getByLabel('Odbavovatel').check();
   await admin.getByRole('button', { name: 'Poslat pozvánku' }).click();
-  const link = await admin.locator('.invite-link').inputValue();
+  await expect(admin.locator('.flash')).toContainText('Pozvánka pro vchod.b@example.cz vytvořena.');
+  const link = inviteLink('vchod.b@example.cz');
   await expect(admin.locator('tr', { hasText: 'vchod.b@example.cz' })).toContainText('Nepřijata');
 
   // On the organizer's phone.

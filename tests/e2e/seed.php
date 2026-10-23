@@ -15,9 +15,9 @@ $pdo->prepare('UPDATE runs SET label = ?, starts_at = ? WHERE id = 1')->execute(
 $pdo->prepare('UPDATE runs SET label = ?, starts_at = ? WHERE id = 2')->execute(['Dnes', db_time(now_utc()->modify('+20 minutes'))]);
 runs(true);
 
-$pending = reservation(['MR-5-1', 'MR-5-2'], 'pending', 1, 'Platící');
-$paid = reservation(['BC-1-1', 'BC-1-2'], 'paid', 2, 'Vstupenka', ['BC-1-2']);
-$offline = reservation(['BC-2-1', 'BC-2-2'], 'paid', 2, 'Offline');
+$pending = reservation(['PH-5-1', 'PH-5-2'], 'pending', 1, 'Platící');
+$paid = reservation(['BS-1-1', 'BS-1-2'], 'paid', 2, 'Vstupenka', ['BS-1-2']);
+$offline = reservation(['BS-2-1', 'BS-2-2'], 'paid', 2, 'Offline');
 create_discount_codes("zakaznik@example.com\nzakaznik@example.com\nzakaznik@example.com", 'seed');
 create_first_admin('spravce@example.cz', 'e2e-spravce-heslo');
 $invite = admin_invite('vchod@example.cz', ['scanner'], 'seed', [1, 2]); // checks in both runs
@@ -30,7 +30,7 @@ $row = static function (int $id): array {
 };
 echo json_encode([
     'pendingVs' => $row($pending)['specific_symbol'],
-    'ticket' => ticket_code($row($paid), 'BC-1-1'),
-    'offlineTicket' => ticket_code($row($offline), 'BC-2-1'),
+    'ticket' => ticket_code($row($paid), 'BS-1-1'),
+    'offlineTicket' => ticket_code($row($offline), 'BS-2-1'),
     'codes' => array_map('format_discount_code', db_query('SELECT code FROM discount_codes ORDER BY id')->fetchAll(PDO::FETCH_COLUMN)),
 ], JSON_UNESCAPED_UNICODE);

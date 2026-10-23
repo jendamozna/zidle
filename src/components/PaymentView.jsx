@@ -49,7 +49,7 @@ function CopyValue({ label, value }) {
 
 const seatLabel = (id) => {
   const { sectionId, row, seat } = parseSeatId(id);
-  return `${SECTION_BY_ID[sectionId]?.short ?? sectionId} ř. ${row} · ${seat}`;
+  return `${SECTION_BY_ID[sectionId]?.name ?? sectionId} · řada ${row} · místo ${seat}`;
 };
 
 /** Refund summary after the organizers cancelled the reservation or some seats (customers can't cancel). */
@@ -112,9 +112,25 @@ function useQrImage(text, width) {
   return qr;
 }
 
-function TicketCard({ ticket }) {
+/** Ticket card; while names are editable, the name on the ticket is saved on blur / Enter. */
+function TicketCard({ ticket, reservation, onChange }) {
   const qr = useQrImage(ticket.code, 400);
   const { sectionId, row, seat } = parseSeatId(ticket.seat);
+  const [name, setName] = useState(ticket.holder ?? '');
+  const [save, setSave] = useState(null);
+
+  const submit = async () => {
+    const value = name.trim();
+    if (value === (ticket.holder ?? '')) return;
+    setSave({ busy: true });
+    try {
+      onChange(await saveTicketNames(reservation.token, { [ticket.seat]: value }));
+      setSave({ done: true });
+    } catch (err) {
+      setSave({ error: err.message });
+    }
+  };
+
   return (
     <li className={`ticket-card ${ticket.checkedInAt ? 'is-used' : ''}`}>
       {qr ? (
@@ -123,120 +139,65 @@ function TicketCard({ ticket }) {
         <div className="qr-placeholder" />
       )}
       <div>
-        {ticket.holder && <span className="ticket-holder">{ticket.holder}</span>}
-        <strong>{SECTION_BY_ID[sectionId]?.short ?? sectionId}</strong>
+        <strong>{SECTION_BY_ID[sectionId]?.name ?? sectionId}</strong>
         <span>
-          ř. {row} · m. {seat}
+          řada {row} · místo {seat}
         </span>
         <span className="muted small">
           {KIND_LABELS[ticket.kind]}
           {ticket.checkedInAt && ' · odbaveno'}
         </span>
       </div>
+      {reservation.ticketNamesEditable ? (
+        <label className="ticket-name">
+          <span className="muted small">Jméno na vstupence</span>
+          <input
+            className="seat-name"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setSave(null);
+            }}
+            onBlur={submit}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            placeholder={`${reservation.firstName} ${reservation.lastName}`}
+            maxLength={100}
+            disabled={save?.busy}
+          />
+          {save?.busy && <span className="muted small">Ukládám…</span>}
+          {save?.done && <span className="muted small">Uloženo</span>}
+          {save?.error && <span className="form-error small">{save.error}</span>}
+        </label>
+      ) : (
+        ticket.holder && <span className="ticket-holder">{ticket.holder}</span>
+      )}
     </li>
   );
 }
 
-/**
- * Seats of the reservation with kind and price; "Jména na vstupenkách" turns the same list into
- * name fields for the seat tickets (empty = the reservation name).
- */
-function SeatList({ reservation, onChange }) {
-  const [names, setNames] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const [saved, setSaved] = useState(false);
-  const defaultName = `${reservation.firstName} ${reservation.lastName}`;
-  const editing = names !== null;
-
-  const start = () => {
-    setNames(Object.fromEntries(reservation.tickets.map((t) => [t.seat, t.holder ?? ''])));
-    setError(null);
-    setSaved(false);
-  };
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      onChange(await saveTicketNames(reservation.token, names));
-      setNames(null);
-      setSaved(true);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const list = (
+/** Seats of the reservation with kind, price and the name on the ticket. */
+function SeatList({ reservation }) {
+  return (
     <ul className="pay-seats">
       {reservation.tickets.map((t) => (
         <li key={t.seat}>
           <div className="pay-seat-row">
             <span>
               {seatLabel(t.seat)}
-              {!editing && t.holder && <small className="muted"> · {t.holder}</small>}
+              {t.holder && <small className="muted"> · {t.holder}</small>}
             </span>
             <span className="muted">
               {KIND_LABELS[t.kind]} · {t.free ? 'kód, zdarma' : formatCzk(t.price)}
             </span>
           </div>
-          {editing && (
-            <input
-              className="seat-name"
-              value={names[t.seat] ?? ''}
-              onChange={(e) => setNames((prev) => ({ ...prev, [t.seat]: e.target.value }))}
-              placeholder={defaultName}
-              maxLength={100}
-              disabled={busy}
-              aria-label={`Jméno na vstupence ${seatLabel(t.seat)}`}
-            />
-          )}
         </li>
       ))}
     </ul>
   );
-
-  if (!editing) {
-    return (
-      <>
-        {list}
-        {reservation.ticketNamesEditable && (
-          <p className="names-link small">
-            <button type="button" className="link" onClick={start}>
-              Jména na vstupenkách
-            </button>
-            {saved && (
-              <span className="muted">
-                {' '}
-                Uloženo.{reservation.status === 'paid' && ' QR kódy i PDF už jména obsahují.'}
-              </span>
-            )}
-          </p>
-        )}
-      </>
-    );
-  }
-  return (
-    <form className="names-form" onSubmit={submit}>
-      {list}
-      {error && <p className="form-error">{error}</p>}
-      <p className="names-link small">
-        <button type="submit" className="link" disabled={busy}>
-          {busy ? 'Ukládám…' : 'Uložit jména'}
-        </button>
-        <button type="button" className="link muted" onClick={() => setNames(null)} disabled={busy}>
-          Zrušit
-        </button>
-      </p>
-    </form>
-  );
 }
 
 /** Paid: one ticket (QR code) per seat and the printable PDF. */
-function Tickets({ reservation }) {
+function Tickets({ reservation, onChange }) {
   const { tickets } = reservation;
   if (!tickets.length || !tickets[0].code) return null;
   return (
@@ -244,7 +205,7 @@ function Tickets({ reservation }) {
       <div className="tickets-head">
         <div>
           <h3 id="tickets-title">Vstupenky</h3>
-          <p className="muted small">1 QR kód = 1 židle. Ukažte je u vchodu v mobilu, nebo vytiskněte.</p>
+          <p className="muted small">1 QR kód = 1 místo. Ukažte je u vchodu v mobilu, nebo vytiskněte.</p>
         </div>
         <a className="btn btn-primary" href={ticketsPdfUrl(reservation.token)} download>
           PDF k tisku
@@ -252,7 +213,7 @@ function Tickets({ reservation }) {
       </div>
       <ul className="ticket-grid">
         {tickets.map((ticket) => (
-          <TicketCard key={ticket.seat} ticket={ticket} />
+          <TicketCard key={ticket.seat} ticket={ticket} reservation={reservation} onChange={onChange} />
         ))}
       </ul>
     </section>
@@ -328,16 +289,16 @@ export default function PaymentView({ reservation, onChange, onBack }) {
               ) : (
                 <p className="deadline">
                   Zaplaťte do <strong>{formatDeadline(reservation.expiresAt)}</strong>. Jinak bude rezervace zrušena a
-                  místa uvolněna.
+                  místa budou uvolněna.
                 </p>
               )}
             </>
           )}
 
-          <SeatList reservation={reservation} onChange={onChange} />
+          <SeatList reservation={reservation} />
           <p className="muted small">{reservation.email}</p>
 
-          {status === 'paid' && <Tickets reservation={reservation} />}
+          {status === 'paid' && <Tickets reservation={reservation} onChange={onChange} />}
           <CancellationInfo reservation={reservation} />
         </div>
       </div>

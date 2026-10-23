@@ -177,7 +177,6 @@ export default function App() {
           stats={stats}
           deadlineHours={seats.deadlineHours}
           run={seats.run}
-          dataRetentionDays={seats.dataRetentionDays}
           submitting={seats.submitting}
           onSubmit={handleSubmit}
           onClose={closeForm}

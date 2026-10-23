@@ -72,7 +72,7 @@ function money(int $id): array
 // ---------------------------------------------------------------- payments
 
 test('partial payment stays pending, the rest completes it and a surplus is refunded', function (): void {
-    $id = reservation(['WL-1-1', 'WL-1-2']);
+    $id = reservation(['LK-1-1', 'LK-1-2']);
     contains('zbývá doplatit 300 Kč', record_payment($id, 300), 'message');
     same(['pending', 300, null, 300], money($id), 'after 300');
     contains('Přeplatek 100 Kč', record_payment($id, 400), 'message');
@@ -80,7 +80,7 @@ test('partial payment stays pending, the rest completes it and a surplus is refu
 });
 
 test('payment code (SPD) asks only for the missing amount, with VS 3211 and the reservation\'s SS', function (): void {
-    $id = reservation(['WL-1-3', 'WL-1-4']);
+    $id = reservation(['LK-1-3', 'LK-1-4']);
     record_payment($id, 200);
     contains('*AM:400.00*', spd_string(row($id)), 'SPD');
     $ss = row($id)['specific_symbol'];
@@ -92,39 +92,39 @@ test('payment code (SPD) asks only for the missing amount, with VS 3211 and the 
 });
 
 test('late payment restores an expired reservation when the seats are free', function (): void {
-    $id = reservation(['WL-1-5']);
+    $id = reservation(['LK-1-5']);
     expire($id);
     same('expired', row($id)['status'], 'expired');
     same([], array_keys(array_filter(held(1), fn ($h) => $h === "r{$id}")), 'seats freed');
     contains('rezervace obnovena', record_payment($id, 300), 'message');
     same(['paid', 300, null, 0], money($id), 'restored');
-    same("r{$id}", held(1)['WL-1-5'] ?? null, 'seat held again');
+    same("r{$id}", held(1)['LK-1-5'] ?? null, 'seat held again');
 });
 
 test('late payment is refunded when someone else took the seats', function (): void {
-    $id = reservation(['WL-1-6']);
+    $id = reservation(['LK-1-6']);
     expire($id);
-    reservation(['WL-1-6']);
+    reservation(['LK-1-6']);
     contains('místa mezitím obsadil někdo jiný', record_payment($id, 300), 'message');
     same(['expired', 300, 300, 300], money($id), 'refund');
 });
 
 test('late payment after the run is refunded', function (): void {
-    $id = reservation(['WL-2-1'], 'pending', 2);
+    $id = reservation(['LK-2-1'], 'pending', 2);
     expire($id);
     contains('platba dorazila až po představení', record_payment($id, 300), 'message');
     same(['expired', 300, 300, 300], money($id), 'refund');
 });
 
 test('late payment that does not cover the price is refunded', function (): void {
-    $id = reservation(['WL-2-2']);
+    $id = reservation(['LK-2-2']);
     expire($id);
     contains('nepokrývá celou částku', record_payment($id, 100), 'message');
     same(['expired', 100, 100, 300], money($id), 'refund');
 });
 
 test('expiry refunds a partial payment; paying the rest later restores the reservation', function (): void {
-    $id = reservation(['WL-2-3', 'WL-2-4']);
+    $id = reservation(['LK-2-3', 'LK-2-4']);
     record_payment($id, 200);
     expire($id);
     same(['expired', 200, 200, 600], money($id), 'expired with refund');
@@ -133,20 +133,20 @@ test('expiry refunds a partial payment; paying the rest later restores the reser
 });
 
 test('payment for a cancelled reservation is refunded', function (): void {
-    $id = reservation(['WL-2-5']);
+    $id = reservation(['LK-2-5']);
     cancel_seats($id, null);
     contains('rezervace už byla zrušená', record_payment($id, 300), 'message');
     same(['cancelled', 300, 300, 300], money($id), 'refund');
 });
 
 test('a second payment for a paid reservation is refunded', function (): void {
-    $id = reservation(['WL-2-6'], 'paid');
+    $id = reservation(['LK-2-6'], 'paid');
     contains('platbu navíc', record_payment($id, 300), 'message');
     same(['paid', 600, 300, 0], money($id), 'refund');
 });
 
 test('the same payment submitted twice (double click) is recorded once', function (): void {
-    $id = reservation(['WR-7-3']);
+    $id = reservation(['PK-7-3']);
     contains('zaplaceno', record_payment($id, 300, 0), 'first submit');
     same('Platba u této rezervace už byla mezitím zapsána – nic dalšího se nezapsalo. Zkontrolujte stav rezervace.',
         record_payment($id, 300, 0), 'second submit');
@@ -154,7 +154,7 @@ test('the same payment submitted twice (double click) is recorded once', functio
 });
 
 test('invalid amounts are rejected', function (): void {
-    $id = reservation(['WL-3-1']);
+    $id = reservation(['LK-3-1']);
     same('Zadejte přijatou částku v Kč.', record_payment($id, 0), 'zero');
     same(['pending', 0, null, 300], money($id), 'unchanged');
 });
@@ -162,14 +162,14 @@ test('invalid amounts are rejected', function (): void {
 // ------------------------------------------------------------ cancellation
 
 test('admin cancellation of single seats refunds them in full and frees them', function (): void {
-    $id = reservation(['WL-3-2', 'WL-3-3'], 'paid');
-    cancel_seats($id, ['WL-3-3']);
+    $id = reservation(['LK-3-2', 'LK-3-3'], 'paid');
+    cancel_seats($id, ['LK-3-3']);
     $r = row($id);
-    same(['paid', 'WL-3-2', 300, 300], [$r['status'], $r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'after one seat');
-    same(false, isset(held(1)['WL-3-3']), 'seat freed');
+    same(['paid', 'LK-3-2', 300, 300], [$r['status'], $r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'after one seat');
+    same(false, isset(held(1)['LK-3-3']), 'seat freed');
     same('Vyberte místa z této rezervace.', (function () use ($id) {
         try {
-            cancel_seats($id, ['ML-1-1']);
+            cancel_seats($id, ['LH-1-1']);
             return '';
         } catch (InvalidArgumentException $e) {
             return $e->getMessage();
@@ -178,30 +178,30 @@ test('admin cancellation of single seats refunds them in full and frees them', f
 });
 
 test('admin cancellation refunds a paid reservation in full', function (): void {
-    $id = reservation(['WL-3-4'], 'paid');
+    $id = reservation(['LK-3-4'], 'paid');
     cancel_seats($id, null);
     $r = row($id);
     same(['cancelled', 300], [$r['status'], (int) $r['refund_amount']], 'refund');
 });
 
 test('cancelling a partly paid pending reservation refunds what arrived', function (): void {
-    $id = reservation(['WL-3-5', 'WL-3-6']);
+    $id = reservation(['LK-3-5', 'LK-3-6']);
     record_payment($id, 200);
     cancel_seats($id, null);
     same(['cancelled', 200, 200, 600], money($id), 'refund');
 });
 
 test('cancelling seats of a pending reservation completes it when the payment now covers it', function (): void {
-    $id = reservation(['WL-4-1', 'WL-4-2', 'WL-4-3']);
+    $id = reservation(['LK-4-1', 'LK-4-2', 'LK-4-3']);
     record_payment($id, 600);
-    cancel_seats($id, ['WL-4-3']);
+    cancel_seats($id, ['LK-4-3']);
     same(['paid', 600, null, 0], money($id), 'completed');
 });
 
 test('a seat cannot be held twice in the same run', function (): void {
-    reservation(['WL-4-4']);
+    reservation(['LK-4-4']);
     try {
-        reservation(['WL-4-4']);
+        reservation(['LK-4-4']);
     } catch (PDOException $e) {
         same('23000', $e->getCode(), 'duplicate key');
         return;
@@ -224,43 +224,43 @@ function book(array $seats, int $children = 0, array $codes = []): array
 }
 
 test('child seats are the last seats, codes free the most expensive seats first', function (): void {
-    $seats = ['ML-1-3', 'ML-1-1', 'ML-1-2'];
+    $seats = ['LH-1-3', 'LH-1-1', 'LH-1-2'];
     $children = assign_child_seats($seats, 1);
-    same(['ML-1-3'], $children, 'last seat is the child seat');
-    same(['ML-1-1', 'ML-1-2'], assign_free_seats($seats, $children, 2, 300, 150), 'adult seats first');
-    same(['ML-1-1', 'ML-1-2', 'ML-1-3'], assign_free_seats($seats, $children, 3, 300, 150), 'then the child seat');
-    same(['ML-1-1'], assign_free_seats($seats, assign_child_seats($seats, 2), 1, 300, 150), 'the one adult seat');
+    same(['LH-1-3'], $children, 'last seat is the child seat');
+    same(['LH-1-1', 'LH-1-2'], assign_free_seats($seats, $children, 2, 300, 150), 'adult seats first');
+    same(['LH-1-1', 'LH-1-2', 'LH-1-3'], assign_free_seats($seats, $children, 3, 300, 150), 'then the child seat');
+    same(['LH-1-1'], assign_free_seats($seats, assign_child_seats($seats, 2), 1, 300, 150), 'the one adult seat');
     same([], assign_free_seats($seats, $children, 0, 300, 150), 'no code');
 });
 
 test('a reservation with a child seat and a code costs adult + child − the adult seat', function (): void {
     $code = new_code();
-    $booked = book(['MR-1-1', 'MR-1-2', 'MR-1-3'], 1, [$code]);
+    $booked = book(['PH-1-1', 'PH-1-2', 'PH-1-3'], 1, [$code]);
     $r = $booked['reservation'] ?? [];
-    same(['pending', 'MR-1-3', 'MR-1-1', 450], [$r['status'], $r['child_seats'], $r['free_seats'], (int) $r['amount']], 'reservation');
+    same(['pending', 'PH-1-3', 'PH-1-1', 450], [$r['status'], $r['child_seats'], $r['free_seats'], (int) $r['amount']], 'reservation');
     $used = db()->prepare('SELECT used_at IS NOT NULL, reservation_id, seat_id FROM discount_codes WHERE code = ?');
     $used->execute([$code]);
-    same([1, (int) $r['id'], 'MR-1-1'], array_map(fn ($v) => is_numeric($v) ? (int) $v : $v, $used->fetch(PDO::FETCH_NUM) ?: []), 'code used for the seat');
-    same([['MR-1-1', 'adult', 0, true], ['MR-1-2', 'adult', 300, false], ['MR-1-3', 'child', 150, false]],
+    same([1, (int) $r['id'], 'PH-1-1'], array_map(fn ($v) => is_numeric($v) ? (int) $v : $v, $used->fetch(PDO::FETCH_NUM) ?: []), 'code used for the seat');
+    same([['PH-1-1', 'adult', 0, true], ['PH-1-2', 'adult', 300, false], ['PH-1-3', 'child', 150, false]],
         array_map(fn ($t) => [$t['seat'], $t['kind'], $t['price'], $t['free']], reservation_payload($r)['tickets']), 'tickets in the payload');
     same('2 dospělí, 1 dítě 4–17 let', seat_kinds_summary($r), 'summary');
 });
 
 test('a discount code works only once and not after it was revoked', function (): void {
     $code = new_code();
-    same(true, isset(book(['MR-2-1'], 0, [$code])['reservation']), 'first use');
-    same('Slevový kód ' . format_discount_code($code) . ' neplatí nebo už byl použit.', book(['MR-2-2'], 0, [$code])['error'] ?? null, 'second use');
-    same(false, isset(held(1)['MR-2-2']), 'nothing booked on the failed attempt');
+    same(true, isset(book(['PH-2-1'], 0, [$code])['reservation']), 'first use');
+    same('Slevový kód ' . format_discount_code($code) . ' neplatí nebo už byl použit.', book(['PH-2-2'], 0, [$code])['error'] ?? null, 'second use');
+    same(false, isset(held(1)['PH-2-2']), 'nothing booked on the failed attempt');
     $revoked = new_code();
     contains('Kód zrušen', revoke_discount_code((int) db_query('SELECT MAX(id) FROM discount_codes')->fetchColumn()), 'revoke');
-    same(422, book(['MR-2-3'], 0, [$revoked])['status'] ?? null, 'revoked code');
-    same(422, book(['MR-2-4'], 0, ['ZZZZZZZZ'])['status'] ?? null, 'unknown code');
+    same(422, book(['PH-2-3'], 0, [$revoked])['status'] ?? null, 'revoked code');
+    same(422, book(['PH-2-4'], 0, ['XXXXXXXX'])['status'] ?? null, 'unknown code');
 });
 
 test('a reservation paid fully by codes is confirmed at once', function (): void {
-    $booked = book(['MR-3-1', 'MR-3-2'], 1, [new_code(), new_code()]);
+    $booked = book(['PH-3-1', 'PH-3-2'], 1, [new_code(), new_code()]);
     $r = $booked['reservation'] ?? [];
-    same(['paid', 0, 'MR-3-1,MR-3-2'], [$r['status'], (int) $r['amount'], $r['free_seats']], 'paid without money');
+    same(['paid', 0, 'PH-3-1,PH-3-2'], [$r['status'], (int) $r['amount'], $r['free_seats']], 'paid without money');
     same(0, amount_due($r), 'nothing to pay');
 });
 
@@ -268,26 +268,52 @@ test('codes are created per listed e-mail; an invalid address creates nothing', 
     $before = (int) db_query('SELECT COUNT(*) FROM discount_codes')->fetchColumn();
     contains('Neplatné e-maily: spatny', create_discount_codes("a@example.com\nspatny", 'test'), 'invalid');
     same($before, (int) db_query('SELECT COUNT(*) FROM discount_codes')->fetchColumn(), 'nothing created');
-    contains('Vytvořeno 3 kódy', create_discount_codes("a@example.com, b@example.com;\na@example.com", 'test'), 'created');
+    contains('Vytvořeno 3 kódy pro 2 adresy, odeslané e-maily: 0 z 2.', create_discount_codes("a@example.com, b@example.com;\nA@example.com", 'test'), 'created');
     same(2, (int) db_query("SELECT COUNT(*) FROM discount_codes WHERE email = 'a@example.com'")->fetchColumn(), 'two codes for a listed twice');
+    $codes = db_query('SELECT code FROM discount_codes')->fetchAll(PDO::FETCH_COLUMN);
+    same([], array_values(preg_grep('/^(?:[BCDFGHJKLMNPQRSTVWX][AEU]|[2-9]{2}){4}$/', $codes, PREG_GREP_INVERT) ?: []), 'four pairs: syllable or two digits');
     same('ABCDEFGH', normalize_discount_code(' abcd-efgh '), 'normalized input');
 });
 
+test('e-mails share one HTML layout; the reservation e-mail attaches the payment QR', function (): void {
+    $html = mail_layout(mail_text_html("Dobrý den,\n\n<b>Kód</b>:\n    ABCD-EFGH\n\nOdkaz: https://example.com/?r=1&x=2."), 'Rezervace míst');
+    contains('Koncert TZG <span style="color:#c42aae">2026</span>', $html, 'header');
+    contains('Rezervace míst</p>', $html, 'subtitle');
+    contains('&lt;b&gt;Kód&lt;/b&gt;:<br><strong', $html, 'escaped, line break');
+    contains('>ABCD-EFGH</strong>', $html, 'code line');
+    contains('<a href="https://example.com/?r=1&amp;x=2" style="color:#c42aae">https://example.com/?r=1&amp;x=2</a>.', $html, 'link without the full stop');
+    $r = row(reservation(['PK-7-4']));
+    $qr = payment_qr_attachment($r) ?? [];
+    same(['QR_platba_' . $r['specific_symbol'] . '.png', 'image/png', "\x89PNG"], [$qr['name'] ?? null, $qr['type'] ?? null, substr($qr['data'] ?? '', 0, 4)], 'QR attachment');
+});
+
+test('codes of one address go in one e-mail', function (): void {
+    $one = discount_codes_mail_text(['ABCDEFGH']);
+    contains('slevový kód na jedno místo zdarma', $one, 'one code');
+    contains('    ABCD-EFGH', $one, 'formatted');
+    contains('Na velikosti písmen nezáleží', $one, 'case-insensitive note');
+    $two = discount_codes_mail_text(['ABCDEFGH', 'JKLMNPQR']);
+    contains('posíláme Vám 2 slevové kódy – každý na jedno místo zdarma', $two, 'two codes');
+    contains("    ABCD-EFGH\n    JKLM-NPQR", $two, 'both codes');
+    contains('jeden na místo', $two, 'more codes in one reservation');
+    contains('5 slevových kódů', discount_codes_mail_text(array_fill(0, 5, 'ABCDEFGH')), 'five codes');
+});
+
 test('cancelling a seat paid by a code returns nothing; a child seat returns its price', function (): void {
-    $id = reservation(['MR-4-1', 'MR-4-2', 'MR-4-3'], 'paid', 1, '', ['MR-4-3'], ['MR-4-1']);
+    $id = reservation(['PH-4-1', 'PH-4-2', 'PH-4-3'], 'paid', 1, '', ['PH-4-3'], ['PH-4-1']);
     same(450, (int) row($id)['amount'], 'price');
-    cancel_seats($id, ['MR-4-1']);
+    cancel_seats($id, ['PH-4-1']);
     same([450, 0], [(int) row($id)['amount'], (int) row($id)['refund_amount']], 'free seat: nothing back');
-    cancel_seats($id, ['MR-4-3']);
+    cancel_seats($id, ['PH-4-3']);
     $r = row($id);
-    same(['MR-4-2', 300, 150], [$r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'child seat');
+    same(['PH-4-2', 300, 150], [$r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'child seat');
     cancel_seats($id, null);
     same(['cancelled', 450], [row($id)['status'], (int) row($id)['refund_amount']], 'the adult seat in full');
 });
 
 test('cancelling the paid seats of a pending reservation leaves the free seats confirmed', function (): void {
-    $id = reservation(['MR-5-1', 'MR-5-2'], 'pending', 1, '', [], ['MR-5-1']);
-    cancel_seats($id, ['MR-5-2']);
+    $id = reservation(['PH-5-1', 'PH-5-2'], 'pending', 1, '', [], ['PH-5-1']);
+    cancel_seats($id, ['PH-5-2']);
     same(['paid', 0], [row($id)['status'], (int) row($id)['amount']], 'confirmed');
 });
 
@@ -303,7 +329,7 @@ test('the payment deadline follows the rule in effect when the reservation is ma
             payment_deadline_hours(now_utc()),
             payment_deadline_hours(now_utc()->modify('+6 days')),
         ], 'hours by booking time');
-        $r = book(['MR-8-1'])['reservation'] ?? [];
+        $r = book(['PH-8-1'])['reservation'] ?? [];
         $hours = (utc_time($r['expires_at'])->getTimestamp() - utc_time($r['created_at'])->getTimestamp()) / 3600;
         same(24, (int) round($hours), 'due date of a new reservation');
     } finally {
@@ -314,55 +340,55 @@ test('the payment deadline follows the rule in effect when the reservation is ma
 // ----------------------------------------------------------- check-in
 
 test('each seat ticket is checked in once; cancelled seats and other runs are refused', function (): void {
-    $id = reservation(['MR-6-1', 'MR-6-2', 'MR-6-3'], 'paid', 2, 'Vstupní', ['MR-6-2']);
-    cancel_seats($id, ['MR-6-3']);
+    $id = reservation(['PH-6-1', 'PH-6-2', 'PH-6-3'], 'paid', 2, 'Vstupní', ['PH-6-2']);
+    cancel_seats($id, ['PH-6-3']);
     $r = row($id);
     $run = run_by_id(2) ?? [];
     // Run 2 started an hour ago – checked in with the organizer's confirmation outside the window.
-    same('outside_window', verify_ticket(ticket_code($r, 'MR-6-1'), $run, device('Vchod A'), false)['result'], 'outside window');
-    $first = verify_ticket(ticket_code($r, 'MR-6-1'), $run, device('Vchod A'), true);
-    same(['valid', 'MR-6-1', 'adult', 1, 2], [$first['result'], $first['ticket']['seat'], $first['ticket']['kind'], $first['ticket']['checkedIn'], $first['ticket']['count']], 'first seat');
-    same('used', verify_ticket(ticket_code($r, 'MR-6-1'), $run, device('Vchod B'), true)['result'], 'same seat again');
-    $child = verify_ticket(ticket_code($r, 'MR-6-2'), $run, device('Vchod B'), true);
+    same('outside_window', verify_ticket(ticket_code($r, 'PH-6-1'), $run, device('Vchod A'), false)['result'], 'outside window');
+    $first = verify_ticket(ticket_code($r, 'PH-6-1'), $run, device('Vchod A'), true);
+    same(['valid', 'PH-6-1', 'adult', 1, 2], [$first['result'], $first['ticket']['seat'], $first['ticket']['kind'], $first['ticket']['checkedIn'], $first['ticket']['count']], 'first seat');
+    same('used', verify_ticket(ticket_code($r, 'PH-6-1'), $run, device('Vchod B'), true)['result'], 'same seat again');
+    $child = verify_ticket(ticket_code($r, 'PH-6-2'), $run, device('Vchod B'), true);
     same(['valid', 'child', 2], [$child['result'], $child['ticket']['kind'], $child['ticket']['checkedIn']], 'second seat');
-    same('seat_cancelled', verify_ticket(ticket_code($r, 'MR-6-3'), $run, device('Vchod A'), true)['result'], 'cancelled seat');
-    same('wrong_run', verify_ticket(ticket_code($r, 'MR-6-2'), run_by_id(1) ?? [], device('Vchod A'), false)['result'], 'other run');
+    same('seat_cancelled', verify_ticket(ticket_code($r, 'PH-6-3'), $run, device('Vchod A'), true)['result'], 'cancelled seat');
+    same('wrong_run', verify_ticket(ticket_code($r, 'PH-6-2'), run_by_id(1) ?? [], device('Vchod A'), false)['result'], 'other run');
     same('invalid', verify_ticket('Z26|1|2|3|x|y|z', $run, device('Vchod A'), false)['result'], 'not a ticket code');
     same('Vchod A', row($id)['checked_in_by'], 'reservation checked in');
 });
 
 test('offline: seats of one reservation are checked in separately', function (): void {
     db()->exec('DELETE FROM scan_conflicts');
-    $id = reservation(['MR-7-1', 'MR-7-2'], 'paid');
+    $id = reservation(['PH-7-1', 'PH-7-2'], 'paid');
     $ss = row($id)['specific_symbol'];
     $at = iso_utc(now_utc()->modify('-3 minutes'));
     $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [
-        ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'MR-7-1', 'at' => $at],
-        ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'MR-7-2', 'at' => $at],
-        ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'MR-7-3', 'at' => $at],
+        ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'PH-7-1', 'at' => $at],
+        ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'PH-7-2', 'at' => $at],
+        ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'PH-7-3', 'at' => $at],
     ]);
     same(['ok', 'ok', 'conflict'], array_column($res['results'], 'status'), 'two seats in, unknown seat refused');
-    same(['MR-7-1', 'MR-7-2'], array_keys(reservation_checkins($id)), 'both seats checked in');
+    same(['PH-7-1', 'PH-7-2'], array_keys(reservation_checkins($id)), 'both seats checked in');
     contains('řada 7 · místo 3', conflicts()[0]['label'] ?? '', 'conflict names the seat');
 });
 
 test('on-site sale: QR payment, then paid and every seat checked in; the accountant verifies it', function (): void {
     $run = run_by_id(2) ?? [];
     same(422, onsite_sale_create(device('Vchod A'), $run, ['XX-1-1'], 0)['status'] ?? null, 'invalid seat');
-    $sold = onsite_sale_create(device('Vchod A'), $run, ['WR-5-2', 'WR-5-1'], 1);
+    $sold = onsite_sale_create(device('Vchod A'), $run, ['PK-5-2', 'PK-5-1'], 1);
     $sale = $sold['sale'] ?? [];
-    same([450, ['WR-5-1', 'WR-5-2']], [$sale['amount'], $sale['seats']], 'sale');
+    same([450, ['PK-5-1', 'PK-5-2']], [$sale['amount'], $sale['seats']], 'sale');
     contains('*AM:450.00*', $sale['spd'], 'QR payment');
-    same(409, onsite_sale_create(device('Vchod B'), $run, ['WR-5-1'], 0)['status'] ?? null, 'seat held by the open sale');
+    same(409, onsite_sale_create(device('Vchod B'), $run, ['PK-5-1'], 0)['status'] ?? null, 'seat held by the open sale');
     contains('2 místa odbavena', (string) onsite_sale_paid(device('Vchod A'), $run, (int) $sale['id']), 'paid');
     $r = row((int) $sale['id']);
     same(['paid', 450, 'Vchod A', null], [$r['status'], (int) $r['paid_amount'], $r['sold_by'], $r['payment_checked_at']], 'reservation');
-    same(['WR-5-1', 'WR-5-2'], array_keys(reservation_checkins((int) $r['id'])), 'checked in');
+    same(['PK-5-1', 'PK-5-2'], array_keys(reservation_checkins((int) $r['id'])), 'checked in');
     same(null, onsite_sale_paid(device('Vchod A'), $run, (int) $sale['id']), 'only once');
 
-    $other = onsite_sale_create(device('Vchod A'), $run, ['WR-5-3'], 0)['sale'] ?? [];
+    $other = onsite_sale_create(device('Vchod A'), $run, ['PK-5-3'], 0)['sale'] ?? [];
     same(true, onsite_sale_cancel($run, (int) $other['id']), 'cancelled');
-    same([false, 'cancelled'], [isset(held(2)['WR-5-3']), row((int) $other['id'])['status']], 'seat free again');
+    same([false, 'cancelled'], [isset(held(2)['PK-5-3']), row((int) $other['id'])['status']], 'seat free again');
 });
 
 // -------------------------------------------------------------------- GDPR
@@ -389,42 +415,42 @@ test('personal data is purged after the event except while money is still to ret
 // ------------------------------------------------------------------ tickets
 
 test('one ticket code per seat round-trips with its kind and rejects tampering', function (): void {
-    $r = row(reservation(['BC-1-1', 'BC-1-2'], 'paid', 1, '', ['BC-1-2']));
-    $code = ticket_code($r, 'BC-1-2');
-    same(['id' => (int) $r['id'], 'specificSymbol' => $r['specific_symbol'], 'seat' => 'BC-1-2', 'kind' => 'child', 'name' => 'Test ' . $r['last_name']],
+    $r = row(reservation(['BS-1-1', 'BS-1-2'], 'paid', 1, '', ['BS-1-2']));
+    $code = ticket_code($r, 'BS-1-2');
+    same(['id' => (int) $r['id'], 'specificSymbol' => $r['specific_symbol'], 'seat' => 'BS-1-2', 'kind' => 'child', 'name' => 'Test ' . $r['last_name']],
         parse_ticket_code($code), 'parsed');
-    same('adult', parse_ticket_code(ticket_code($r, 'BC-1-1'))['kind'] ?? null, 'adult seat');
-    same(null, parse_ticket_code(str_replace('BC-1-2', 'BC-1-3', $code)), 'tampered');
+    same('adult', parse_ticket_code(ticket_code($r, 'BS-1-1'))['kind'] ?? null, 'adult seat');
+    same(null, parse_ticket_code(str_replace('BS-1-2', 'BS-1-3', $code)), 'tampered');
     $payload = reservation_payload($r);
-    same(['BC-1-1', 'BC-1-2'], array_column($payload['tickets'], 'seat'), 'one ticket per seat');
+    same(['BS-1-1', 'BS-1-2'], array_column($payload['tickets'], 'seat'), 'one ticket per seat');
     same(true, count(array_unique(array_column($payload['tickets'], 'code'))) === 2, 'codes differ');
 });
 
 test('customers put names on seat tickets; the code, payload and PDF carry them', function (): void {
-    $id = reservation(['BC-3-1', 'BC-3-2'], 'paid', 1, 'Jménová');
-    same(null, save_ticket_names(row($id), ['BC-3-2' => '  Petr   Novák ', 'BC-3-1' => '']), 'saved');
+    $id = reservation(['BS-3-1', 'BS-3-2'], 'paid', 1, 'Jménová');
+    same(null, save_ticket_names(row($id), ['BS-3-2' => '  Petr   Novák ', 'BS-3-1' => '']), 'saved');
     $r = row($id);
-    same(['BC-3-2' => 'Petr Novák'], ticket_names($r), 'stored, spaces normalized');
-    same(['Test Jménová', 'Petr Novák'], [ticket_holder($r, 'BC-3-1'), ticket_holder($r, 'BC-3-2')], 'holders');
-    same('Petr Novák', parse_ticket_code(ticket_code($r, 'BC-3-2'))['name'] ?? null, 'name in the QR code');
+    same(['BS-3-2' => 'Petr Novák'], ticket_names($r), 'stored, spaces normalized');
+    same(['Test Jménová', 'Petr Novák'], [ticket_holder($r, 'BS-3-1'), ticket_holder($r, 'BS-3-2')], 'holders');
+    same('Petr Novák', parse_ticket_code(ticket_code($r, 'BS-3-2'))['name'] ?? null, 'name in the QR code');
     same([null, 'Petr Novák'], array_column(reservation_payload($r)['tickets'], 'holder'), 'payload');
-    same('Vyberte místa z této rezervace.', save_ticket_names($r, ['ML-1-1' => 'X']), 'foreign seat');
-    same('Jméno na vstupence může mít nejvýše 100 znaků.', save_ticket_names($r, ['BC-3-1' => str_repeat('x', 101)]), 'too long');
-    save_ticket_names($r, ['BC-3-2' => '']);
+    same('Vyberte místa z této rezervace.', save_ticket_names($r, ['LH-1-1' => 'X']), 'foreign seat');
+    same('Jméno na vstupence může mít nejvýše 100 znaků.', save_ticket_names($r, ['BS-3-1' => str_repeat('x', 101)]), 'too long');
+    save_ticket_names($r, ['BS-3-2' => '']);
     same([], ticket_names(row($id)), 'back to the reservation name');
-    $past = reservation(['BC-3-3'], 'paid', 2);
-    same('Jména na vstupenkách už nelze měnit.', save_ticket_names(row($past), ['BC-3-3' => 'X']), 'run started');
+    $past = reservation(['BS-3-3'], 'paid', 2);
+    same('Jména na vstupenkách už nelze měnit.', save_ticket_names(row($past), ['BS-3-3' => 'X']), 'run started');
 });
 
 test('the printable PDF holds the tickets of the current seats', function (): void {
-    $r = row(reservation(['BC-1-3', 'BC-1-4', 'BC-1-5', 'BC-1-6', 'BC-1-7'], 'paid', 1, 'Tisková', ['BC-1-7']));
+    $r = row(reservation(['BS-1-3', 'BS-1-4', 'BS-1-5', 'BS-1-6', 'BS-1-7'], 'paid', 1, 'Tisková', ['BS-1-7']));
     $pdf = ticket_pdf($r);
     same('%PDF-', substr($pdf, 0, 5), 'PDF');
     same(2, preg_match_all('#/Type\s*/Page[^s]#', $pdf), 'five tickets on two pages (four per page)');
 });
 
 test('the ticket calendar event covers the run with folded, escaped lines', function (): void {
-    $r = row(reservation(['BC-2-1', 'BC-2-2'], 'paid', 1, 'Nováková, Jana'));
+    $r = row(reservation(['BS-2-1', 'BS-2-2'], 'paid', 1, 'Nováková, Jana'));
     $now = now_utc();
     $ics = (string) ticket_ics($r, $now);
     $start = run_starts(runs()[1]);
@@ -447,17 +473,17 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
 // ------------------------------------------------------------------- layout
 
 test('a seat has exactly one id: leading zeros or a trailing new line are refused', function (): void {
-    same([true, false, false, false, false, false], array_map('is_valid_seat_id', ['ML-1-1', 'ML-01-1', 'ML-1-01', "ML-1-1\n", 'ML-0-1', 'BL-02-1']), 'forms');
+    same([true, false, false, false, false, false], array_map('is_valid_seat_id', ['LH-1-1', 'LH-01-1', 'LH-1-01', "LH-1-1\n", 'LH-0-1', 'BL-02-1']), 'forms');
     $booking = fn ($seat) => book_reservation(run_by_id(1) ?? [], 'Jan', 'Židle', 'zidle@example.com', [$seat], 0, []);
-    same(true, isset($booking('WR-7-2')['reservation']), 'booked');
-    same([422, 409], [$booking('WR-07-2')['status'] ?? null, $booking('WR-7-2')['status'] ?? null], 'the same chair written differently / again');
+    same(true, isset($booking('PK-7-2')['reservation']), 'booked');
+    same([422, 409], [$booking('PK-07-2')['status'] ?? null, $booking('PK-7-2')['status'] ?? null], 'the same chair written differently / again');
 });
 
 test('two customers booking the same seat at the same moment: one gets it, the other a 409, nothing half-saved', function (): void {
     $bootstrap = var_export(dirname(__DIR__, 2) . '/api/lib/bootstrap.php', true);
     for ($round = 1; $round <= 4; $round++) {
-        $shared = "ML-9-{$round}";
-        $own = ['a' => 'ML-8-' . (2 * $round - 1), 'b' => 'ML-8-' . (2 * $round)];
+        $shared = "LH-9-{$round}";
+        $own = ['a' => 'LH-8-' . (2 * $round - 1), 'b' => 'LH-8-' . (2 * $round)];
         // Both processes connect first, then start booking at the same instant.
         $start = microtime(true) + 0.8;
         $procs = $pipes = [];
@@ -514,15 +540,15 @@ test('the layout matches the plan: seats per row, capacities, reserve balcony se
     $layout = layout_public();
     same(array_keys(SECTIONS), array_column($layout['sections'], 'id'), 'order');
     $sizes = array_combine(array_column($layout['sections'], 'id'), array_map(fn ($s) => array_column($s['rows'], 'seats'), $layout['sections']));
-    same([5, 5, 5, 5], $sizes['WL'], 'left wing');
-    same(array_fill(0, 9, 8), $sizes['ML'], 'left main');
-    same([4, 4, 4, 5, 5, 5, 4], $sizes['WR'], 'right wing');
-    same([7, 14, 14, 7, 7], $sizes['BC'], 'balcony centre');
+    same([5, 5, 5, 5], $sizes['LK'], 'left wing');
+    same(array_fill(0, 9, 8), $sizes['LH'], 'left main');
+    same([4, 4, 4, 5, 5, 5, 4], $sizes['PK'], 'right wing');
+    same([7, 14, 14, 7, 7], $sizes['BS'], 'balcony centre');
     same([12, 11, 11, 6], $sizes['BL'], 'balcony left: bench + reserve rows');
     same([5, 7], array_column(section_rows(SECTIONS['BL'])[0]['parts'], 0), 'bench split 1–5 | 6–12');
     same([[5, 6], [5, 6]], [array_column(section_rows(SECTIONS['BL'])[1]['parts'], 0), array_column(section_rows(SECTIONS['BL'])[2]['parts'], 0)], 'reserve rows 2 and 3 split 1–5 | 6–11');
-    same([11, 3, 3], $sizes['BR'], 'balcony right');
-    same([6, 5], array_column(section_rows(SECTIONS['BR'])[0]['parts'], 0), 'right bench split 1–6 | 7–11');
+    same([11, 3, 3], $sizes['BP'], 'balcony right');
+    same([6, 5], array_column(section_rows(SECTIONS['BP'])[0]['parts'], 0), 'right bench split 1–6 | 7–11');
     same([195, 106, 301], [
         array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'main'))),
         array_sum(array_map('section_capacity', array_filter(SECTIONS, fn ($s) => $s['level'] === 'balcony'))),
@@ -530,7 +556,7 @@ test('the layout matches the plan: seats per row, capacities, reserve balcony se
     ], 'capacities');
     $default = default_reserve_seats();
     same([34, true, false, true, false], [count($default), in_array('BL-2-1', $default, true), in_array('BL-1-12', $default, true),
-        in_array('BR-3-3', $default, true), in_array('BR-1-11', $default, true)], 'default reserve rows');
+        in_array('BP-3-3', $default, true), in_array('BP-1-11', $default, true)], 'default reserve rows');
     same(array_keys(LEVELS), array_keys($layout['plan']), 'a plan per level');
     foreach ($layout['sections'] as $section) {
         $rows = count($section['rows']);
@@ -549,12 +575,12 @@ test('"Záložní" seats: the reserve rows by default, any seat switchable per r
     same(409, book(['BL-2-1'])['status'] ?? null, 'reserve seat cannot be booked');
     same(true, isset(book(['BL-1-6'])['reservation']), 'the bench of the same section can');
     try {
-        same(['BL-1-6'], save_run_reserve_seats(1, ['ML-1-1', 'BL-1-6', 'XX-1-1']), 'a taken seat cannot become reserve');
+        same(['BL-1-6'], save_run_reserve_seats(1, ['LH-1-1', 'BL-1-6', 'XX-1-1']), 'a taken seat cannot become reserve');
         $run = run_by_id(1) ?? [];
-        same([['ML-1-1'], 300], [$run['reserve_seats'], run_capacity($run)], 'only ML-1-1 reserve');
+        same([['LH-1-1'], 300], [$run['reserve_seats'], run_capacity($run)], 'only LH-1-1 reserve');
         same(true, isset(book(['BL-2-1'])['reservation']), 'former reserve seat booked');
-        same(409, book(['ML-1-1'])['status'] ?? null, 'new reserve seat refused');
-        same(['ML-1-1'], run_public($run)['reserveSeats'], 'sent to the apps');
+        same(409, book(['LH-1-1'])['status'] ?? null, 'new reserve seat refused');
+        same(['LH-1-1'], run_public($run)['reserveSeats'], 'sent to the apps');
         same(34, count(run_by_id(2)['reserve_seats'] ?? []), 'other runs keep the default');
     } finally {
         save_run_reserve_seats(1, null);
@@ -709,26 +735,26 @@ function conflicts(): array
 }
 
 test('snapshot lists the run\'s tickets without e-mails', function (): void {
-    $paid = reservation(['BR-1-1', 'BR-1-2'], 'paid', 1, 'Seznamová');
+    $paid = reservation(['BP-1-1', 'BP-1-2'], 'paid', 1, 'Seznamová');
     $snapshot = scanner_snapshot(run_by_id(1) ?? []);
     $ticket = array_values(array_filter($snapshot['tickets'], fn ($t) => $t['id'] === $paid))[0] ?? null;
-    same(['Test Seznamová', ['BR-1-1', 'BR-1-2'], 'paid', []], [$ticket['name'] ?? null, $ticket['seats'] ?? null, $ticket['status'] ?? null, (array) ($ticket['checkedIn'] ?? null)], 'ticket');
+    same(['Test Seznamová', ['BP-1-1', 'BP-1-2'], 'paid', []], [$ticket['name'] ?? null, $ticket['seats'] ?? null, $ticket['status'] ?? null, (array) ($ticket['checkedIn'] ?? null)], 'ticket');
     same(false, array_key_exists('email', $ticket ?? []), 'no e-mail');
 });
 
 test('offline check-ins are applied with the device time; the first one wins', function (): void {
     db()->exec('DELETE FROM scan_conflicts');
-    $id = reservation(['BR-1-3'], 'paid');
+    $id = reservation(['BP-1-3'], 'paid');
     $ss = row($id)['specific_symbol'];
     $at = now_utc()->modify('-10 minutes');
-    $event = ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'BR-1-3', 'at' => iso_utc($at)];
+    $event = ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'BP-1-3', 'at' => iso_utc($at)];
     $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event]);
     same([['status' => 'ok']], $res['results'], 'applied');
     same([db_time($at), 'Vchod A (offline)'], [row($id)['checked_in_at'], row($id)['checked_in_by']], 'stored');
     // The same event sent again (response lost) is not a conflict.
     same(0, apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [$event])['conflicts'], 'resend');
     // Another device let the same ticket in offline too.
-    $other = ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'BR-1-3', 'at' => iso_utc($at->modify('+2 minutes'))];
+    $other = ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'BP-1-3', 'at' => iso_utc($at->modify('+2 minutes'))];
     $res = apply_offline_scans(device('Vchod B'), run_by_id(1) ?? [], [$other]);
     same([1, 'already_checked_in'], [$res['conflicts'], $res['results'][0]['reason'] ?? null], 'conflict');
     same(db_time($at), row($id)['checked_in_at'], 'first check-in kept');
@@ -740,12 +766,12 @@ test('offline check-ins are applied with the device time; the first one wins', f
 
 test('offline scans of unpaid, unknown or other-run tickets become conflicts', function (): void {
     db()->exec('DELETE FROM scan_conflicts');
-    $pending = reservation(['BR-1-4']);
-    $otherRun = reservation(['BR-1-5'], 'paid', 2);
+    $pending = reservation(['BP-1-4']);
+    $otherRun = reservation(['BP-1-5'], 'paid', 2);
     $events = [
-        ['type' => 'ticket', 'id' => $pending, 'specificSymbol' => row($pending)['specific_symbol'], 'seat' => 'BR-1-4', 'at' => iso_utc(now_utc())],
-        ['type' => 'ticket', 'id' => $otherRun, 'specificSymbol' => row($otherRun)['specific_symbol'], 'seat' => 'BR-1-5', 'at' => iso_utc(now_utc())],
-        ['type' => 'ticket', 'id' => 999999, 'specificSymbol' => '1', 'seat' => 'BR-1-6', 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => $pending, 'specificSymbol' => row($pending)['specific_symbol'], 'seat' => 'BP-1-4', 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => $otherRun, 'specificSymbol' => row($otherRun)['specific_symbol'], 'seat' => 'BP-1-5', 'at' => iso_utc(now_utc())],
+        ['type' => 'ticket', 'id' => 999999, 'specificSymbol' => '1', 'seat' => 'BP-1-6', 'at' => iso_utc(now_utc())],
     ];
     $res = apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], $events);
     same(['not_paid', 'unknown', 'unknown'], array_column($res['results'], 'reason'), 'reasons');
@@ -753,11 +779,11 @@ test('offline scans of unpaid, unknown or other-run tickets become conflicts', f
 });
 
 test('device time is limited to the last 48 hours and never in the future', function (): void {
-    $future = reservation(['BR-1-8'], 'paid');
-    $old = reservation(['BR-1-9'], 'paid');
+    $future = reservation(['BP-1-8'], 'paid');
+    $old = reservation(['BP-1-9'], 'paid');
     apply_offline_scans(device('Vchod A'), run_by_id(1) ?? [], [
-        ['type' => 'ticket', 'id' => $future, 'specificSymbol' => row($future)['specific_symbol'], 'seat' => 'BR-1-8', 'at' => iso_utc(now_utc()->modify('+3 hours'))],
-        ['type' => 'ticket', 'id' => $old, 'specificSymbol' => row($old)['specific_symbol'], 'seat' => 'BR-1-9', 'at' => '2001-01-01T00:00:00Z'],
+        ['type' => 'ticket', 'id' => $future, 'specificSymbol' => row($future)['specific_symbol'], 'seat' => 'BP-1-8', 'at' => iso_utc(now_utc()->modify('+3 hours'))],
+        ['type' => 'ticket', 'id' => $old, 'specificSymbol' => row($old)['specific_symbol'], 'seat' => 'BP-1-9', 'at' => '2001-01-01T00:00:00Z'],
     ]);
     same(true, row($future)['checked_in_at'] <= db_time(now_utc()), 'not in the future');
     same(true, row($old)['checked_in_at'] >= db_time(now_utc()->modify('-49 hours')), 'not older than 48 h');

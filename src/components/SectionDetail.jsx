@@ -1,4 +1,4 @@
-import { LEVELS, occupancyLevel, sectionSeatIds } from '../data/layout.js';
+import { LEVELS, PLAN, occupancyLevel, sectionSeatIds, seatPositions } from '../data/layout.js';
 import { freeLabel } from '../plural.js';
 import SeatPlan from './SeatPlan.jsx';
 
@@ -6,6 +6,11 @@ export default function SectionDetail({ section, seats, onBack }) {
   const stat = seats.stats.bySection[section.id];
   const isBalcony = section.level === 'balcony';
   const hasReserve = sectionSeatIds(section).some((id) => seats.seatState(id) === 'reserve');
+  // sections beside the stage (main) or the balcony's open middle look at the stage diagonally
+  const ahead = PLAN[section.level].items.find((item) => item.kind === 'stage' || item.kind === 'void');
+  const xs = seatPositions(section).map((s) => s.x);
+  const centre = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const arrow = !ahead ? '' : centre < ahead.x ? '↗ ' : centre > ahead.x + ahead.w ? '↖ ' : isBalcony ? '↑ ' : '';
 
   return (
     <div className="detail">
@@ -25,7 +30,7 @@ export default function SectionDetail({ section, seats, onBack }) {
       </div>
 
       <div className="seatmap-card">
-        <div className={`stage-dir ${isBalcony ? 'is-balcony' : ''}`}>{isBalcony ? '↑ Směr k pódiu' : 'Pódium'}</div>
+        <div className={`stage-dir ${isBalcony ? 'is-balcony' : ''}`}>{arrow}Pódium</div>
         <SeatPlan section={section} seatState={seats.seatState} onToggle={seats.toggleSeat} />
         {!isBalcony && <div className="back-dir">↓ Vchod</div>}
         <div className="legend">

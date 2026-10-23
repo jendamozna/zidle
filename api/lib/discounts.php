@@ -1,12 +1,16 @@
 <?php
-// Discount codes: the admin enters e-mail addresses, each gets one code by e-mail
-// (an address listed twice gets two codes). A code works for any run, once, and makes
+// Discount codes: the admin enters e-mail addresses, each gets one code (an address
+// listed N times gets N codes, all in one e-mail). A code works for any run, once, and makes
 // the most expensive seat of the reservation free (assign_free_seats()). A used code
 // stays used even when the reservation is cancelled or expires.
 declare(strict_types=1);
 
-/** Letters and digits that can't be confused when typed (no 0/O, 1/I). */
-const DISCOUNT_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+/** Letters and digits that can't be confused when typed (no 0/O, 1/I, Y/Z). */
+const DISCOUNT_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWX23456789';
+/** New codes: 4 pairs, each a syllable (consonant + vowel) or two digits, in any order ("BA42-KU77", "4827-BAKU"). */
+const DISCOUNT_CONSONANTS = 'BCDFGHJKLMNPQRSTVWX';
+const DISCOUNT_VOWELS = 'AEU';
+const DISCOUNT_DIGITS = '23456789';
 const DISCOUNT_MAX_PER_BATCH = 200;
 
 /** "abcd efgh" / "ABCD-EFGH" → "ABCDEFGH" (no validity check). */
@@ -24,10 +28,14 @@ function format_discount_code(string $code): string
 function generate_discount_code(): string
 {
     $check = db()->prepare('SELECT 1 FROM discount_codes WHERE code = ?');
+    $pick = static fn (string $chars): string => $chars[random_int(0, strlen($chars) - 1)];
     for ($i = 0; $i < 20; $i++) {
         $code = '';
-        for ($j = 0; $j < 8; $j++) {
-            $code .= DISCOUNT_ALPHABET[random_int(0, strlen(DISCOUNT_ALPHABET) - 1)];
+        for ($pair = 0; $pair < 4; $pair++) {
+            // 57 syllables vs 64 digit pairs: about even odds
+            $code .= random_int(0, 1) === 0
+                ? $pick(DISCOUNT_CONSONANTS) . $pick(DISCOUNT_VOWELS)
+                : $pick(DISCOUNT_DIGITS) . $pick(DISCOUNT_DIGITS);
         }
         $check->execute([$code]);
         if (!$check->fetchColumn()) {
@@ -39,8 +47,8 @@ function generate_discount_code(): string
 
 /**
  * Creates one code per e-mail address in $text (separated by new lines, commas,
- * semicolons or spaces) and e-mails each. Nothing is created when an address is invalid.
- * Returns a message for the admin.
+ * semicolons or spaces) and e-mails each address its codes in one message. Nothing is
+ * created when an address is invalid. Returns a message for the admin.
  */
 function create_discount_codes(string $text, string $createdBy): string
 {
@@ -56,16 +64,18 @@ function create_discount_codes(string $text, string $createdBy): string
         return 'Neplatné e-maily: ' . implode(', ', $invalid) . '. Nic nebylo vytvořeno.';
     }
     $insert = db()->prepare('INSERT INTO discount_codes (code, email, created_at, created_by) VALUES (?, ?, ?, ?)');
-    $mailed = 0;
+    $byEmail = [];
     foreach ($emails as $email) {
         $insert->execute([generate_discount_code(), $email, db_time(now_utc()), $createdBy]);
-        if (send_discount_code_email((int) db()->lastInsertId())) {
-            $mailed++;
-        }
+        $byEmail[mb_strtolower($email)][] = (int) db()->lastInsertId();
     }
+    $mailed = count(array_filter($byEmail, 'send_discount_codes_email'));
     $n = count($emails);
-    return 'Vytvořeno ' . $n . ' ' . ($n === 1 ? 'kód' : ($n < 5 ? 'kódy' : 'kódů')) . ', e-mailem odesláno ' . $mailed . '.'
-        . ($mailed < $n ? (mail_enabled() ? ' Některé e-maily se neodeslaly – zkuste „Poslat znovu“.' : ' E-maily jsou vypnuté (MAIL_ENABLED).') : '');
+    $addresses = count($byEmail);
+    return 'Vytvořeno ' . $n . ' ' . ($n === 1 ? 'kód' : ($n < 5 ? 'kódy' : 'kódů'))
+        . ' pro ' . $addresses . ' ' . ($addresses === 1 ? 'adresu' : ($addresses < 5 ? 'adresy' : 'adres'))
+        . ', odeslané e-maily: ' . $mailed . ' z ' . $addresses . '.'
+        . ($mailed < $addresses ? (mail_enabled() ? ' Některé e-maily se neodeslaly – zkuste „Poslat znovu“.' : ' E-maily jsou vypnuté (MAIL_ENABLED).') : '');
 }
 
 function discount_code_row(int $id): ?array
@@ -75,33 +85,44 @@ function discount_code_row(int $id): ?array
     return $stmt->fetch() ?: null;
 }
 
-/** E-mail with the code; records emailed_at. False when not sent. */
-function send_discount_code_email(int $id): bool
+/** Text of the e-mail with one or more codes ("ABCDEFGH") for one address. */
+function discount_codes_mail_text(array $codes): string
 {
-    $c = discount_code_row($id);
-    if ($c === null || !mail_enabled() || $c['email'] === '') {
-        return false;
-    }
+    $n = count($codes);
     $base = rtrim((string) config('PUBLIC_URL'), '/');
-    $body = implode("\n", [
+    $where = 'při rezervaci' . ($base !== '' ? " na {$base}/" : '') . ' do pole „Slevové kódy“';
+    return implode("\n", [
         'Dobrý den,',
         '',
-        'posíláme Vám slevový kód na jedno místo zdarma na představení TZG 2026:',
+        $n === 1
+            ? 'posíláme Vám slevový kód na jedno místo zdarma na představení TZG 2026:'
+            : "posíláme Vám {$n} " . ($n < 5 ? 'slevové kódy' : 'slevových kódů') . ' – každý na jedno místo zdarma na představení TZG 2026:',
         '',
-        '    ' . format_discount_code($c['code']),
+        ...array_map(static fn ($c) => '    ' . format_discount_code($c), $codes),
         '',
-        'Kód zadejte při rezervaci' . ($base !== '' ? " na {$base}/" : '') . ' do pole „Slevové kódy“.',
-        'Platí na libovolný termín a lze ho použít jednou. Z rezervace se odečte cena jednoho místa'
-            . ' (nejdražšího – nejdřív dospělého, pak dětského).',
+        $n === 1 ? "Kód zadejte {$where}." : "Kódy zadejte {$where} – do jedné rezervace jich lze zadat víc, jeden na místo.",
+        'Na velikosti písmen nezáleží a pomlčku psát nemusíte.',
+        $n === 1 ? 'Platí na libovolný termín a lze ho použít jednou.' : 'Každý platí na libovolný termín a lze ho použít jednou.',
         '',
         'Koncert TZG 2026',
         ...(contact_line() !== '' ? [contact_line()] : []),
     ]);
-    $ok = deliver_mail($c['email'], mail_subject('Slevový kód'), $body);
+}
+
+/** One e-mail with the given codes (all of one address); records emailed_at. False when not sent. */
+function send_discount_codes_email(array $ids): bool
+{
+    $rows = array_values(array_filter(array_map('discount_code_row', $ids)));
+    if (!$rows || !mail_enabled() || $rows[0]['email'] === '') {
+        return false;
+    }
+    $codes = array_column($rows, 'code');
+    $ok = deliver_mail($rows[0]['email'], mail_subject(count($codes) === 1 ? 'Slevový kód' : 'Slevové kódy'), discount_codes_mail_text($codes));
+    $ids = array_map('intval', array_column($rows, 'id'));
     if ($ok) {
-        db()->prepare('UPDATE discount_codes SET emailed_at = ? WHERE id = ?')->execute([db_time(now_utc()), $id]);
+        db()->prepare('UPDATE discount_codes SET emailed_at = ? WHERE id IN (' . implode(',', $ids) . ')')->execute([db_time(now_utc())]);
     } else {
-        app_log("Failed to send discount code {$id}");
+        app_log('Failed to send discount codes ' . implode(',', $ids));
     }
     return $ok;
 }
