@@ -405,6 +405,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .roles-edit .checks { flex-direction:column; gap:4px; }
   .edit-email .check input, .settings .check input { width:auto; }
   .card.attention { background:#f6cdc6; color:#7d2117; text-decoration:none; }
+  .card.test-run { background:#dde9f8; color:#1d3f6b; }
+  tr.test-run td { background:#eef4fc; }
+  .run-test { color:#1d3f6b; font-weight:600; }
   .settings { max-width:640px; display:flex; flex-direction:column; gap:12px; }
   .settings h2 { margin:8px 0 0; font:700 1.15rem var(--font-display); }
   .settings label { display:flex; flex-direction:column; gap:4px; font-size:.8rem; font-weight:600; color:var(--ink-2); max-width:280px; }
@@ -975,7 +978,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $locked = $run['id'] && run_has_reservations($run['id']);
       $dis = $locked ? ' disabled' : '';
   ?>
-  <form class="card settings" method="post">
+  <form class="card settings<?= $run['is_test'] ? ' test-run' : '' ?>" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <input type="hidden" name="id" value="<?= (int) $run['id'] ?>">
     <h2><?= $run['id'] ? $h(run_label($run)) : 'Nový termín' ?></h2>
@@ -1029,7 +1032,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <?php endif ?>
     <?php $perRun = db_query("SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id")->fetchAll(PDO::FETCH_KEY_PAIR); ?>
     <?php foreach (runs() as $run): $held = (int) ($perRun[$run['id']] ?? 0); ?>
-      <a class="card <?= $runFilter === $run['id'] ? 'selected' : '' ?>" href="<?= $toggle('run', (int) $run['id']) ?>"><?= $h(run_label($run)) ?><strong><?= $held ?> / <?= run_capacity($run) ?></strong><?= run_capacity($run) - $held ?> volných</a>
+      <a class="card <?= $run['is_test'] ? 'test-run' : '' ?> <?= $runFilter === $run['id'] ? 'selected' : '' ?>" href="<?= $toggle('run', (int) $run['id']) ?>"><?= $h(run_label($run)) ?><strong><?= $held ?> / <?= run_capacity($run) ?></strong><?= run_capacity($run) - $held ?> volných</a>
     <?php endforeach ?>
   </div>
 
@@ -1066,10 +1069,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         <?php endforeach ?>
         <th></th></tr></thead>
       <tbody>
-      <?php foreach ($rows as $r): ?>
-        <tr>
+      <?php foreach ($rows as $r): $rr = run_by_id((int) $r['run_id']); ?>
+        <tr<?= $rr && $rr['is_test'] ? ' class="test-run"' : '' ?>>
           <td><strong><?= $h($r['specific_symbol']) ?></strong></td>
-          <td class="seats"><?= ($rr = run_by_id((int) $r['run_id'])) ? $h(run_label($rr)) : '–' ?></td>
+          <td class="seats<?= $rr && $rr['is_test'] ? ' run-test' : '' ?>"><?= $rr ? $h(run_label($rr)) : '–' ?></td>
           <td><?= $h($r['first_name'] . ' ' . $r['last_name']) ?><br><a href="mailto:<?= $h($r['email']) ?>"><?= $h($r['email']) ?></a>
             <?php if ($r['sold_by'] !== null): ?><small>prodal(a) <?= $h($r['sold_by']) ?></small><?php endif ?>
             <details class="edit-email"><summary>změnit e-mail</summary>

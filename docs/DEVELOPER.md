@@ -990,7 +990,8 @@ Tabs:
 - **Rezervace** – one row of cards (`.stats`: no wrapping, cards share the
   width): per status (pending/paid: seats, amount, _N rezervace_ / _N rezervací_), refunds due (amount, the same count), on-site
   sales to verify (_Na místě – ověřit platbu_) – these three without test
-  runs (`NOT_TEST_RUN_SQL`) –, per run occupancy (held / `run_capacity()`; a test run labelled _· TEST_). Every
+  runs (`NOT_TEST_RUN_SQL`) –, per run occupancy (held / `run_capacity()`; a test run labelled _· TEST_). Test runs are blue (`.test-run`): their run card, their
+  settings form and the table rows of their reservations (run name in dark blue). Every
   card is a toggle filter: a click sets its `status` (`pending`, `paid`, `refund`, `onsite`) or `run`, keeps the
   other filters, search and sort, and outlines the card (`.selected`); a second click removes that filter. Filters
   run/status (incl. `refund`, `onsite`)/ search (SS,
