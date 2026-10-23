@@ -9,6 +9,7 @@ return [
     'BANK_ACCOUNT' => '000000000/0000',
     'PAYMENT_RECIPIENT' => 'Farnost',
     'PAYMENT_VARIABLE_SYMBOL' => '3211', // VS of all payments; reservations are told apart by their SS
+    'EVENT_LOCATION' => 'Kostel, Ulice 1, Město', // place in the calendar event (udalost.ics)
 
     // Fill in before the first start (min. 32 characters each), e.g. the output of: php -r "echo bin2hex(random_bytes(32));"
     'TICKET_SECRET' => '',
