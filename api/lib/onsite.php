@@ -31,8 +31,8 @@ function onsite_sale_create(array $access, array $run, mixed $seats, mixed $chil
     if (!is_int($children) || $children < 0 || $children > count($seats)) {
         return ['error' => 'Dětských vstupenek může být nejvýše tolik, kolik je míst.', 'status' => 422, 'extra' => []];
     }
-    if (trim((string) config('BANK_IBAN')) === '') {
-        return ['error' => 'Platby nejsou nastaveny (BANK_IBAN).', 'status' => 503, 'extra' => []];
+    if (bank_iban() === '') {
+        return ['error' => 'Platby nejsou nastaveny (BANK_ACCOUNT).', 'status' => 503, 'extra' => []];
     }
     usort($seats, 'compare_seat_ids');
     expire_reservations();
@@ -55,7 +55,7 @@ function onsite_sale_payload(array $r): array
         'seats' => current_seat_ids($r),
         'tickets' => reservation_seat_items($r),
         'spd' => spd_string($r),
-        'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
+        'account' => (string) config('BANK_ACCOUNT'),
     ];
 }
 

@@ -94,8 +94,8 @@ function qr_png(string $text, int $scale = 8): string
  * E-mails the tickets to the customer: the seat list in the message, the tickets (QR codes) only in
  * the attached PDF (ticket_pdf(), TICKET_PDF_NAME) plus the calendar event. Returns true when
  * the message was handed over to the mail system.
- * $intro replaces the default first paragraph; $subject (without the "TZG 2026: " prefix) defaults to
- * "Nové vstupenky" with an intro (replacement tickets) and "Vaše vstupenky" without.
+ * $intro replaces the default first paragraph; the mail subject is "Vstupenky - …", $subject is the
+ * subtitle in the message: "Nové vstupenky" with an intro (replacement tickets) and "Vaše vstupenky" without.
  */
 function send_ticket_email(array $r, array $intro = [], ?string $subject = null): bool
 {
@@ -119,7 +119,6 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         ...array_map(static fn ($i) => '- ' . $seatLine($i), $items),
         '',
         $printNote,
-        ...(contact_line() !== '' ? ['', contact_line()] : []),
     ]);
 
     $html = mail_layout(
@@ -131,11 +130,10 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         . '<p style="margin:0 0 16px">' . implode('<br>', array_map(static fn ($i) => $h($seatLine($i)), $items)) . '</p>'
         . '<p style="margin:0"><strong>' . $h($printNote) . '</strong></p>'
         . '</div>',
-        'Vstupenky',
-        contact_line() !== '' ? $h(contact_line()) : ''
+        $subject ?? ($intro ? 'Nové vstupenky' : 'Vaše vstupenky')
     );
 
-    $subject = mail_subject($subject ?? ($intro ? 'Nové vstupenky' : 'Vaše vstupenky'), $r);
+    $subject = mail_subject('Vstupenky', $r);
     $attachments = [['data' => ticket_pdf($r), 'name' => TICKET_PDF_NAME, 'type' => 'application/pdf']];
     $ics = ticket_ics($r);
     if ($ics !== null) {

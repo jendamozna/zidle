@@ -9,18 +9,18 @@ use PHPMailer\PHPMailer\PHPMailer;
 const MAIL_INK = '#140a24';
 const MAIL_MUTED = '#5f5570';
 const MAIL_ACCENT = '#c42aae';
+const MAIL_SUBJECT_SUFFIX = 'Těšín zpívá gospel';
 
 /**
- * "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Těšín zpívá gospel");
- * "[TEST] TZG 2026: …" when $r is a reservation on a test run.
+ * "Rezervace" → "Rezervace - Těšín zpívá gospel"; "[TEST] …" when $r is a reservation on a test run.
  */
 function mail_subject(string $subject, ?array $r = null): string
 {
-    return ($r !== null && reservation_is_test($r) ? '[TEST] ' : '') . 'TZG 2026: ' . $subject;
+    return ($r !== null && reservation_is_test($r) ? '[TEST] ' : '') . $subject . ' - ' . MAIL_SUBJECT_SUFFIX;
 }
 
-/** The one HTML layout of every e-mail: header with $subtitle, white card with $content, optional $footer. */
-function mail_layout(string $content, string $subtitle = '', string $footer = ''): string
+/** The one HTML layout of every e-mail: header with $subtitle, white card with $content, footer = mail_signature(). */
+function mail_layout(string $content, string $subtitle = ''): string
 {
     $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     return '<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>'
@@ -29,8 +29,14 @@ function mail_layout(string $content, string $subtitle = '', string $footer = ''
         . '<p style="margin:0 0 4px;font-size:22px;font-weight:bold">Těšín zpívá gospel</p>'
         . ($subtitle !== '' ? '<p style="margin:0 0 16px;color:' . MAIL_MUTED . '">' . $h($subtitle) . '</p>' : '<div style="height:12px"></div>')
         . '<div style="background:#ffffff;border-radius:18px;padding:24px;font-size:15px;line-height:1.55">' . $content . '</div>'
-        . ($footer !== '' ? '<p style="margin:16px 0 0;text-align:center;color:' . MAIL_MUTED . ';font-size:13px;line-height:1.5">' . $footer . '</p>' : '')
+        . '<p style="margin:16px 0 0;text-align:center;color:' . MAIL_MUTED . ';font-size:13px;line-height:1.5">' . nl2br($h(mail_signature()), false) . '</p>'
         . '</div></body></html>';
+}
+
+/** Closing of every e-mail (below the card in HTML, last lines of the text): "Těšín zpívá gospel" + contact_line(). */
+function mail_signature(): string
+{
+    return implode("\n", array_filter(['Těšín zpívá gospel', contact_line()]));
 }
 
 /** Plain e-mail text → HTML for mail_layout(): paragraphs, line breaks, links; indented lines (codes) stand out. */
@@ -51,7 +57,7 @@ function mail_text_html(string $text): string
 }
 
 /**
- * Sends one e-mail: $text plus HTML ($html, or $text in mail_layout() when null).
+ * Sends one e-mail: $text plus HTML ($html, or $text in mail_layout() when null); mail_signature() is appended to the text.
  * $inline are embedded images: [['cid' => 'ticket-qr', 'data' => <binary>, 'name' => 'x.png', 'type' => 'image/png']];
  * $attachments are files: [['data' => <binary>, 'name' => 'udalost.ics', 'type' => 'text/calendar; method=REQUEST']].
  * Returns false (and logs the reason) when the message could not be handed over.
@@ -88,8 +94,8 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
         $mail->addAddress($to);
         $mail->Subject = $subject;
         $mail->isHTML(true);
-        $mail->Body = $html ?? mail_layout(mail_text_html($text), preg_replace('/^(\[TEST\] )?TZG 2026: /', '', $subject) ?? '');
-        $mail->AltBody = $text;
+        $mail->Body = $html ?? mail_layout(mail_text_html($text), preg_replace(['/^\[TEST\] /', '/ - ' . MAIL_SUBJECT_SUFFIX . '$/u'], '', $subject) ?? '');
+        $mail->AltBody = $text . "\n\n" . mail_signature();
         foreach ($inline as $file) {
             $mail->addStringEmbeddedImage($file['data'], $file['cid'], $file['name'], PHPMailer::ENCODING_BASE64, $file['type']);
         }
@@ -124,11 +130,11 @@ function mail_enabled(): bool
     return filter_var(config('MAIL_ENABLED'), FILTER_VALIDATE_BOOLEAN);
 }
 
-/** "Kontakt: farnost@example.com · +420 …" or '' when no contact is configured. */
+/** "Kontakt: +420 …" (the phone; the e-mail is not shown, replies go to Reply-To) or '' when not configured. */
 function contact_line(): string
 {
-    $parts = array_filter([trim((string) config('CONTACT_EMAIL')), trim((string) config('CONTACT_PHONE'))]);
-    return $parts ? 'Kontakt: ' . implode(' · ', $parts) : '';
+    $phone = trim((string) config('CONTACT_PHONE'));
+    return $phone !== '' ? 'Kontakt: ' . $phone : '';
 }
 
 /** Public contact for the website footer. */
@@ -157,11 +163,11 @@ function reservation_link(array $r): ?string
     return $base === '' ? null : $base . '/?r=' . $r['token'];
 }
 
-/** "Termín: so 19. 12. 2026 18:00" for the reservation's run. */
+/** "Termín: sobota 19. 12. 2026 18:00" for the reservation's run. */
 function run_line(array $r): string
 {
     $run = run_by_id((int) $r['run_id']);
-    return 'Termín: ' . ($run ? run_label($run) : '–');
+    return 'Termín: ' . ($run ? run_label($run, true) : '–');
 }
 
 function payment_lines(array $r): array
@@ -172,7 +178,7 @@ function payment_lines(array $r): array
     $lines = [
         ...$lines,
         'Částka: ' . format_czk(amount_due($r)),
-        'Účet: ' . config('BANK_ACCOUNT_DISPLAY'), // no IBAN – it is in the QR code on the reservation page
+        'Účet: ' . config('BANK_ACCOUNT'), // no IBAN – it is in the QR code on the reservation page
         'Variabilní symbol: ' . payment_variable_symbol(),
         'Specifický symbol: ' . $r['specific_symbol'],
     ];
@@ -181,27 +187,27 @@ function payment_lines(array $r): array
 }
 
 /** Sends an e-mail (text + mail_layout() HTML) to the reservation's customer; false when not sent.
+ *  Mail subject is always "Rezervace - …"; $subject is the subtitle in the message.
  *  $html replaces the card content made from the text; $inline are its embedded images (deliver_mail()). */
 function send_customer_email(array $r, string $subject, array $lines, ?string $html = null, array $inline = []): bool
 {
     if (!mail_enabled() || $r['email'] === '') {
         return false;
     }
-    $closing = array_merge(['Těšín zpívá gospel'], contact_line() !== '' ? [contact_line()] : []);
     $greeting = "Dobrý den, {$r['first_name']} {$r['last_name']},";
-    $body = implode("\n", array_merge([$greeting, ''], $lines, [''], $closing));
-    $layout = $html === null ? null : mail_layout(mail_text_html($greeting) . $html . mail_text_html(implode("\n", $closing)), $subject);
-    $ok = deliver_mail($r['email'], mail_subject($subject, $r), $body, $layout, $inline);
+    $body = implode("\n", array_merge([$greeting, ''], $lines));
+    $layout = mail_layout(mail_text_html($greeting) . ($html ?? mail_text_html(implode("\n", $lines))), $subject);
+    $ok = deliver_mail($r['email'], mail_subject('Rezervace míst', $r), $body, $layout, $inline);
     if (!$ok) {
         app_log("Failed to send '{$subject}' for reservation {$r['id']}");
     }
     return $ok;
 }
 
-/** QR Platba image embedded in the e-mail (cid:payment-qr, file QR_platba.png), or null without BANK_IBAN. */
+/** QR Platba image embedded in the e-mail (cid:payment-qr, file QR_platba.png), or null without a valid BANK_ACCOUNT. */
 function payment_qr_image(array $r): ?array
 {
-    if (trim((string) config('BANK_IBAN')) === '') {
+    if (bank_iban() === '') {
         return null;
     }
     return ['cid' => 'payment-qr', 'data' => qr_png(spd_string($r)), 'name' => 'QR_platba.png', 'type' => 'image/png'];
@@ -222,10 +228,10 @@ function payment_email_html(array $r, bool $qr): string
         . ($big ? 'font-size:22px;color:' . MAIL_ACCENT : 'font-size:17px') . '">' . $value . '</td></tr>';
     $table = static fn (string $rows) => '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;border-collapse:collapse">' . $rows . '</table>';
     $run = run_by_id((int) $r['run_id']);
-    $account = trim((string) config('BANK_ACCOUNT_DISPLAY'));
+    $account = trim((string) config('BANK_ACCOUNT'));
     $link = reservation_link($r);
     return '<p style="margin:0 0 14px">děkujeme za rezervaci míst.</p>'
-        . $table($row('Termín', $h($run ? run_label($run) : '–')) . $row('Místa', implode('<br>', array_map($h, seat_kind_lines($r)))))
+        . $table($row('Termín', $h($run ? run_label($run, true) : '–')) . $row('Místa', implode('<br>', array_map($h, seat_kind_lines($r)))))
         . '<p style="margin:0 0 6px;font-weight:bold">Platební údaje</p>'
         . $table(
             $row('Částka', $h(format_czk(amount_due($r))), true)

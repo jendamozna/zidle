@@ -38,9 +38,8 @@ return (static function (): array {
         'ALTCHA_COUNTER_MAX' => 6000,          // attempts needed: random between max/3 and max (~1–2 s on a computer)
 
         // Bank account for the QR payment (Czech "QR Platba" / SPD format)
-        'BANK_IBAN' => '',              // required, e.g. CZ6508000000192000145399
+        'BANK_ACCOUNT' => '',           // required, Czech account "[prefix-]number/bank", e.g. 19-2000145399/0800; the IBAN is derived from it
         'BANK_BIC' => '',
-        'BANK_ACCOUNT_DISPLAY' => '',   // e.g. 19-2000145399/0800
         'PAYMENT_RECIPIENT' => 'Farnost',
         'PAYMENT_MESSAGE' => 'Těšín zpívá gospel',
         'PAYMENT_VARIABLE_SYMBOL' => '3211', // variable symbol (VS) of all payments, max 10 digits; each reservation has its own specific symbol (SS)

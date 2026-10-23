@@ -38,7 +38,7 @@ jobs:
       MAIL_ENABLED: '0'
       TICKET_SECRET: ci-ticket-secret-0123456789-abcdefghij
       DEPLOY_TOKEN: ci-deploy-token-0123456789-abcdefghij
-      BANK_IBAN: CZ6508000000192000145399
+      BANK_ACCOUNT: 19-2000145399/0800
     steps:
       - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2

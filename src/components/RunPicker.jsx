@@ -10,9 +10,10 @@ export default function RunPicker({ runs, onSelect }) {
 
   return (
     <section className="runs" aria-labelledby="runs-title">
+      {/* Run selection 
       <h2 id="runs-title" className="runs-title">
         Vyberte termín
-      </h2>
+      </h2>*/}
       <ul className="runs-list">
         {runs.map((run) => {
           const { weekday, date, time } = runParts(run);

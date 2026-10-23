@@ -6,8 +6,7 @@ return [
     'DB_USER' => 'zidle',
     'DB_PASS' => 'change-me',
 
-    'BANK_IBAN' => 'CZ0000000000000000000000',
-    'BANK_ACCOUNT_DISPLAY' => '000000000/0000',
+    'BANK_ACCOUNT' => '000000000/0000',
     'PAYMENT_RECIPIENT' => 'Farnost',
     'PAYMENT_VARIABLE_SYMBOL' => '3211', // VS of all payments; reservations are told apart by their SS
 

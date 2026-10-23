@@ -268,13 +268,45 @@ function payment_variable_symbol(): string
     return substr(preg_replace('/\D/', '', (string) config('PAYMENT_VARIABLE_SYMBOL')) ?? '', 0, 10);
 }
 
+/** IBAN of the configured BANK_ACCOUNT, '' when it is missing or invalid. */
+function bank_iban(): string
+{
+    return czech_iban((string) config('BANK_ACCOUNT'));
+}
+
+/** IBAN of a Czech account "[prefix-]number/bank", or '' when it is malformed or fails the mod-11 check. */
+function czech_iban(string $account): string
+{
+    if (!preg_match('~^(?:(\d{1,6})-)?(\d{2,10})/(\d{4})$~', str_replace(' ', '', $account), $m)) {
+        return '';
+    }
+    $prefix = str_pad($m[1], 6, '0', STR_PAD_LEFT);
+    $number = str_pad($m[2], 10, '0', STR_PAD_LEFT);
+    $weights = [6, 3, 7, 9, 10, 5, 8, 4, 2, 1];
+    foreach ([$prefix, $number] as $part) {
+        $sum = 0;
+        foreach (str_split($part) as $i => $digit) {
+            $sum += (int) $digit * $weights[$i + 10 - strlen($part)];
+        }
+        if ($sum % 11 !== 0) {
+            return '';
+        }
+    }
+    $bban = $m[3] . $prefix . $number;
+    $mod = 0;
+    foreach (str_split($bban . '123500') as $digit) { // "CZ00" moved to the end, C = 12, Z = 35
+        $mod = ($mod * 10 + (int) $digit) % 97;
+    }
+    return sprintf('CZ%02d%s', 98 - $mod, $bban);
+}
+
 /** Czech QR payment string (Short Payment Descriptor, "QR Platba"). */
 function spd_string(array $r): string
 {
     $clean = static fn (string $v, int $max) =>
         substr(trim(preg_replace('/[^A-Za-z0-9 .,\/+\-:]/', '', strip_diacritics($v)) ?? ''), 0, $max);
 
-    $acc = strtoupper(str_replace(' ', '', (string) config('BANK_IBAN')));
+    $acc = bank_iban();
     $bic = trim((string) config('BANK_BIC'));
     $parts = [
         'SPD',
@@ -335,7 +367,7 @@ function reservation_payload(array $r): array
         'refundedAt' => iso_time($r['refunded_at']),
         'run' => ($run = run_by_id((int) $r['run_id'])) ? run_public($run) : null,
         'payment' => [
-            'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
+            'account' => (string) config('BANK_ACCOUNT'),
             'recipient' => (string) config('PAYMENT_RECIPIENT'),
             'specificSymbol' => $r['specific_symbol'],
             'variableSymbol' => payment_variable_symbol(),

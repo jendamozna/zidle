@@ -49,8 +49,8 @@ function check_discount_code(): void
 
 function create_reservation(): void
 {
-    if (trim((string) config('BANK_IBAN')) === '') {
-        json_error('Platby nejsou nastaveny (BANK_IBAN).', 503);
+    if (bank_iban() === '') {
+        json_error('Platby nejsou nastaveny (BANK_ACCOUNT).', 503);
     }
 
     $body = read_json_body();

@@ -283,7 +283,7 @@ function send_admin_invite_email(array $user, string $token, string $invitedBy):
         return false;
     }
     $roles = implode(', ', array_map(static fn ($role) => USER_ROLES[$role], user_roles($user)));
-    $text = implode("\n", array_merge([
+    $text = implode("\n", [
         'Dobrý den,',
         '',
         "{$invitedBy} Vás zve do systému Těšín zpívá gospel – role: {$roles}.",
@@ -292,9 +292,7 @@ function send_admin_invite_email(array $user, string $token, string $invitedBy):
         admin_invite_link($token),
         '',
         "Přihlašovací jméno je Váš e-mail: {$user['email']}",
-        '',
-        'Těšín zpívá gospel',
-    ], contact_line() !== '' ? [contact_line()] : []));
+    ]);
     return deliver_mail($user['email'], mail_subject('Pozvánka'), $text);
 }
 
@@ -356,7 +354,7 @@ function request_password_reset(string $email): ?string
     db()->prepare('UPDATE admin_users SET reset_hash = ?, reset_expires_at = ? WHERE id = ?')
         ->execute([token_hash($token), db_time(now_utc()->modify('+' . PASSWORD_RESET_MINUTES . ' minutes')), $user['id']]);
     if (mail_enabled()) {
-        $text = implode("\n", array_merge([
+        $text = implode("\n", [
             'Dobrý den,',
             '',
             'někdo (nejspíš Vy) požádal o nové heslo do systému Těšín zpívá gospel.',
@@ -364,9 +362,7 @@ function request_password_reset(string $email): ?string
             password_reset_link($token),
             '',
             'Pokud jste o nové heslo nežádali, e-mail ignorujte – dosavadní heslo platí dál.',
-            '',
-            'Těšín zpívá gospel',
-        ], contact_line() !== '' ? [contact_line()] : []));
+        ]);
         deliver_mail($user['email'], mail_subject('Nové heslo'), $text);
     }
     return $token;

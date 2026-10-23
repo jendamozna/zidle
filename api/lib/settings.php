@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 const PRAGUE = 'Europe/Prague';
 const CZECH_WEEKDAYS = ['ne', 'po', 'út', 'st', 'čt', 'pá', 'so'];
+const CZECH_WEEKDAYS_FULL = ['neděle', 'pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota'];
 
 function prague_time(string $local): ?DateTimeImmutable
 {
@@ -82,11 +83,12 @@ function run_started(array $run): bool
     return now_utc() >= run_starts($run);
 }
 
-/** "so 19. 12. 2026 18:00" (+ " · Premiéra", + " · TEST" for a test run) */
-function run_label(array $run): string
+/** "so 19. 12. 2026 18:00" (+ " · Premiéra", + " · TEST" for a test run); $fullDay: "sobota 19. 12. …" */
+function run_label(array $run, bool $fullDay = false): string
 {
     $start = run_starts($run)->setTimezone(new DateTimeZone(PRAGUE));
-    $text = CZECH_WEEKDAYS[(int) $start->format('w')] . ' ' . $start->format('j. n. Y H:i');
+    $day = ($fullDay ? CZECH_WEEKDAYS_FULL : CZECH_WEEKDAYS)[(int) $start->format('w')];
+    $text = $day . ' ' . $start->format('j. n. Y H:i');
     $text = $run['label'] !== '' ? $text . ' · ' . $run['label'] : $text;
     return !empty($run['is_test']) ? $text . ' · TEST' : $text;
 }

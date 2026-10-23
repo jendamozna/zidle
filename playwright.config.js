@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test';
 export const ENV = {
   DB_NAME: 'zidle_test',
   PUBLIC_URL: 'http://127.0.0.1:4173', // links from the admin (scanner, invitations) go to the built apps
-  BANK_IBAN: 'CZ6508000000192000145399',
+  BANK_ACCOUNT: '19-2000145399/0800',
   TICKET_SECRET: 'e2e-ticket-secret-0123456789-abcdefgh',
   MAIL_ENABLED: '0',
   LOGIN_ATTEMPTS_PER_15_MIN: '100', // every test signs in from the same IP

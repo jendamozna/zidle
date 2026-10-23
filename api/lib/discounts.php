@@ -103,9 +103,6 @@ function discount_codes_mail_text(array $codes): string
         $n === 1 ? "Kód zadejte {$where}." : "Kódy zadejte {$where} – do jedné rezervace jich lze zadat víc, jeden na místo.",
         'Na velikosti písmen nezáleží a pomlčku psát nemusíte.',
         $n === 1 ? 'Platí na libovolný termín a lze ho použít jednou.' : 'Každý platí na libovolný termín a lze ho použít jednou.',
-        '',
-        'Těšín zpívá gospel',
-        ...(contact_line() !== '' ? [contact_line()] : []),
     ]);
 }
 

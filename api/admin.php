@@ -609,7 +609,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     $reservationsCount = static fn ($n) => (int) $n . ((int) $n >= 1 && (int) $n <= 4 ? ' rezervace' : ' rezervací');
 ?>
   <header>
-    <h1>Správa rezervací</h1>
+    <h1>Správa TZG</h1>
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
       <a href="admin.php?view=bank" class="<?= $view === 'bank' ? 'active' : '' ?>">Výpis z banky</a>

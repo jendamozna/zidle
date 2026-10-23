@@ -33,8 +33,7 @@ services:
       DB_NAME: zidle
       DB_USER: zidle
       DB_PASS: zidle
-      BANK_IBAN: CZ6508000000192000145399
-      BANK_ACCOUNT_DISPLAY: 19-2000145399/0800
+      BANK_ACCOUNT: 19-2000145399/0800
       # Dev-only secrets, never use them in production
       TICKET_SECRET: dev-ticket-secret-0123456789-abcdefghijklmnopqrstuv
       DEPLOY_TOKEN: dev-deploy-token-0123456789-abcdefghijklmnopqrstuv
@@ -102,7 +101,7 @@ services:
       DB_USER: zidle
       DB_PASS: zidle
       DB_ROOT_PASS: root
-      BANK_IBAN: CZ6508000000192000145399
+      BANK_ACCOUNT: 19-2000145399/0800
       TICKET_SECRET: test-ticket-secret-0123456789-abcdefghijklmn
       MAIL_ENABLED: '0'
       SMTP_HOST: ''

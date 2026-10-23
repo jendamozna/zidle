@@ -1,7 +1,7 @@
 <?php
 // Integration tests of the money, seat, discount code and ticket logic against a real MariaDB.
 //
-//   DB_NAME=zidle_test MAIL_ENABLED=0 TICKET_SECRET=test-secret-0123456789-abcdefghijklmn BANK_IBAN=CZ6508000000192000145399 php tests/php/run.php
+//   DB_NAME=zidle_test MAIL_ENABLED=0 TICKET_SECRET=test-secret-0123456789-abcdefghijklmn BANK_ACCOUNT=19-2000145399/0800 php tests/php/run.php
 //
 // The database is wiped and recreated from db/schema.sql, so DB_NAME must end with "_test".
 declare(strict_types=1);
@@ -89,6 +89,14 @@ test('payment code (SPD) asks only for the missing amount, with VS 3211 and the 
     same(['3211', $ss], [reservation_payload(row($id))['payment']['variableSymbol'], reservation_payload(row($id))['payment']['specificSymbol']], 'payload symbols');
     same(400, reservation_payload(row($id))['payment']['amount'], 'payload amount');
     same(200, reservation_payload(row($id))['payment']['received'], 'payload received');
+});
+
+test('the IBAN in the payment code is derived from the Czech account number', function (): void {
+    same('CZ6508000000192000145399', czech_iban('19-2000145399/0800'), 'with prefix');
+    same('CZ6508000000192000145399', czech_iban(' 19 - 2000145399 / 0800 '), 'spaces ignored');
+    same('CZ7801000000000000000123', czech_iban('123/0100'), 'without prefix');
+    same(['', '', ''], [czech_iban('19-2000145398/0800'), czech_iban('2000145399'), czech_iban('')], 'typo, no bank code, empty');
+    contains('*ACC:CZ6508000000192000145399*', spd_string(row(reservation(['PK-9-1']))), 'SPD account');
 });
 
 test('the SS is a random 5-digit number, unique and reassigned without clashing', function (): void {
@@ -373,7 +381,9 @@ test('a test run: hidden label TEST, bookings paid at once, codes refused, delet
     same(0, (int) db_query("SELECT COUNT(*) FROM discount_codes WHERE used_at IS NOT NULL AND code = '{$code}'")->fetchColumn(), 'code not used up');
     $r = book_reservation($run, 'Test', 'Odbavení', 'test@example.com', ['LK-1-1', 'LK-1-2'], 1, [])['reservation'] ?? [];
     same(['paid', 450, 450, 0], [$r['status'], (int) $r['amount'], (int) $r['paid_amount'], amount_due($r)], 'paid at once');
-    same(['[TEST] TZG 2026: Vaše vstupenky', 'TZG 2026: Vaše vstupenky'], [mail_subject('Vaše vstupenky', $r), mail_subject('Vaše vstupenky', row(reservation(['PK-8-1'])))], 'subjects');
+    same(['[TEST] Vstupenky - Těšín zpívá gospel', 'Rezervace míst - Těšín zpívá gospel'], [mail_subject('Vstupenky', $r), mail_subject('Rezervace míst', row(reservation(['PK-8-1'])))], 'subjects');
+    same(1, preg_match('/^(neděle|pondělí|úterý|středa|čtvrtek|pátek|sobota) \d/u', run_label($run, true)), 'full weekday (PDF)');
+    contains('Termín: ' . run_label($run, true), run_line($r), 'full weekday (e-mail)');
     $sale = onsite_sale_create(device('Vchod A'), $run, ['LK-1-3'], 0)['sale'] ?? [];
     same(['pending', 300], [row((int) ($sale['id'] ?? 0))['status'], $sale['amount'] ?? null], 'on-site sale keeps the normal flow');
     same('valid', verify_ticket(ticket_code($r, 'LK-1-1'), $run, device('Vchod A'), true)['result'], 'checked in');
@@ -398,6 +408,7 @@ test('e-mails share one HTML layout; the reservation e-mail embeds the payment Q
     $html = mail_layout(mail_text_html("Dobrý den,\n\n<b>Kód</b>:\n    ABCD-EFGH\n\nOdkaz: https://example.com/?r=1&x=2."), 'Rezervace míst');
     contains('Těšín zpívá gospel', $html, 'header');
     contains('Rezervace míst</p>', $html, 'subtitle');
+    contains(nl2br(htmlspecialchars(mail_signature()), false) . '</p></div></body>', $html, 'one footer for every e-mail');
     contains('&lt;b&gt;Kód&lt;/b&gt;:<br><strong', $html, 'escaped, line break');
     contains('>ABCD-EFGH</strong>', $html, 'code line');
     contains('<a href="https://example.com/?r=1&amp;x=2" style="color:#c42aae">https://example.com/?r=1&amp;x=2</a>.', $html, 'link without the full stop');

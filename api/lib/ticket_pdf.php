@@ -21,7 +21,7 @@ function ticket_pdf(array $r): string
     $items = reservation_seat_items($r);
     $count = count($items);
     $run = run_by_id((int) $r['run_id']);
-    $runText = $run ? run_label($run) : '–';
+    $runText = $run ? run_label($run, true) : '–';
 
     $tickets = '';
     foreach ($items as $n => $item) {
@@ -40,7 +40,7 @@ function ticket_pdf(array $r): string
             . '<div class="kind">' . $h(SEAT_KIND_LABELS[$item['kind']]) . '</div>'
             . '<div class="holder">' . $h(reservation_name($r)) . '</div>'
             . '</td></tr></table>'
-            . '<div class="meta">SS ' . $h($r['specific_symbol']) . ' · vstupenka ' . ($n + 1) . ' z ' . $count . '</div>'
+            . '<div class="meta">vstupenka ' . ($n + 1) . ' z ' . $count . '</div>'
             . '</td></tr></table>';
     }
 
