@@ -185,7 +185,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
         'DTSTAMP:' . $utc($now),
         'DTSTART:' . $utc($start),
         'DTEND:' . $utc($end),
-        'SUMMARY:' . ics_text('TZG 2026' . ($run['label'] !== '' ? ' · ' . $run['label'] : '') . ' – ' . implode('; ', $seats)),
+        'SUMMARY:' . ics_text('Těšín zpívá gospel' . ($run['label'] !== '' ? ' · ' . $run['label'] : '') . ' – ' . implode('; ', $seats)),
         'DESCRIPTION:' . ics_text($description),
         ...($location !== '' ? ['LOCATION:' . ics_text($location)] : []),
         'ORGANIZER;CN=' . ics_param(mail_from_name()) . ':mailto:' . mail_sender(),
