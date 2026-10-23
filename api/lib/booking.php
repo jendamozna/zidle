@@ -41,55 +41,62 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
     $expires = $soldBy !== null ? $now : min($now->modify('+' . payment_deadline_hours($now) . ' hours'), run_starts($run));
     $token = bin2hex(random_bytes(16));
 
-    $pdo->beginTransaction();
-    try {
-        $placeholders = implode(',', array_fill(0, count($seats), '?'));
-        $stmt = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE run_id = ? AND seat_id IN ($placeholders) FOR UPDATE");
-        $stmt->execute([$run['id'], ...$seats]);
-        $conflict = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        if ($conflict) {
-            $pdo->rollBack();
-            return ['error' => 'Některá místa už mezitím někdo rezervoval.', 'status' => 409, 'extra' => ['conflict' => $conflict]];
-        }
-        $codeIds = lock_discount_codes($pdo, $codes);
-        if (is_string($codeIds)) {
-            $pdo->rollBack();
-            $message = "Slevový kód {$codeIds} neplatí nebo už byl použit.";
-            return ['error' => $message, 'status' => 422, 'extra' => ['fields' => ['codes' => $message]]];
-        }
+    // Simultaneous bookings of nearby seats can deadlock on InnoDB gap locks; the retry then sees the winner's seats.
+    for ($attempt = 1; ; $attempt++) {
+        $pdo->beginTransaction();
+        try {
+            $placeholders = implode(',', array_fill(0, count($seats), '?'));
+            $stmt = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE run_id = ? AND seat_id IN ($placeholders) FOR UPDATE");
+            $stmt->execute([$run['id'], ...$seats]);
+            $conflict = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            if ($conflict) {
+                $pdo->rollBack();
+                return ['error' => 'Některá místa už mezitím někdo rezervoval.', 'status' => 409, 'extra' => ['conflict' => $conflict]];
+            }
+            $codeIds = lock_discount_codes($pdo, $codes);
+            if (is_string($codeIds)) {
+                $pdo->rollBack();
+                $message = "Slevový kód {$codeIds} neplatí nebo už byl použit.";
+                return ['error' => $message, 'status' => 422, 'extra' => ['fields' => ['codes' => $message]]];
+            }
 
-        $pdo->prepare(
-            'INSERT INTO reservations
-               (token, run_id, first_name, last_name, email, seats, child_seats, free_seats, seat_count,
-                adult_price, child_price, amount, status, created_at, expires_at, paid_at, sold_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        )->execute([
-            $token, $run['id'], $firstName, $lastName, $email, implode(',', $seats), implode(',', $childSeats),
-            implode(',', $freeSeats), count($seats), adult_price(), child_price(), $amount,
-            $free ? 'paid' : 'pending', db_time($now), db_time($expires), $free ? db_time($now) : null, $soldBy,
-        ]);
-        $id = (int) $pdo->lastInsertId();
-        $pdo->prepare('UPDATE reservations SET specific_symbol = ? WHERE id = ?')
-            ->execute([generate_specific_symbol($pdo), $id]);
-        $useCode = $pdo->prepare('UPDATE discount_codes SET used_at = ?, reservation_id = ?, seat_id = ? WHERE id = ?');
-        foreach ($codeIds as $i => $codeId) {
-            $useCode->execute([db_time($now), $id, $freeSeats[$i], $codeId]);
-        }
+            $pdo->prepare(
+                'INSERT INTO reservations
+                   (token, run_id, first_name, last_name, email, seats, child_seats, free_seats, seat_count,
+                    adult_price, child_price, amount, status, created_at, expires_at, paid_at, sold_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            )->execute([
+                $token, $run['id'], $firstName, $lastName, $email, implode(',', $seats), implode(',', $childSeats),
+                implode(',', $freeSeats), count($seats), adult_price(), child_price(), $amount,
+                $free ? 'paid' : 'pending', db_time($now), db_time($expires), $free ? db_time($now) : null, $soldBy,
+            ]);
+            $id = (int) $pdo->lastInsertId();
+            $pdo->prepare('UPDATE reservations SET specific_symbol = ? WHERE id = ?')
+                ->execute([generate_specific_symbol($pdo), $id]);
+            $useCode = $pdo->prepare('UPDATE discount_codes SET used_at = ?, reservation_id = ?, seat_id = ? WHERE id = ?');
+            foreach ($codeIds as $i => $codeId) {
+                $useCode->execute([db_time($now), $id, $freeSeats[$i], $codeId]);
+            }
 
-        $insertSeat = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, reservation_id) VALUES (?, ?, ?)');
-        foreach ($seats as $seatId) {
-            $insertSeat->execute([$run['id'], $seatId, $id]);
+            $insertSeat = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, reservation_id) VALUES (?, ?, ?)');
+            foreach ($seats as $seatId) {
+                $insertSeat->execute([$run['id'], $seatId, $id]);
+            }
+            $pdo->commit();
+            break;
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            // Duplicate key: a concurrent request took one of the seats first.
+            if ($e->getCode() === '23000') {
+                return ['error' => 'Některá místa už mezitím někdo rezervoval.', 'status' => 409, 'extra' => ['conflict' => []]];
+            }
+            if ($e->getCode() === '40001' && $attempt < 3) {
+                continue;
+            }
+            throw $e;
         }
-        $pdo->commit();
-    } catch (PDOException $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        // Duplicate key: a concurrent request took one of the seats first.
-        if ($e->getCode() === '23000') {
-            return ['error' => 'Některá místa už mezitím někdo rezervoval.', 'status' => 409, 'extra' => ['conflict' => []]];
-        }
-        throw $e;
     }
 
     if ($free) {

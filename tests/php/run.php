@@ -453,6 +453,43 @@ test('a seat has exactly one id: leading zeros or a trailing new line are refuse
     same([422, 409], [$booking('WR-07-2')['status'] ?? null, $booking('WR-7-2')['status'] ?? null], 'the same chair written differently / again');
 });
 
+test('two customers booking the same seat at the same moment: one gets it, the other a 409, nothing half-saved', function (): void {
+    $bootstrap = var_export(dirname(__DIR__, 2) . '/api/lib/bootstrap.php', true);
+    for ($round = 1; $round <= 4; $round++) {
+        $shared = "ML-9-{$round}";
+        $own = ['a' => 'ML-8-' . (2 * $round - 1), 'b' => 'ML-8-' . (2 * $round)];
+        // Both processes connect first, then start booking at the same instant.
+        $start = microtime(true) + 0.8;
+        $procs = $pipes = [];
+        foreach ($own as $who => $seat) {
+            $code = "require {$bootstrap}; db(); @time_sleep_until({$start});"
+                . ' $r = book_reservation(run_by_id(1) ?? [], "Souběh", ' . var_export($who, true) . ', '
+                . var_export("soubeh-{$who}{$round}@example.com", true) . ', ' . var_export([$seat, $shared], true) . ', 0, []);'
+                . ' echo json_encode(["status" => $r["status"] ?? 200, "id" => $r["reservation"]["id"] ?? null]);';
+            $procs[$who] = proc_open([PHP_BINARY, '-r', $code], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes[$who])
+                ?: throw new TestFailure('proc_open failed');
+        }
+        $out = [];
+        foreach ($procs as $who => $proc) {
+            $stdout = (string) stream_get_contents($pipes[$who][1]);
+            $stderr = (string) stream_get_contents($pipes[$who][2]);
+            proc_close($proc);
+            $out[$who] = json_decode($stdout, true) ?? throw new TestFailure("round {$round}, {$who}: {$stdout}{$stderr}");
+        }
+        $statuses = array_column($out, 'status', null);
+        sort($statuses);
+        same([200, 409], $statuses, "round {$round}: statuses");
+        $winner = $out['a']['status'] === 200 ? 'a' : 'b';
+        $loser = $winner === 'a' ? 'b' : 'a';
+        $holds = held(1);
+        $holder = 'r' . $out[$winner]['id'];
+        same([$holder, $holder, null], [$holds[$shared] ?? null, $holds[$own[$winner]] ?? null, $holds[$own[$loser]] ?? null], "round {$round}: seats held");
+        $stmt = db()->prepare('SELECT COUNT(*) FROM reservations WHERE email IN (?, ?)');
+        $stmt->execute(["soubeh-a{$round}@example.com", "soubeh-b{$round}@example.com"]);
+        same(1, (int) $stmt->fetchColumn(), "round {$round}: reservations");
+    }
+});
+
 test('seats per IP are limited per hour and per day; a refused or failed booking counts nothing', function (): void {
     db()->exec('DELETE FROM rate_limits');
     $hits = fn ($window) => (int) db_query("SELECT hits FROM rate_limits WHERE bucket = '" . hash('sha256', "seats|{$window}|" . client_ip()) . "'")->fetchColumn();
