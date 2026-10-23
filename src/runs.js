@@ -22,6 +22,6 @@ export function runParts(run) {
 export function runLabel(run) {
   if (!run) return '';
   const { weekday, date, time } = runParts(run);
-  const text = `${weekday.slice(0, 2)} ${date} ${time}` + (run.label ? ` · ${run.label}` : '');
+  const text = `${weekday} ${date} ${time}` + (run.label ? ` · ${run.label}` : '');
   return run.test ? `${text} · TEST` : text;
 }

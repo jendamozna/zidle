@@ -17,6 +17,7 @@ return [
 
     // E-mails via SMTP
     'MAIL_ENABLED' => true,
+    'MAIL_FROM_NAME' => 'Těšín zpívá gospel', // sender name
     'SMTP_HOST' => 'smtp.example.com',
     'SMTP_PORT' => 587,                // 465 = implicit TLS (SMTPS), otherwise STARTTLS when offered
     'SMTP_AUTH' => true,

@@ -6,13 +6,12 @@ declare(strict_types=1);
 use PHPMailer\PHPMailer\Exception as MailerException;
 use PHPMailer\PHPMailer\PHPMailer;
 
-const MAIL_FROM_NAME = 'Koncert TZG 2026';
 const MAIL_INK = '#140a24';
 const MAIL_MUTED = '#5f5570';
 const MAIL_ACCENT = '#c42aae';
 
 /**
- * "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Koncert TZG 2026");
+ * "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Těšín zpívá gospel");
  * "[TEST] TZG 2026: …" when $r is a reservation on a test run.
  */
 function mail_subject(string $subject, ?array $r = null): string
@@ -27,7 +26,7 @@ function mail_layout(string $content, string $subtitle = '', string $footer = ''
     return '<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>'
         . '<body style="margin:0;background:#fbf6f1;font-family:Arial,Helvetica,sans-serif;color:' . MAIL_INK . '">'
         . '<div style="max-width:520px;margin:0 auto;padding:24px 16px">'
-        . '<p style="margin:0 0 4px;font-size:22px;font-weight:bold">Koncert TZG <span style="color:' . MAIL_ACCENT . '">2026</span></p>'
+        . '<p style="margin:0 0 4px;font-size:22px;font-weight:bold">Těšín zpívá gospel</p>'
         . ($subtitle !== '' ? '<p style="margin:0 0 16px;color:' . MAIL_MUTED . '">' . $h($subtitle) . '</p>' : '<div style="height:12px"></div>')
         . '<div style="background:#ffffff;border-radius:18px;padding:24px;font-size:15px;line-height:1.55">' . $content . '</div>'
         . ($footer !== '' ? '<p style="margin:16px 0 0;text-align:center;color:' . MAIL_MUTED . ';font-size:13px;line-height:1.5">' . $footer . '</p>' : '')
@@ -82,9 +81,9 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
         } else {
             $mail->isMail();
         }
-        $mail->setFrom(mail_sender(), MAIL_FROM_NAME);
+        $mail->setFrom(mail_sender(), mail_from_name());
         if (filter_var((string) config('CONTACT_EMAIL'), FILTER_VALIDATE_EMAIL)) {
-            $mail->addReplyTo((string) config('CONTACT_EMAIL'), MAIL_FROM_NAME);
+            $mail->addReplyTo((string) config('CONTACT_EMAIL'), mail_from_name());
         }
         $mail->addAddress($to);
         $mail->Subject = $subject;
@@ -112,6 +111,12 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
 function mail_sender(): string
 {
     return (string) config(trim((string) config('SMTP_HOST')) !== '' ? 'SMTP_SENDER' : 'MAIL_FROM');
+}
+
+/** Sender name (From, Reply-To, calendar organizer): MAIL_FROM_NAME. */
+function mail_from_name(): string
+{
+    return (string) config('MAIL_FROM_NAME');
 }
 
 function mail_enabled(): bool
@@ -182,7 +187,7 @@ function send_customer_email(array $r, string $subject, array $lines, ?string $h
     if (!mail_enabled() || $r['email'] === '') {
         return false;
     }
-    $closing = array_merge(['Koncert TZG 2026'], contact_line() !== '' ? [contact_line()] : []);
+    $closing = array_merge(['Těšín zpívá gospel'], contact_line() !== '' ? [contact_line()] : []);
     $greeting = "Dobrý den, {$r['first_name']} {$r['last_name']},";
     $body = implode("\n", array_merge([$greeting, ''], $lines, [''], $closing));
     $layout = $html === null ? null : mail_layout(mail_text_html($greeting) . $html . mail_text_html(implode("\n", $closing)), $subject);
@@ -267,7 +272,7 @@ function send_partial_payment_email(array $r, int $received): bool
 {
     $link = reservation_link($r);
     return send_customer_email($r, 'Přijata část platby', array_merge(
-        ['přijali jsme Vaši platbu ' . format_czk($received) . ' (SS ' . $r['specific_symbol'] . '), na celou částku ale chybí '
+        ['přijali jsme Vaši platbu ' . format_czk($received) . ', na celou částku ale chybí '
             . format_czk(amount_due($r)) . '.', run_line($r), '', 'Doplaťte prosím se stejným variabilním a specifickým symbolem:'],
         payment_lines($r),
         ['', 'Vstupenku pošleme, jakmile dorazí celá částka.'],
@@ -280,7 +285,7 @@ function send_payment_refund_email(array $r, int $received, string $reason): boo
 {
     $due = (int) $r['refund_amount'] - (int) $r['refunded_amount'];
     return send_customer_email($r, 'Vrácení platby', [
-        'přijali jsme Vaši platbu ' . format_czk($received) . ' (SS ' . $r['specific_symbol'] . '), ale '
+        'přijali jsme Vaši platbu ' . format_czk($received) . ', ale '
             . REFUND_REASONS[$reason] . '.',
         run_line($r),
         '',
@@ -293,7 +298,7 @@ function send_expiry_email(array $r): bool
 {
     $base = rtrim((string) config('PUBLIC_URL'), '/');
     return send_customer_email($r, 'Rezervace zrušena', array_merge(
-        ['platba za Vaši rezervaci (SS ' . $r['specific_symbol'] . ') nedorazila včas, proto byla rezervace zrušena a místa uvolněna:',
+        ['platba za Vaši rezervaci nedorazila včas, proto byla rezervace zrušena a místa uvolněna:',
          implode('; ', seat_labels(current_seat_ids($r))) . '.',
          run_line($r)],
         (int) $r['refund_amount'] > (int) $r['refunded_amount']

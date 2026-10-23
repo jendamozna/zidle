@@ -115,9 +115,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
-          <h1 className="brand">
-            Koncert TZG <span>2026</span>
-          </h1>
+          <h1 className="brand">Těšín zpívá gospel</h1>
           {!section && !reservation && !choosing && (
             <div className="summary">
               <div className="summary-stat">

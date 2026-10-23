@@ -95,8 +95,8 @@ function discount_codes_mail_text(array $codes): string
         'Dobrý den,',
         '',
         $n === 1
-            ? 'posíláme Vám slevový kód na jedno místo zdarma na představení TZG 2026:'
-            : "posíláme Vám {$n} " . ($n < 5 ? 'slevové kódy' : 'slevových kódů') . ' – každý na jedno místo zdarma na představení TZG 2026:',
+            ? 'posíláme Vám slevový kód na jedno místo zdarma na představení Těšín zpívá gospel 2026:'
+            : "posíláme Vám {$n} " . ($n < 5 ? 'slevové kódy' : 'slevových kódů') . ' – každý na jedno místo zdarma na představení Těšín zpívá gospel 2026:',
         '',
         ...array_map(static fn ($c) => '    ' . format_discount_code($c), $codes),
         '',
@@ -104,7 +104,7 @@ function discount_codes_mail_text(array $codes): string
         'Na velikosti písmen nezáleží a pomlčku psát nemusíte.',
         $n === 1 ? 'Platí na libovolný termín a lze ho použít jednou.' : 'Každý platí na libovolný termín a lze ho použít jednou.',
         '',
-        'Koncert TZG 2026',
+        'Těšín zpívá gospel',
         ...(contact_line() !== '' ? [contact_line()] : []),
     ]);
 }

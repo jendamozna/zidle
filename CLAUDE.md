@@ -1,4 +1,4 @@
-# Koncert TZG 2026 – project rules
+# Těšín zpívá gospel – project rules
 
 ## Documentation (mandatory)
 

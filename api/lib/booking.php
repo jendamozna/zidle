@@ -105,16 +105,18 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
         }
     }
 
-    if ($test) {
-        send_ticket_for($id, ['děkujeme za rezervaci. Jde o testovací termín – rezervace je automaticky zaplacená.'], 'Rezervace potvrzena – Vaše vstupenky');
-    } elseif ($free) {
+    if ($free && !$test) {
         send_ticket_for($id, ['děkujeme za rezervaci. Všechna místa jsou hrazená slevovými kódy, rezervace je potvrzena.'], 'Rezervace potvrzena – Vaše vstupenky');
     }
     $r = find_reservation_by_token($token);
     if ($r === null) {
         throw new RuntimeException('Reservation just created was not found.');
     }
-    if (!$paid) {
+    if ($test) {
+        // A test run sends the e-mails of a real booking paid by transfer: payment details, then the tickets.
+        send_payment_email(array_merge($r, ['paid_amount' => 0]));
+        send_ticket_for($id, ['děkujeme, platba byla přijata. Vaše rezervace je potvrzena.'], 'Platba přijata – Vaše vstupenky');
+    } elseif (!$paid) {
         send_payment_email($r);
     }
     return ['reservation' => $r];

@@ -1,4 +1,4 @@
-# Koncert TZG 2026
+# Těšín zpívá gospel
 
 Church seat reservation app – React (Vite) frontend, PHP 8.4 API, MariaDB.
 

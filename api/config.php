@@ -41,7 +41,7 @@ return (static function (): array {
         'BANK_BIC' => '',
         'BANK_ACCOUNT_DISPLAY' => '',   // e.g. 19-2000145399/0800
         'PAYMENT_RECIPIENT' => 'Farnost',
-        'PAYMENT_MESSAGE' => 'Koncert TZG 2026',
+        'PAYMENT_MESSAGE' => 'Těšín zpívá gospel',
         'PAYMENT_VARIABLE_SYMBOL' => '3211', // variable symbol (VS) of all payments, max 10 digits; each reservation has its own specific symbol (SS)
 
         // One-time token for api/deploy.php, which creates the first Správce (admin account) while
@@ -57,6 +57,7 @@ return (static function (): array {
         // E-mails to customers. With SMTP_HOST set they are sent via SMTP, otherwise via PHP mail().
         'MAIL_ENABLED' => false,
         'MAIL_FROM' => 'rezervace@example.com', // sender for PHP mail() (SMTP uses SMTP_SENDER)
+        'MAIL_FROM_NAME' => 'Těšín zpívá gospel', // sender name (From, Reply-To, calendar organizer)
         'SMTP_HOST' => '',               // e.g. smtp.example.com; '' = use PHP mail()
         'SMTP_PORT' => 587,              // 465 = implicit TLS (SMTPS); others use STARTTLS when offered
         'SMTP_AUTH' => true,             // log in with SMTP_USER (or SMTP_SENDER) / SMTP_PASSWORD

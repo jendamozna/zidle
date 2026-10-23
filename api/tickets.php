@@ -14,7 +14,7 @@ run_api(function (): void {
     }
     $pdf = ticket_pdf($r);
     header('Content-Type: application/pdf');
-    header('Content-Disposition: attachment; filename="' . ticket_pdf_name($r) . '"');
+    header('Content-Disposition: attachment; filename="' . TICKET_PDF_NAME . '"');
     header('Cache-Control: no-store');
     header('Content-Length: ' . strlen($pdf));
     echo $pdf;

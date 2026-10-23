@@ -286,14 +286,14 @@ function send_admin_invite_email(array $user, string $token, string $invitedBy):
     $text = implode("\n", array_merge([
         'Dobrý den,',
         '',
-        "{$invitedBy} Vás zve do systému Koncert TZG 2026 – role: {$roles}.",
+        "{$invitedBy} Vás zve do systému Těšín zpívá gospel – role: {$roles}.",
         '',
         'Účet vznikne, až si na tomto odkazu vytvoříte heslo (platí ' . ADMIN_INVITE_DAYS . ' dní):',
         admin_invite_link($token),
         '',
         "Přihlašovací jméno je Váš e-mail: {$user['email']}",
         '',
-        'Koncert TZG 2026',
+        'Těšín zpívá gospel',
     ], contact_line() !== '' ? [contact_line()] : []));
     return deliver_mail($user['email'], mail_subject('Pozvánka'), $text);
 }
@@ -359,13 +359,13 @@ function request_password_reset(string $email): ?string
         $text = implode("\n", array_merge([
             'Dobrý den,',
             '',
-            'někdo (nejspíš Vy) požádal o nové heslo do systému Koncert TZG 2026.',
+            'někdo (nejspíš Vy) požádal o nové heslo do systému Těšín zpívá gospel.',
             'Nové heslo si nastavíte na tomto odkazu (platí ' . PASSWORD_RESET_MINUTES . ' minut):',
             password_reset_link($token),
             '',
             'Pokud jste o nové heslo nežádali, e-mail ignorujte – dosavadní heslo platí dál.',
             '',
-            'Koncert TZG 2026',
+            'Těšín zpívá gospel',
         ], contact_line() !== '' ? [contact_line()] : []));
         deliver_mail($user['email'], mail_subject('Nové heslo'), $text);
     }

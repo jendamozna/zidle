@@ -119,9 +119,7 @@ function LoginScreen({ onLoggedIn }) {
 
   return (
     <form className="scan-login" onSubmit={submit}>
-      <h1 className="brand">
-        Koncert TZG <span>2026</span>
-      </h1>
+      <h1 className="brand">Těšín zpívá gospel</h1>
       <p className="muted">Odbavení vstupenek</p>
       <label className="field">
         <span>E-mail</span>

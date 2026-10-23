@@ -165,6 +165,6 @@ test('a reservation paid by discount codes is confirmed at once with one ticket 
   await expect(page.locator('.ticket-card').first()).toContainText('řada');
   const pdf = await request.get(await page.getByRole('link', { name: 'PDF k tisku' }).getAttribute('href'));
   expect(pdf.headers()['content-type']).toBe('application/pdf');
-  expect(pdf.headers()['content-disposition']).toMatch(/filename="TZG_2026_vstupenky_\d+\.pdf"/);
+  expect(pdf.headers()['content-disposition']).toMatch(/filename="TZG_vstupenky\.pdf"/);
   expect((await pdf.body()).subarray(0, 5).toString()).toBe('%PDF-');
 });

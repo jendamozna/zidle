@@ -1,5 +1,5 @@
 <?php
-// Printable tickets (TZG_2026_vstupenky_<SS>.pdf): A4, the reservation's seat tickets one below
+// Printable tickets (TZG_vstupenky.pdf): A4, the reservation's seat tickets one below
 // another (four per page) with dashed cut lines, so they can be printed, cut apart and
 // handed out – each ticket is one seat with its own QR code (ticket_code()).
 declare(strict_types=1);
@@ -9,11 +9,8 @@ use Dompdf\Options;
 
 const TICKETS_PER_PAGE = 4;
 
-/** "TZG_2026_vstupenky_<specific symbol>.pdf" – download and e-mail attachment. */
-function ticket_pdf_name(array $r): string
-{
-    return 'TZG_2026_vstupenky_' . $r['specific_symbol'] . '.pdf';
-}
+/** Download and e-mail attachment name. */
+const TICKET_PDF_NAME = 'TZG_vstupenky.pdf';
 
 /** PDF (binary) with one ticket per current seat of the reservation. */
 function ticket_pdf(array $r): string
@@ -34,7 +31,7 @@ function ticket_pdf(array $r): string
         $tickets .= '<table class="ticket' . ($breakBefore ? ' page' : '') . '"><tr>'
             . '<td class="qr"><img src="data:image/png;base64,' . $qr . '" width="170" height="170"></td>'
             . '<td class="info">'
-            . '<div class="brand">Koncert TZG <span>2026</span></div>'
+            . '<div class="brand">Těšín zpívá gospel</div>'
             . '<div class="run">' . $h($runText) . '</div>'
             . '<div class="seat">' . $h(section_name($section)) . '</div>'
             . '<div class="place">řada <b>' . $h($row) . '</b> &nbsp; místo <b>' . $h($seat) . '</b></div>'
@@ -47,7 +44,6 @@ function ticket_pdf(array $r): string
     $html = '<!doctype html><html><head><meta charset="utf-8"><style>'
         . '@page { margin: 12mm 14mm; }'
         . 'body { font-family: "DejaVu Sans", sans-serif; color: #2b2620; font-size: 10pt; }'
-        . '.note { margin: 0 0 4mm; color: #6b6256; font-size: 8.5pt; }'
         . '.ticket { width: 100%; height: 60mm; border-collapse: collapse; border-bottom: 0.4mm dashed #9b8f7f; }'
         . '.ticket.page { page-break-before: always; }'
         . '.ticket td { vertical-align: middle; padding: 3mm 0; }'
@@ -61,7 +57,6 @@ function ticket_pdf(array $r): string
         . '.holder { margin-top: 2mm; font-size: 11pt; font-weight: bold; }'
         . '.meta { margin-top: 2mm; font-size: 8.5pt; color: #6b6256; }'
         . '</style></head><body>'
-        . '<p class="note">Rozstříhejte podle čárkované čáry. Každá vstupenka platí pro jedno místo – při vstupu se načte její QR kód.</p>'
         . $tickets
         . '</body></html>';
 

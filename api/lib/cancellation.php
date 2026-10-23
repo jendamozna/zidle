@@ -130,7 +130,7 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
         return;
     }
     send_customer_email($r, 'Rezervace zrušena', array_merge(
-        ['Vaše rezervace (SS ' . $r['specific_symbol'] . ') byla zrušena a místa uvolněna:',
+        ['Vaše rezervace byla zrušena a místa uvolněna:',
          implode('; ', seat_labels(current_seat_ids($r))) . '.',
          run_line($r)],
         $refundLines,

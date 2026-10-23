@@ -382,7 +382,7 @@ test('codes are created per listed e-mail; an invalid address creates nothing', 
 
 test('e-mails share one HTML layout; the reservation e-mail embeds the payment QR', function (): void {
     $html = mail_layout(mail_text_html("Dobrý den,\n\n<b>Kód</b>:\n    ABCD-EFGH\n\nOdkaz: https://example.com/?r=1&x=2."), 'Rezervace míst');
-    contains('Koncert TZG <span style="color:#c42aae">2026</span>', $html, 'header');
+    contains('Těšín zpívá gospel', $html, 'header');
     contains('Rezervace míst</p>', $html, 'subtitle');
     contains('&lt;b&gt;Kód&lt;/b&gt;:<br><strong', $html, 'escaped, line break');
     contains('>ABCD-EFGH</strong>', $html, 'code line');
@@ -573,7 +573,9 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
     contains('SEQUENCE:' . $now->getTimestamp(), $ics, 'sequence');
     contains('ATTENDEE;CN="Test Nováková, Jana";', $unfolded, 'attendee');
     contains('SUMMARY:TZG 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels(current_seat_ids($r)))), $unfolded, 'summary');
-    contains('Specifický symbol: ' . $r['specific_symbol'], $unfolded, 'description');
+    contains('QR kódy vstupenek z PDF v e-mailu', $unfolded, 'description');
+    same(false, str_contains($unfolded, $r['specific_symbol']), 'no SS');
+    contains('ORGANIZER;CN="' . config('MAIL_FROM_NAME') . '":mailto:', $unfolded, 'organizer = MAIL_FROM_NAME');
     same(true, str_ends_with($ics, "END:VCALENDAR\r\n"), 'CRLF');
     foreach (explode("\r\n", $ics) as $line) {
         same(true, strlen($line) <= 75 && mb_check_encoding($line, 'UTF-8'), "line length: {$line}");

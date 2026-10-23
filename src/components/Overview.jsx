@@ -77,6 +77,9 @@ export default function Overview({ stats, seatState, loading, onOpen }) {
   return (
     <div className="plan">
       <section className="level level-main" aria-label={LEVELS.main}>
+        <div className="level-head">
+          <h2>{LEVELS.main}</h2>
+        </div>
         <LevelMap level="main" stats={stats} seatState={seatState} loading={loading} onOpen={onOpen} />
       </section>
       <section className="level level-balcony" aria-label={LEVELS.balcony}>

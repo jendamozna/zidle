@@ -76,11 +76,6 @@ function parse_ticket_code(string $code): ?array
     ];
 }
 
-function ticket_png(string $code): string
-{
-    return qr_png($code);
-}
-
 /** PNG (binary) of a QR code for any text, e.g. tickets and scanner invite links. */
 function qr_png(string $text, int $scale = 8): string
 {
@@ -96,8 +91,8 @@ function qr_png(string $text, int $scale = 8): string
 }
 
 /**
- * E-mails the tickets to the customer: one QR code per seat inline in the message and
- * the printable PDF (ticket_pdf(), ticket_pdf_name()) plus the calendar event. Returns true when
+ * E-mails the tickets to the customer: the seat list in the message, the tickets (QR codes) only in
+ * the attached PDF (ticket_pdf(), TICKET_PDF_NAME) plus the calendar event. Returns true when
  * the message was handed over to the mail system.
  * $intro replaces the default first paragraph; $subject (without the "TZG 2026: " prefix) defaults to
  * "Nové vstupenky" with an intro (replacement tickets) and "Vaše vstupenky" without.
@@ -110,9 +105,8 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
     $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
     $r = with_items($r);
     $items = reservation_seat_items($r);
-    $count = count($items);
-    $printNote = 'V příloze je soubor ' . ticket_pdf_name($r) . ' k vytištění – vstupenky rozstříhejte, každá platí pro jedno místo.'
-        . ' Při vstupu můžete QR kódy ukázat i na mobilu.';
+    $printNote = 'V příloze je PDF soubor k vytištění. Každá vstupenka platí pro jedno místo. Při vstupu můžete QR kódy ukázat i na mobilu.';
+    $seatLine = static fn ($i) => seat_label($i['seat']) . ' – ' . SEAT_KIND_LABELS[$i['kind']] . ($i['holder'] !== null ? ' – ' . $i['holder'] : '');
 
     $introLines = $intro ?: ['děkujeme, platba byla přijata. Vaše rezervace je potvrzena.'];
     $text = implode("\n", [
@@ -122,26 +116,11 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         '',
         run_line($r),
         'Vstupenky: ' . seat_kinds_summary($r),
-        ...array_map(static fn ($i) => '- ' . seat_label($i['seat']) . ' – ' . SEAT_KIND_LABELS[$i['kind']]
-            . ($i['holder'] !== null ? ' – ' . $i['holder'] : ''), $items),
-        'Specifický symbol: ' . $r['specific_symbol'],
+        ...array_map(static fn ($i) => '- ' . $seatLine($i), $items),
         '',
-        'Každé místo má vlastní QR kód (1 QR kód = 1 místo). ' . $printNote,
+        $printNote,
         ...(contact_line() !== '' ? ['', contact_line()] : []),
     ]);
-
-    $tickets = '';
-    $inline = [];
-    foreach ($items as $n => $item) {
-        $cid = 'ticket-qr-' . ($n + 1);
-        $inline[] = ['cid' => $cid, 'data' => ticket_png(ticket_code($r, $item['seat'])), 'name' => "vstupenka-{$item['seat']}.png", 'type' => 'image/png'];
-        $tickets .= '<div style="border-top:1px dashed #e3d6e6;padding:20px 0 16px">'
-            . '<img src="cid:' . $cid . '" alt="QR kód vstupenky ' . $h($item['seat']) . '" width="220" height="220" style="display:block;margin:0 auto 12px;width:220px;height:220px">'
-            . ($item['holder'] !== null ? '<p style="margin:0 0 4px;font-size:16px">' . $h($item['holder']) . '</p>' : '')
-            . '<p style="margin:0 0 4px;font-size:18px;font-weight:bold">' . $h(seat_label($item['seat'])) . '</p>'
-            . '<p style="margin:0;color:' . MAIL_MUTED . '">' . $h(SEAT_KIND_LABELS[$item['kind']]) . ' · vstupenka ' . ($n + 1) . ' z ' . $count . '</p>'
-            . '</div>';
-    }
 
     $html = mail_layout(
         ($intro ? '<p style="margin:0 0 20px">' . implode('<br>', array_map($h, $intro)) . '</p>' : '')
@@ -149,20 +128,20 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         . '<p style="margin:0 0 8px;font-size:20px;font-weight:bold;color:' . MAIL_ACCENT . '">' . $h(preg_replace('/^Termín: /', '', run_line($r))) . '</p>'
         . '<p style="margin:0 0 4px;font-size:18px;font-weight:bold">' . $h($r['first_name'] . ' ' . $r['last_name']) . '</p>'
         . '<p style="margin:0 0 16px;color:' . MAIL_MUTED . '">' . $h(seat_kinds_summary($r)) . '</p>'
-        . '<p style="margin:0 0 16px">Každé místo má vlastní QR kód – <strong>1 QR kód = 1 místo</strong>.</p>'
-        . $tickets
+        . '<p style="margin:0 0 16px">' . implode('<br>', array_map(static fn ($i) => $h($seatLine($i)), $items)) . '</p>'
+        . '<p style="margin:0"><strong>' . $h($printNote) . '</strong></p>'
         . '</div>',
-        'Vstupenky · SS ' . $r['specific_symbol'],
-        $h($printNote) . (contact_line() !== '' ? '<br>' . $h(contact_line()) : '')
+        'Vstupenky',
+        contact_line() !== '' ? $h(contact_line()) : ''
     );
 
     $subject = mail_subject($subject ?? ($intro ? 'Nové vstupenky' : 'Vaše vstupenky'), $r);
-    $attachments = [['data' => ticket_pdf($r), 'name' => ticket_pdf_name($r), 'type' => 'application/pdf']];
+    $attachments = [['data' => ticket_pdf($r), 'name' => TICKET_PDF_NAME, 'type' => 'application/pdf']];
     $ics = ticket_ics($r);
     if ($ics !== null) {
         $attachments[] = ['data' => $ics, 'name' => 'udalost.ics', 'type' => 'text/calendar; charset=UTF-8; method=REQUEST'];
     }
-    $ok = deliver_mail($r['email'], $subject, $text, $html, $inline, $attachments);
+    $ok = deliver_mail($r['email'], $subject, $text, $html, [], $attachments);
     if (!$ok) {
         app_log('Failed to send ticket e-mail for reservation ' . $r['id']);
     }
@@ -191,8 +170,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
     $link = reservation_link($r);
     $description = implode("\n", [
         'Místa: ' . implode('; ', $seats),
-        'Specifický symbol: ' . $r['specific_symbol'],
-        'Při vstupu prosím ukažte QR kódy vstupenek z e-mailu (1 QR kód = 1 místo).',
+        'Při vstupu prosím ukažte QR kódy vstupenek z PDF v e-mailu (1 QR kód = 1 místo).',
         ...($link ? ['Rezervace: ' . $link] : []),
         ...(contact_line() !== '' ? [contact_line()] : []),
     ]);
@@ -200,7 +178,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
     $lines = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
-        'PRODID:-//Koncert TZG 2026//Rezervace//CS',
+        'PRODID:-//Těšín zpívá gospel//Rezervace//CS',
         'CALSCALE:GREGORIAN',
         'METHOD:REQUEST',
         'BEGIN:VEVENT',
@@ -212,7 +190,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
         'SUMMARY:' . ics_text('TZG 2026' . ($run['label'] !== '' ? ' · ' . $run['label'] : '') . ' – ' . implode('; ', $seats)),
         'DESCRIPTION:' . ics_text($description),
         ...($location !== '' ? ['LOCATION:' . ics_text($location)] : []),
-        'ORGANIZER;CN=' . ics_param(MAIL_FROM_NAME) . ':mailto:' . mail_sender(),
+        'ORGANIZER;CN=' . ics_param(mail_from_name()) . ':mailto:' . mail_sender(),
         'ATTENDEE;CN=' . ics_param($name) . ';ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:' . $r['email'],
         'STATUS:CONFIRMED',
         'TRANSP:OPAQUE',
