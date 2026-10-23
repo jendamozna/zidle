@@ -357,7 +357,7 @@ test('codes are created per listed e-mail; an invalid address creates nothing', 
     same('ABCDEFGH', normalize_discount_code(' abcd-efgh '), 'normalized input');
 });
 
-test('e-mails share one HTML layout; the reservation e-mail attaches the payment QR', function (): void {
+test('e-mails share one HTML layout; the reservation e-mail embeds the payment QR', function (): void {
     $html = mail_layout(mail_text_html("Dobrý den,\n\n<b>Kód</b>:\n    ABCD-EFGH\n\nOdkaz: https://example.com/?r=1&x=2."), 'Rezervace míst');
     contains('Koncert TZG <span style="color:#c42aae">2026</span>', $html, 'header');
     contains('Rezervace míst</p>', $html, 'subtitle');
@@ -365,8 +365,13 @@ test('e-mails share one HTML layout; the reservation e-mail attaches the payment
     contains('>ABCD-EFGH</strong>', $html, 'code line');
     contains('<a href="https://example.com/?r=1&amp;x=2" style="color:#c42aae">https://example.com/?r=1&amp;x=2</a>.', $html, 'link without the full stop');
     $r = row(reservation(['PK-7-4']));
-    $qr = payment_qr_attachment($r) ?? [];
-    same(['QR_platba_' . $r['specific_symbol'] . '.png', 'image/png', "\x89PNG"], [$qr['name'] ?? null, $qr['type'] ?? null, substr($qr['data'] ?? '', 0, 4)], 'QR attachment');
+    $qr = payment_qr_image($r) ?? [];
+    same(['payment-qr', 'QR_platba.png', 'image/png', "\x89PNG"], [$qr['cid'] ?? null, $qr['name'] ?? null, $qr['type'] ?? null, substr($qr['data'] ?? '', 0, 4)], 'QR image');
+    $body = payment_email_html($r, true);
+    contains('<img src="cid:payment-qr"', $body, 'QR inline');
+    contains('font-weight:bold;font-size:17px">' . $r['specific_symbol'] . '</td>', $body, 'SS highlighted');
+    contains('font-weight:bold;font-size:17px">' . seat_label('PK-7-4') . ' – Dospělý</td>', $body, 'seat in long format');
+    same(false, str_contains(payment_email_html($r, false), 'cid:'), 'no QR without IBAN');
 });
 
 test('codes of one address go in one e-mail', function (): void {

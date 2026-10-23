@@ -175,45 +175,76 @@ function payment_lines(array $r): array
     return $lines;
 }
 
-/** Sends an e-mail (text + mail_layout() HTML) to the reservation's customer; false when not sent. */
-function send_customer_email(array $r, string $subject, array $lines, array $attachments = []): bool
+/** Sends an e-mail (text + mail_layout() HTML) to the reservation's customer; false when not sent.
+ *  $html replaces the card content made from the text; $inline are its embedded images (deliver_mail()). */
+function send_customer_email(array $r, string $subject, array $lines, ?string $html = null, array $inline = []): bool
 {
     if (!mail_enabled() || $r['email'] === '') {
         return false;
     }
-    $body = implode("\n", array_merge(
-        ["Dobrý den, {$r['first_name']} {$r['last_name']},", ''],
-        $lines,
-        ['', 'Koncert TZG 2026'],
-        contact_line() !== '' ? [contact_line()] : []
-    ));
-    $ok = deliver_mail($r['email'], mail_subject($subject, $r), $body, null, [], $attachments);
+    $closing = array_merge(['Koncert TZG 2026'], contact_line() !== '' ? [contact_line()] : []);
+    $greeting = "Dobrý den, {$r['first_name']} {$r['last_name']},";
+    $body = implode("\n", array_merge([$greeting, ''], $lines, [''], $closing));
+    $layout = $html === null ? null : mail_layout(mail_text_html($greeting) . $html . mail_text_html(implode("\n", $closing)), $subject);
+    $ok = deliver_mail($r['email'], mail_subject($subject, $r), $body, $layout, $inline);
     if (!$ok) {
         app_log("Failed to send '{$subject}' for reservation {$r['id']}");
     }
     return $ok;
 }
 
-/** QR Platba image as an attachment "QR_platba_<SS>.png", or null without BANK_IBAN. */
-function payment_qr_attachment(array $r): ?array
+/** QR Platba image embedded in the e-mail (cid:payment-qr, file QR_platba.png), or null without BANK_IBAN. */
+function payment_qr_image(array $r): ?array
 {
     if (trim((string) config('BANK_IBAN')) === '') {
         return null;
     }
-    return ['data' => qr_png(spd_string($r)), 'name' => 'QR_platba_' . $r['specific_symbol'] . '.png', 'type' => 'image/png'];
+    return ['cid' => 'payment-qr', 'data' => qr_png(spd_string($r)), 'name' => 'QR_platba.png', 'type' => 'image/png'];
+}
+
+/** "Levá hlavní · řada 1 · místo 2 – Dospělý" per current seat, in seat order. */
+function seat_kind_lines(array $r): array
+{
+    return array_map(static fn ($i) => seat_label($i['seat']) . ' – ' . SEAT_KIND_LABELS[$i['kind']], reservation_seat_items($r));
+}
+
+/** HTML of "Rezervace míst": run, seats and payment details highlighted, the QR code inline when $qr. */
+function payment_email_html(array $r, bool $qr): string
+{
+    $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    $row = static fn (string $label, string $value, bool $big = false) => '<tr><td style="padding:5px 14px 5px 0;color:' . MAIL_MUTED
+        . ';vertical-align:top;white-space:nowrap">' . $h($label) . '</td><td style="padding:5px 0;font-weight:bold;'
+        . ($big ? 'font-size:22px;color:' . MAIL_ACCENT : 'font-size:17px') . '">' . $value . '</td></tr>';
+    $table = static fn (string $rows) => '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;border-collapse:collapse">' . $rows . '</table>';
+    $run = run_by_id((int) $r['run_id']);
+    $account = trim((string) config('BANK_ACCOUNT_DISPLAY'));
+    $link = reservation_link($r);
+    return '<p style="margin:0 0 14px">děkujeme za rezervaci míst.</p>'
+        . $table($row('Termín', $h($run ? run_label($run) : '–')) . $row('Místa', implode('<br>', array_map($h, seat_kind_lines($r)))))
+        . '<p style="margin:0 0 6px;font-weight:bold">Platební údaje</p>'
+        . $table(
+            $row('Částka', $h(format_czk(amount_due($r))), true)
+            . ($account !== '' ? $row('Účet', $h($account)) : '')
+            . $row('Variabilní symbol', $h(payment_variable_symbol()))
+            . $row('Specifický symbol', $h($r['specific_symbol']))
+            . $row('Splatnost', $h(format_prague($r['expires_at'])))
+        )
+        . ($qr ? '<p style="margin:0 0 16px;text-align:center"><img src="cid:payment-qr" alt="QR platba" width="200" height="200" style="display:block;margin:0 auto 6px;width:200px;height:200px">'
+            . '<span style="color:' . MAIL_MUTED . ';font-size:13px">Načtěte QR kód v aplikaci banky.</span></p>' : '')
+        . '<p style="margin:0 0 14px">Pokud platba nedorazí, rezervace bude zrušena a místa uvolněna.</p>'
+        . ($link ? '<p style="margin:0 0 14px">Rezervace a QR kód online: <a href="' . $h($link) . '" style="color:' . MAIL_ACCENT . '">' . $h($link) . '</a></p>' : '');
 }
 
 function send_payment_email(array $r): void
 {
     $link = reservation_link($r);
-    $qr = payment_qr_attachment($r);
+    $qr = payment_qr_image($r);
     send_customer_email($r, 'Rezervace míst', array_merge(
-        ['děkujeme za rezervaci míst: ' . implode('; ', seat_labels($r['seats'])) . '.', run_line($r), '', 'Platební údaje:'],
+        ['děkujeme za rezervaci míst:', ...array_map(static fn ($l) => '- ' . $l, seat_kind_lines($r)), run_line($r), '', 'Platební údaje:'],
         payment_lines($r),
         ['', 'Pokud platba nedorazí, rezervace bude zrušena a místa uvolněna.'],
-        $qr ? ['', 'QR kód pro platbu je v příloze ' . $qr['name'] . ' – načtěte ho v aplikaci banky.'] : [],
         $link ? ['', "Rezervace a QR kód online: {$link}"] : []
-    ), $qr ? [$qr] : []);
+    ), payment_email_html($r, $qr !== null), $qr ? [$qr] : []);
 }
 
 function send_reminder_email(array $r): bool
