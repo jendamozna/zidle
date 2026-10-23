@@ -80,6 +80,25 @@ test('customer books two seats and sees the QR payment; only the admin can cance
   expect(reservation.seats.some((s) => after.taken.includes(s))).toBe(false);
 });
 
+test('a test run is hidden from the picker; booked via its link it is paid at once', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.run-card', { hasText: 'Zkouška' })).toHaveCount(0);
+  await page.goto('/?termin=3');
+  await page.locator('.plan-hit').first().click();
+  await page.locator('button.seat-available').first().click();
+  await page.getByRole('button', { name: /Zpět na mapu/ }).click();
+  await page.locator('.topbar .btn-primary').click();
+  const form = page.locator('.modal');
+  await expect(form.locator('.modal-run')).toContainText('Zkouška · TEST');
+  await expect(form.getByLabel('Slevový kód')).toHaveCount(0);
+  await fillCustomer(form);
+  await page.waitForTimeout(3200); // FORM_MIN_SECONDS
+  await form.getByRole('button', { name: 'Rezervovat (test)' }).click();
+
+  await expect(page.getByText('Zaplaceno').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.ticket-card img')).toHaveCount(1);
+});
+
 test('the footer and the run picker show without horizontal scroll on a phone', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.run-card')).toHaveCount(2);

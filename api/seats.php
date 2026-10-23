@@ -1,6 +1,6 @@
 <?php
-// GET api/seats.php?run=<id> – runs with free seat counts, the seats of the
-// given run held by pending or paid reservations, the seating layout.
+// GET api/seats.php?run=<id> – runs with free seat counts (test runs only when they are
+// the requested one), the seats of the given run held by pending or paid reservations, the seating layout.
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 
@@ -13,13 +13,14 @@ run_api(function (): void {
         cleanup_rate_limits();
     }
 
+    $run = run_by_id((int) ($_GET['run'] ?? 0));
     $held = db_query('SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id')->fetchAll(PDO::FETCH_KEY_PAIR);
+    // Test runs are not listed publicly – only when requested by their link (?termin=<id>).
     $runs = array_values(array_map(
-        static fn ($run) => run_public($run, run_capacity($run) - (int) ($held[$run['id']] ?? 0)),
-        runs()
+        static fn ($r) => run_public($r, run_capacity($r) - (int) ($held[$r['id']] ?? 0)),
+        array_filter(runs(), static fn ($r) => !$r['is_test'] || $r['id'] === ($run['id'] ?? null))
     ));
 
-    $run = run_by_id((int) ($_GET['run'] ?? 0));
     $taken = [];
     if ($run !== null) {
         $stmt = db()->prepare('SELECT seat_id FROM reservation_seats WHERE run_id = ?');

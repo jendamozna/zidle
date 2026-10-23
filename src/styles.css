@@ -36,6 +36,9 @@
   --seat-taken: #f6d6ef;
   --seat-taken-edge: #e7a9da;
   --seat-taken-ink: var(--plum);
+  --seat-reserve: #d9d8dc;
+  --seat-reserve-edge: #8e8b94;
+  --seat-reserve-ink: #5e5b64;
 
   --radius: 18px;
   --radius-sm: 10px;
@@ -351,8 +354,8 @@ h2 {
   background: var(--seat-taken);
 }
 .plan-seat.seat-reserve {
-  background: var(--surface-2);
-  border: 1px dashed var(--ink-3);
+  background: var(--seat-reserve);
+  border: 1px dashed var(--seat-reserve-edge);
 }
 
 .plan-label {
@@ -377,6 +380,9 @@ h2 {
 .plan-label.align-right {
   transform: translateX(-100%);
   align-items: flex-end;
+}
+.plan-label.align-left {
+  align-items: flex-start;
 }
 
 .mine-count {
@@ -622,9 +628,9 @@ h2 {
 }
 
 .seat-reserve {
-  background: var(--surface-2);
-  border: 1.5px dashed var(--ink-3);
-  color: var(--ink-3);
+  background: var(--seat-reserve);
+  border: 1.5px dashed var(--seat-reserve-edge);
+  color: var(--seat-reserve-ink);
   cursor: not-allowed;
 }
 

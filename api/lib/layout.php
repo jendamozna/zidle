@@ -13,7 +13,8 @@
 //                ['parts' => [[seats, x1, y1, x2, y2], …]] (numbering goes on across the parts);
 //                'reserve' => true marks reserve rows: their seats are "Záložní" (not for
 //                sale) in a new run; the admin can switch any seat of a run (admin → Plánek);
-//   label      – [x, y, align] where the section's name is shown on the map (y = top).
+//   label      – [x, y, align] where the section's name is shown on the map (y = top);
+//   row_label  – 'end': row numbers after the last seat of each row (default: before seat 1).
 const LEVELS = [
     'main' => 'Hlavní sál',
     'balcony' => 'Balkon',
@@ -23,7 +24,7 @@ const PLAN = [
     // the stage spans both main sections; the band's top is level with the first rows
     'main' => ['height' => 49.5, 'items' => [
         ['kind' => 'stage', 'label' => 'Pódium', 'x' => 24.1, 'y' => 0, 'w' => 51.8, 'h' => 8],
-        ['kind' => 'band', 'label' => 'Kapela', 'x' => 1.5, 'y' => 15.6, 'w' => 14, 'h' => 12],
+        ['kind' => 'band', 'label' => 'Kapela', 'x' => 6.5, 'y' => 15.6, 'w' => 14, 'h' => 12],
     ]],
     // the top 8 units hold the labels of the side parts
     'balcony' => ['height' => 66, 'items' => [
@@ -32,25 +33,25 @@ const PLAN = [
 ];
 
 const SECTIONS = [
-    'LK' => ['name' => 'Levé křídlo', 'short' => 'L. křídlo', 'level' => 'main', 'label' => [8.6, 9.5, 'center'], 'rows' => [
-        [5, 3.2, 30.5, 14, 30.5], [5, 3.2, 33.7, 14, 33.7], [5, 3.2, 36.9, 14, 36.9], [5, 3.2, 40.1, 14, 40.1],
+    'LK' => ['name' => 'Levé křídlo', 'short' => 'L. křídlo', 'level' => 'main', 'label' => [13.6, 9.5, 'center'], 'row_label' => 'end', 'rows' => [
+        [5, 8.2, 30.5, 19, 30.5], [5, 8.2, 33.7, 19, 33.7], [5, 8.2, 36.9, 19, 36.9], [5, 8.2, 40.1, 19, 40.1],
     ]],
-    'LH' => ['name' => 'Levá hlavní', 'short' => 'L. hlavní', 'level' => 'main', 'label' => [35.45, 9.5, 'center'], 'rows' => [
+    'LH' => ['name' => 'Levá hlavní', 'short' => 'Levá hlavní', 'level' => 'main', 'label' => [35.45, 9.5, 'center'], 'row_label' => 'end', 'rows' => [
         [8, 26, 17.5, 44.9, 17.5], [8, 26, 21.1, 44.9, 21.1], [8, 26, 24.7, 44.9, 24.7], [8, 26, 28.3, 44.9, 28.3],
         [8, 26, 31.9, 44.9, 31.9], [8, 26, 35.5, 44.9, 35.5], [8, 26, 39.1, 44.9, 39.1], [8, 26, 42.7, 44.9, 42.7],
         [8, 26, 46.3, 44.9, 46.3],
     ]],
-    'PH' => ['name' => 'Pravá hlavní', 'short' => 'P. hlavní', 'level' => 'main', 'label' => [64.55, 9.5, 'center'], 'rows' => [
+    'PH' => ['name' => 'Pravá hlavní', 'short' => 'Pravá hlavní', 'level' => 'main', 'label' => [64.55, 9.5, 'center'], 'rows' => [
         [8, 55.1, 17.5, 74, 17.5], [8, 55.1, 21.1, 74, 21.1], [8, 55.1, 24.7, 74, 24.7], [8, 55.1, 28.3, 74, 28.3],
         [8, 55.1, 31.9, 74, 31.9], [8, 55.1, 35.5, 74, 35.5], [8, 55.1, 39.1, 74, 39.1], [8, 55.1, 42.7, 74, 42.7],
         [8, 55.1, 46.3, 74, 46.3],
     ]],
-    'PK' => ['name' => 'Pravé křídlo', 'short' => 'P. křídlo', 'level' => 'main', 'label' => [90.4, 9.5, 'center'], 'rows' => [
-        [4, 86.35, 17.5, 94.45, 17.5], [4, 86.35, 21.1, 94.45, 21.1], [4, 86.35, 24.7, 94.45, 24.7],
-        [5, 85, 28.3, 95.8, 28.3], [5, 85, 31.9, 95.8, 31.9], [5, 85, 35.5, 95.8, 35.5],
-        [4, 86.35, 41, 94.45, 41],
+    'PK' => ['name' => 'Pravé křídlo', 'short' => 'P. křídlo', 'level' => 'main', 'label' => [86.4, 9.5, 'center'], 'rows' => [
+        [4, 82.35, 17.5, 90.45, 17.5], [4, 82.35, 21.1, 90.45, 21.1], [4, 82.35, 24.7, 90.45, 24.7],
+        [5, 81, 28.3, 91.8, 28.3], [5, 81, 31.9, 91.8, 31.9], [5, 81, 35.5, 91.8, 35.5],
+        [4, 82.35, 41, 90.45, 41],
     ]],
-    'BL' => ['name' => 'Balkon vlevo', 'short' => 'Balkon L', 'level' => 'balcony', 'label' => [24.25, 0.5, 'center'], 'rows' => [
+    'BL' => ['name' => 'Balkon vlevo', 'short' => 'Balkon vlevo', 'level' => 'balcony', 'label' => [31.5, 0.5, 'right'], 'rows' => [
         ['parts' => [[5, 30, 10.5, 30, 21.3], [7, 30, 25.5, 30, 41.7]]], // bench along the railing: seats 1–5 | 6–12
         // reserve rows behind it: rows 2 and 3 seats 1–5 | 6–11, row 4 only beside the back part
         ['reserve' => true, 'parts' => [[5, 25.5, 10.5, 25.5, 21.3], [6, 25.5, 25.5, 25.5, 39]]],
@@ -61,7 +62,7 @@ const SECTIONS = [
         [7, 32.45, 45, 48.65, 45], [14, 32.45, 48.2, 67.55, 48.2], [14, 32.45, 51.4, 67.55, 51.4],
         [7, 45.95, 54.6, 62.15, 54.6], [7, 45.95, 57.8, 62.15, 57.8],
     ]],
-    'BP' => ['name' => 'Balkon vpravo', 'short' => 'Balkon P', 'level' => 'balcony', 'label' => [74, 0.5, 'center'], 'rows' => [
+    'BP' => ['name' => 'Balkon vpravo', 'short' => 'Balkon vpravo', 'level' => 'balcony', 'label' => [68.5, 0.5, 'left'], 'rows' => [
         // like the left part (mirrored): the bench along the railing (seats 1–6 | 7–11), reserve rows behind it
         ['parts' => [[6, 70, 10.5, 70, 24], [5, 70, 29.5, 70, 40.3]]],
         ['reserve' => true, 'parts' => [[3, 74.5, 27.5, 74.5, 32.9]]], ['reserve' => true, 'parts' => [[3, 78, 27.5, 78, 32.9]]],
@@ -124,7 +125,7 @@ function default_reserve_seats(): array
 
 /**
  * Layout for the apps: {levels, plan: {main|balcony: {height, items}}, sections: [{id, name, short,
- * level, label: {x, y, align}, rows: [{seats, reserve, parts: [{seats, x1, y1, x2, y2}]}]}]}.
+ * level, label: {x, y, align}, rowLabel: start|end, rows: [{seats, reserve, parts: [{seats, x1, y1, x2, y2}]}]}]}.
  */
 function layout_public(): array
 {
@@ -136,6 +137,7 @@ function layout_public(): array
             'short' => $s['short'],
             'level' => $s['level'],
             'label' => ['x' => $s['label'][0], 'y' => $s['label'][1], 'align' => $s['label'][2]],
+            'rowLabel' => $s['row_label'] ?? 'start',
             'rows' => array_map(static fn ($r) => [
                 'seats' => $r['seats'],
                 'reserve' => $r['reserve'],

@@ -5,17 +5,21 @@ const pct = (value) => `${value}%`;
 
 /**
  * Seats of one section laid out as in the church (rows from the server layout), large
- * enough to tap. Row numbers stand before seat 1 of each row. seatState(id) →
+ * enough to tap. Row numbers stand before seat 1 of each row, or after its last seat when
+ * section.rowLabel is 'end'. seatState(id) →
  * available | selected | taken | reserve (not for sale); minSeat / maxSeat = seat size range in px.
  */
 export default function SeatPlan({ section, seatState, onToggle, minSeat = 30, maxSeat = 44 }) {
   const spacing = seatSpacing(section);
   const seats = seatPositions(section);
+  const atEnd = section.rowLabel === 'end';
   const labels = section.rows.map((row, r) => {
-    const first = row.parts[0];
-    const length = Math.hypot(first.x2 - first.x1, first.y2 - first.y1);
-    const [dx, dy] = length > 0 ? [(first.x2 - first.x1) / length, (first.y2 - first.y1) / length] : [1, 0];
-    return { row: r + 1, x: first.x1 - dx * spacing, y: first.y1 - dy * spacing };
+    const part = atEnd ? row.parts[row.parts.length - 1] : row.parts[0];
+    const length = Math.hypot(part.x2 - part.x1, part.y2 - part.y1);
+    const [dx, dy] = length > 0 ? [(part.x2 - part.x1) / length, (part.y2 - part.y1) / length] : [1, 0];
+    return atEnd
+      ? { row: r + 1, x: part.x2 + dx * spacing, y: part.y2 + dy * spacing }
+      : { row: r + 1, x: part.x1 - dx * spacing, y: part.y1 - dy * spacing };
   });
   const points = [...seats, ...labels];
   const pad = spacing * 0.6;

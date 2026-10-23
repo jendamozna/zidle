@@ -142,7 +142,7 @@ function LoginScreen({ onLoggedIn }) {
         {busy ? 'Přihlašuji…' : 'Přihlásit'}
       </button>
       <p className="scan-login-help">
-        Účet Vám založí správce pozvánkou na e-mail. <a href={adminUrl('?zapomenute')}>Zapomněl jsem heslo</a>
+        <a href={adminUrl('?zapomenute')}>Zapomněl jsem heslo</a>
       </p>
     </form>
   );

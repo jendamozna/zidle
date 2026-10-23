@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS runs (
   starts_at         DATETIME     NOT NULL COMMENT 'UTC',
   booking_closes_at DATETIME     NULL COMMENT 'UTC; NULL = at the start',
   reserve_seats     TEXT         NULL COMMENT 'JSON seat ids that are "Záložní" (not for sale); NULL = the reserve rows of the layout',
+  is_test           TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '1 = test run for the organizers: hidden from the public list, bookings paid at once, deletable with its reservations',
   PRIMARY KEY (id),
   KEY idx_starts (starts_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;

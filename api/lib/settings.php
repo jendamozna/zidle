@@ -35,6 +35,7 @@ function runs(bool $fresh = false): array
         $cache = [];
         foreach (db_query('SELECT * FROM runs ORDER BY starts_at, id')->fetchAll() as $run) {
             $run['id'] = (int) $run['id'];
+            $run['is_test'] = (bool) ($run['is_test'] ?? false);
             $run['reserve_seats'] = ($run['reserve_seats'] ?? null) === null
                 ? default_reserve_seats()
                 : array_values(array_filter((array) json_decode((string) $run['reserve_seats'], true), static fn ($id) => is_string($id) && is_valid_seat_id($id)));
@@ -81,13 +82,23 @@ function run_started(array $run): bool
     return now_utc() >= run_starts($run);
 }
 
-/** "so 19. 12. 2026 18:00" (+ " · Premiéra") */
+/** "so 19. 12. 2026 18:00" (+ " · Premiéra", + " · TEST" for a test run) */
 function run_label(array $run): string
 {
     $start = run_starts($run)->setTimezone(new DateTimeZone(PRAGUE));
     $text = CZECH_WEEKDAYS[(int) $start->format('w')] . ' ' . $start->format('j. n. Y H:i');
-    return $run['label'] !== '' ? $text . ' · ' . $run['label'] : $text;
+    $text = $run['label'] !== '' ? $text . ' · ' . $run['label'] : $text;
+    return !empty($run['is_test']) ? $text . ' · TEST' : $text;
 }
+
+/** True when the reservation belongs to a test run. */
+function reservation_is_test(array $r): bool
+{
+    return (bool) (run_by_id((int) $r['run_id'])['is_test'] ?? false);
+}
+
+/** SQL condition: the reservation (column run_id) is not on a test run – for totals. */
+const NOT_TEST_RUN_SQL = 'run_id NOT IN (SELECT id FROM runs WHERE is_test = 1)';
 
 function iso_utc(DateTimeImmutable $t): string
 {
@@ -140,6 +151,7 @@ function run_public(array $run, ?int $free = null): array
         'free' => $free,
         'capacity' => run_capacity($run),
         'reserveSeats' => $run['reserve_seats'],
+        'test' => $run['is_test'],
     ];
 }
 
@@ -160,10 +172,36 @@ function run_in_scan_window(array $run): bool
     return $now >= $from && $now <= $to;
 }
 
-/** Start of the last run, or null when there are no runs. */
+/** True once any reservation (in any status) exists for the run. */
+function run_has_reservations(int $runId): bool
+{
+    $stmt = db()->prepare('SELECT 1 FROM reservations WHERE run_id = ? LIMIT 1');
+    $stmt->execute([$runId]);
+    return (bool) $stmt->fetchColumn();
+}
+
+/**
+ * Deletes the run (admin → Nastavení); returns the flash message. A real run only without
+ * reservations, a test run together with its reservations (seats and check-ins cascade)
+ * and scan conflicts; user run assignments cascade.
+ */
+function delete_run(int $id): string
+{
+    $run = run_by_id($id);
+    if ($run !== null && !$run['is_test'] && run_has_reservations($id)) {
+        return 'Termín má rezervace, nelze ho smazat.';
+    }
+    db()->prepare('DELETE FROM reservations WHERE run_id = ?')->execute([$id]);
+    db()->prepare('DELETE FROM runs WHERE id = ?')->execute([$id]);
+    db()->prepare('DELETE FROM scan_conflicts WHERE run_id = ?')->execute([$id]);
+    runs(true);
+    return 'Termín smazán.';
+}
+
+/** Start of the last real (not test) run, or null when there are none. */
 function last_run_start(): ?DateTimeImmutable
 {
-    $runs = runs();
+    $runs = array_filter(runs(), static fn ($run) => !$run['is_test']);
     return $runs ? run_starts(end($runs)) : null;
 }
 

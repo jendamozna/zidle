@@ -5,7 +5,7 @@
 //
 // PLAN: {main|balcony: {height, items: [{kind: stage|band|void, label, x, y, w, h}]}} –
 //   one map per level, 100 units wide.
-// Section: {id, name, short, level, label: {x, y, align}, rows: [{seats, reserve, parts: [{seats, x1, y1, x2, y2}]}]}
+// Section: {id, name, short, level, label: {x, y, align}, rowLabel: 'start'|'end', rows: [{seats, reserve, parts: [{seats, x1, y1, x2, y2}]}]}
 //   rows  – row 1 first (nearest the stage / balcony railing); a row has one or more parts
 //           (a gap between them); in a part the first seat sits at (x1, y1), the last at
 //           (x2, y2), the others evenly between (plan units); numbering goes on across parts

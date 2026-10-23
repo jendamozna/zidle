@@ -4,6 +4,7 @@
 //   three unused discount codes for the customer tests
 //   run 2 "Dnes" starting in 20 minutes – inside the scan window: two paid reservations
 //   (one for the online and one for the offline scanner test)
+//   run 3 "Zkouška" – test run (hidden, bookings paid at once)
 //   accounts: Správce spravce@example.cz (created like deploy.php does), Odbavovatel vchod@example.cz (both runs)
 declare(strict_types=1);
 
@@ -13,6 +14,7 @@ reset_database();
 $pdo = db();
 $pdo->prepare('UPDATE runs SET label = ?, starts_at = ? WHERE id = 1')->execute(['Premiéra', db_time(now_utc()->modify('+30 days'))]);
 $pdo->prepare('UPDATE runs SET label = ?, starts_at = ? WHERE id = 2')->execute(['Dnes', db_time(now_utc()->modify('+20 minutes'))]);
+$pdo->prepare('INSERT INTO runs (id, label, starts_at, is_test) VALUES (3, ?, ?, 1)')->execute(['Zkouška', db_time(now_utc()->modify('+40 days'))]);
 runs(true);
 
 $pending = reservation(['PH-5-1', 'PH-5-2'], 'pending', 1, 'Platící');

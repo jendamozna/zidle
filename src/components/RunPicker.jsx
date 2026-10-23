@@ -31,6 +31,7 @@ export default function RunPicker({ runs, onSelect }) {
                 <span className="run-date">{date}</span>
                 <span className="run-time">{time}</span>
                 {run.label && <span className="run-label">{run.label}</span>}
+                {run.test && <span className="run-label">TEST</span>}
                 <span className="run-spacer" aria-hidden="true" />
                 <span className="run-status">
                   {closed ? 'Rezervace uzavřeny' : soldOut ? 'Vyprodáno' : freeLabel(run.free)}

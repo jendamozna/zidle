@@ -155,7 +155,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         $h($printNote) . (contact_line() !== '' ? '<br>' . $h(contact_line()) : '')
     );
 
-    $subject = mail_subject($subject ?? ($intro ? 'Nové vstupenky' : 'Vaše vstupenky'));
+    $subject = mail_subject($subject ?? ($intro ? 'Nové vstupenky' : 'Vaše vstupenky'), $r);
     $attachments = [['data' => ticket_pdf($r), 'name' => ticket_pdf_name($r), 'type' => 'application/pdf']];
     $ics = ticket_ics($r);
     if ($ics !== null) {

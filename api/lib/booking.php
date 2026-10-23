@@ -9,12 +9,19 @@ declare(strict_types=1);
  * costs nothing is paid at once and gets its tickets, otherwise the payment e-mail.
  * $soldBy: on-site sale by this organizer (onsite.php) – no e-mail, no limit of unpaid
  * reservations, due at once.
+ * Test run ($run['is_test']): discount codes are refused (real codes must not be used up) and
+ * an online booking is paid at once (paid_amount = amount) and gets its tickets; on-site
+ * sales keep the normal flow so the organizers can practise it.
  * Returns ['reservation' => row] or ['error' => message, 'status' => HTTP status, 'extra' => array].
  */
 function book_reservation(array $run, string $firstName, string $lastName, string $email, array $seats, int $children, array $codes, ?string $soldBy = null): array
 {
     if (!$seats || array_filter($seats, static fn ($seat) => !is_string($seat) || !is_valid_seat_id($seat))) {
         return ['error' => 'Neplatné místo.', 'status' => 422, 'extra' => []];
+    }
+    if ($codes && !empty($run['is_test'])) {
+        $message = 'Na testovacím termínu nelze použít slevové kódy.';
+        return ['error' => $message, 'status' => 422, 'extra' => ['fields' => ['codes' => $message]]];
     }
     $closed = array_values(array_filter($seats, static fn ($seat) => seat_closed_in_run($run, $seat)));
     if ($closed) {
@@ -27,11 +34,13 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
         'adult_price' => adult_price(), 'child_price' => child_price(),
     ], $seats);
     $free = $amount === 0; // everything paid by discount codes: confirmed at once
+    $test = !empty($run['is_test']) && $soldBy === null; // test run: paid at once
+    $paid = $free || $test;
 
     // Counted per run, so one person can book several runs at once.
     $pending = db()->prepare("SELECT COUNT(*) FROM reservations WHERE email = ? AND run_id = ? AND status = 'pending'");
     $pending->execute([$email, $run['id']]);
-    if ($soldBy === null && !$free && (int) $pending->fetchColumn() >= (int) config('PENDING_RESERVATIONS_PER_EMAIL')) {
+    if ($soldBy === null && !$paid && (int) $pending->fetchColumn() >= (int) config('PENDING_RESERVATIONS_PER_EMAIL')) {
         return ['error' => 'Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.', 'status' => 429, 'extra' => []];
     }
 
@@ -63,12 +72,12 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
             $pdo->prepare(
                 'INSERT INTO reservations
                    (token, run_id, first_name, last_name, email, seats, child_seats, free_seats, seat_count,
-                    adult_price, child_price, amount, status, created_at, expires_at, paid_at, sold_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    adult_price, child_price, amount, paid_amount, status, created_at, expires_at, paid_at, sold_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $token, $run['id'], $firstName, $lastName, $email, implode(',', $seats), implode(',', $childSeats),
-                implode(',', $freeSeats), count($seats), adult_price(), child_price(), $amount,
-                $free ? 'paid' : 'pending', db_time($now), db_time($expires), $free ? db_time($now) : null, $soldBy,
+                implode(',', $freeSeats), count($seats), adult_price(), child_price(), $amount, $test ? $amount : 0,
+                $paid ? 'paid' : 'pending', db_time($now), db_time($expires), $paid ? db_time($now) : null, $soldBy,
             ]);
             $id = (int) $pdo->lastInsertId();
             $pdo->prepare('UPDATE reservations SET specific_symbol = ? WHERE id = ?')
@@ -99,14 +108,16 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
         }
     }
 
-    if ($free) {
+    if ($test) {
+        send_ticket_for($id, ['děkujeme za rezervaci. Jde o testovací termín – rezervace je automaticky zaplacená.'], 'Rezervace potvrzena – Vaše vstupenky');
+    } elseif ($free) {
         send_ticket_for($id, ['děkujeme za rezervaci. Všechna místa jsou hrazená slevovými kódy, rezervace je potvrzena.'], 'Rezervace potvrzena – Vaše vstupenky');
     }
     $r = find_reservation_by_token($token);
     if ($r === null) {
         throw new RuntimeException('Reservation just created was not found.');
     }
-    if (!$free) {
+    if (!$paid) {
         send_payment_email($r);
     }
     return ['reservation' => $r];

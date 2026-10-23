@@ -11,10 +11,13 @@ const MAIL_INK = '#140a24';
 const MAIL_MUTED = '#5f5570';
 const MAIL_ACCENT = '#c42aae';
 
-/** "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Koncert TZG 2026"). */
-function mail_subject(string $subject): string
+/**
+ * "Připomínka platby" → "TZG 2026: Připomínka platby" (the sender is already "Koncert TZG 2026");
+ * "[TEST] TZG 2026: …" when $r is a reservation on a test run.
+ */
+function mail_subject(string $subject, ?array $r = null): string
 {
-    return 'TZG 2026: ' . $subject;
+    return ($r !== null && reservation_is_test($r) ? '[TEST] ' : '') . 'TZG 2026: ' . $subject;
 }
 
 /** The one HTML layout of every e-mail: header with $subtitle, white card with $content, optional $footer. */
@@ -86,7 +89,7 @@ function deliver_mail(string $to, string $subject, string $text, ?string $html =
         $mail->addAddress($to);
         $mail->Subject = $subject;
         $mail->isHTML(true);
-        $mail->Body = $html ?? mail_layout(mail_text_html($text), preg_replace('/^TZG 2026: /', '', $subject) ?? '');
+        $mail->Body = $html ?? mail_layout(mail_text_html($text), preg_replace('/^(\[TEST\] )?TZG 2026: /', '', $subject) ?? '');
         $mail->AltBody = $text;
         foreach ($inline as $file) {
             $mail->addStringEmbeddedImage($file['data'], $file['cid'], $file['name'], PHPMailer::ENCODING_BASE64, $file['type']);
@@ -184,7 +187,7 @@ function send_customer_email(array $r, string $subject, array $lines, array $att
         ['', 'Koncert TZG 2026'],
         contact_line() !== '' ? [contact_line()] : []
     ));
-    $ok = deliver_mail($r['email'], mail_subject($subject), $body, null, [], $attachments);
+    $ok = deliver_mail($r['email'], mail_subject($subject, $r), $body, null, [], $attachments);
     if (!$ok) {
         app_log("Failed to send '{$subject}' for reservation {$r['id']}");
     }

@@ -18,10 +18,10 @@ export function runParts(run) {
   };
 }
 
-/** "so 18. 10. 2026 18:00 · Premiéra" */
+/** "so 18. 10. 2026 18:00 · Premiéra" (+ " · TEST" for a test run) */
 export function runLabel(run) {
   if (!run) return '';
   const { weekday, date, time } = runParts(run);
-  const text = `${weekday.slice(0, 2)} ${date} ${time}`;
-  return run.label ? `${text} · ${run.label}` : text;
+  const text = `${weekday.slice(0, 2)} ${date} ${time}` + (run.label ? ` · ${run.label}` : '');
+  return run.test ? `${text} · TEST` : text;
 }

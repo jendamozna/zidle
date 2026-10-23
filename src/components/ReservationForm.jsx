@@ -145,59 +145,61 @@ export default function ReservationForm({ stats, deadlineHours, run, submitting,
           <p className="muted small">Děti do 3 let mohou sedět zdarma na klíně dospělého.</p>
         </div>
 
-        <div className={`field codes ${errors.codes ? 'has-error' : ''}`}>
-          <label htmlFor="discount-code">Slevový kód</label>
-          <div className="code-entry">
-            <input
-              id="discount-code"
-              value={codeInput}
-              onChange={(e) => {
-                setCodeInput(e.target.value);
-                setErrors((errs) => ({ ...errs, codes: undefined }));
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  addCode();
-                }
-              }}
-              placeholder="ABCD-EFGH"
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              disabled={submitting}
-            />
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={addCode}
-              disabled={submitting || !codeInput.trim()}
-            >
-              Použít
-            </button>
+        {run?.test ? null : (
+          <div className={`field codes ${errors.codes ? 'has-error' : ''}`}>
+            <label htmlFor="discount-code">Slevový kód</label>
+            <div className="code-entry">
+              <input
+                id="discount-code"
+                value={codeInput}
+                onChange={(e) => {
+                  setCodeInput(e.target.value);
+                  setErrors((errs) => ({ ...errs, codes: undefined }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addCode();
+                  }
+                }}
+                placeholder="ABCD-EFGH"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                disabled={submitting}
+              />
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={addCode}
+                disabled={submitting || !codeInput.trim()}
+              >
+                Použít
+              </button>
+            </div>
+            {codes.length > 0 && (
+              <ul className="code-list">
+                {codes.map((code) => (
+                  <li key={code}>
+                    <span>
+                      <strong>{formatCode(code)}</strong> · místo zdarma
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => setCodes((prev) => prev.filter((c) => c !== code))}
+                      aria-label={`Odebrat kód ${formatCode(code)}`}
+                      disabled={submitting}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {errors.codes && <small>{errors.codes}</small>}
           </div>
-          {codes.length > 0 && (
-            <ul className="code-list">
-              {codes.map((code) => (
-                <li key={code}>
-                  <span>
-                    <strong>{formatCode(code)}</strong> · místo zdarma
-                  </span>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    onClick={() => setCodes((prev) => prev.filter((c) => c !== code))}
-                    aria-label={`Odebrat kód ${formatCode(code)}`}
-                    disabled={submitting}
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {errors.codes && <small>{errors.codes}</small>}
-        </div>
+        )}
 
         <div className="modal-summary">
           <span>Celkem</span>
@@ -219,7 +221,11 @@ export default function ReservationForm({ stats, deadlineHours, run, submitting,
         </div>
 
         <div className="modal-notes">
-          {deadlineHours && prices.total > 0 ? <p>Zaplaťte do {deadlineHours} hodin, jinak se místa uvolní.</p> : null}
+          {run?.test ? (
+            <p>Testovací termín – rezervace bude rovnou zaplacená.</p>
+          ) : deadlineHours && prices.total > 0 ? (
+            <p>Zaplaťte do {deadlineHours} hodin, jinak se místa uvolní.</p>
+          ) : null}
           <p>Vstupenky přijdou e-mailem.</p>
         </div>
         {formError && (
@@ -233,9 +239,11 @@ export default function ReservationForm({ stats, deadlineHours, run, submitting,
             ? 'Ověřuji…'
             : submitting
               ? 'Rezervuji…'
-              : prices.total > 0
-                ? 'Rezervovat a zaplatit'
-                : 'Rezervovat zdarma'}
+              : run?.test
+                ? 'Rezervovat (test)'
+                : prices.total > 0
+                  ? 'Rezervovat a zaplatit'
+                  : 'Rezervovat zdarma'}
         </button>
       </form>
     </div>

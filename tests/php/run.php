@@ -264,6 +264,30 @@ test('a reservation paid fully by codes is confirmed at once', function (): void
     same(0, amount_due($r), 'nothing to pay');
 });
 
+test('a test run: hidden label TEST, bookings paid at once, codes refused, deleted with its reservations', function (): void {
+    $lastBefore = last_run_start()?->format('c');
+    db()->prepare('INSERT INTO runs (label, starts_at, is_test) VALUES (?, ?, 1)')->execute(['Zkouška', db_time(now_utc()->modify('+60 days'))]);
+    $runId = (int) db()->lastInsertId();
+    runs(true);
+    $run = run_by_id($runId) ?? [];
+    contains(' · Zkouška · TEST', run_label($run), 'label');
+    same([true, $lastBefore], [run_public($run)['test'], last_run_start()?->format('c')], 'flagged; not the last run for data deletion');
+    $code = new_code();
+    $refused = book_reservation($run, 'Test', 'Odbavení', 'test@example.com', ['LK-1-1'], 0, [$code]);
+    same([422, 'Na testovacím termínu nelze použít slevové kódy.'], [$refused['status'] ?? null, $refused['error'] ?? null], 'code refused');
+    same(0, (int) db_query("SELECT COUNT(*) FROM discount_codes WHERE used_at IS NOT NULL AND code = '{$code}'")->fetchColumn(), 'code not used up');
+    $r = book_reservation($run, 'Test', 'Odbavení', 'test@example.com', ['LK-1-1', 'LK-1-2'], 1, [])['reservation'] ?? [];
+    same(['paid', 450, 450, 0], [$r['status'], (int) $r['amount'], (int) $r['paid_amount'], amount_due($r)], 'paid at once');
+    same(['[TEST] TZG 2026: Vaše vstupenky', 'TZG 2026: Vaše vstupenky'], [mail_subject('Vaše vstupenky', $r), mail_subject('Vaše vstupenky', row(reservation(['PK-8-1'])))], 'subjects');
+    $sale = onsite_sale_create(device('Vchod A'), $run, ['LK-1-3'], 0)['sale'] ?? [];
+    same(['pending', 300], [row((int) ($sale['id'] ?? 0))['status'], $sale['amount'] ?? null], 'on-site sale keeps the normal flow');
+    same('valid', verify_ticket(ticket_code($r, 'LK-1-1'), $run, device('Vchod A'), true)['result'], 'checked in');
+    same('Termín má rezervace, nelze ho smazat.', delete_run(1), 'a real run with reservations stays');
+    same('Termín smazán.', delete_run($runId), 'test run deleted');
+    same([null, [], 0, 0], [run_by_id($runId), held($runId), (int) db_query("SELECT COUNT(*) FROM reservations WHERE run_id = {$runId}")->fetchColumn(),
+        (int) db_query('SELECT COUNT(*) FROM ticket_checkins WHERE reservation_id = ' . (int) $r['id'])->fetchColumn()], 'with its reservations, seats and check-ins');
+});
+
 test('codes are created per listed e-mail; an invalid address creates nothing', function (): void {
     $before = (int) db_query('SELECT COUNT(*) FROM discount_codes')->fetchColumn();
     contains('Neplatné e-maily: spatny', create_discount_codes("a@example.com\nspatny", 'test'), 'invalid');

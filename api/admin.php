@@ -208,19 +208,14 @@ if ($canManage && $csrfOk && $action === 'deadline-save') {
 if ($canManage && $csrfOk && in_array($action, ['run-save', 'run-delete'], true)) {
     $id = (int) ($_POST['id'] ?? 0);
     if ($action === 'run-delete') {
-        if (run_has_reservations($id)) {
-            $_SESSION['flash'] = 'Termín má rezervace, nelze ho smazat.';
-        } else {
-            db()->prepare('DELETE FROM runs WHERE id = ?')->execute([$id]);
-            db()->prepare('DELETE FROM scan_conflicts WHERE run_id = ?')->execute([$id]);
-            $_SESSION['flash'] = 'Termín smazán.';
-        }
+        $_SESSION['flash'] = delete_run($id);
     } else {
         // Once a run has reservations, its start is fixed: customers booked for that time.
-        // Only the label and the booking cut-off change.
+        // Only the label and the booking cut-off change (the test flag is fixed too).
         $existing = $id > 0 ? run_by_id($id) : null;
         $locked = $existing !== null && run_has_reservations($id);
         $label = trim((string) ($_POST['label'] ?? ''));
+        $isTest = $locked ? $existing['is_test'] : isset($_POST['is_test']);
         $starts = $locked ? run_starts($existing) : prague_time((string) ($_POST['starts_at'] ?? ''));
         $closesRaw = trim((string) ($_POST['booking_closes_at'] ?? ''));
         $closes = $closesRaw === '' ? null : prague_time($closesRaw);
@@ -240,12 +235,12 @@ if ($canManage && $csrfOk && in_array($action, ['run-save', 'run-delete'], true)
         if ($errors) {
             $_SESSION['flash'] = implode(' ', $errors);
         } else {
-            $values = [$label, db_time($starts), $closes ? db_time($closes) : null];
+            $values = [$label, db_time($starts), $closes ? db_time($closes) : null, (int) $isTest];
             if ($id > 0) {
-                db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ? WHERE id = ?')
+                db()->prepare('UPDATE runs SET label = ?, starts_at = ?, booking_closes_at = ?, is_test = ? WHERE id = ?')
                     ->execute([...$values, $id]);
             } else {
-                db()->prepare('INSERT INTO runs (label, starts_at, booking_closes_at) VALUES (?, ?, ?)')
+                db()->prepare('INSERT INTO runs (label, starts_at, booking_closes_at, is_test) VALUES (?, ?, ?, ?)')
                     ->execute($values);
             }
             $_SESSION['flash'] = $id > 0 ? 'Termín uložen.' : 'Termín přidán.';
@@ -296,14 +291,6 @@ if ($canReservations && $csrfOk && in_array($action, ['payment', 'cancel', 'canc
     exit;
 }
 $flash = $_SESSION['flash'] ?? null;
-
-/** True once any reservation (in any status) exists for the run. */
-function run_has_reservations(int $runId): bool
-{
-    $stmt = db()->prepare('SELECT 1 FROM reservations WHERE run_id = ? LIMIT 1');
-    $stmt->execute([$runId]);
-    return (bool) $stmt->fetchColumn();
-}
 
 unset($_SESSION['flash']);
 
@@ -382,7 +369,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .check { display:inline-flex !important; flex-direction:row !important; align-items:center; gap:6px; font-weight:500 !important; color:var(--ink) !important; max-width:none !important; }
   .roles-edit { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin-top:6px; }
   .roles-edit .checks { flex-direction:column; gap:4px; }
-  .edit-email .check input { width:auto; }
+  .edit-email .check input, .settings .check input { width:auto; }
   .card.attention { background:#f6cdc6; color:#7d2117; text-decoration:none; }
   .settings { max-width:640px; display:flex; flex-direction:column; gap:12px; }
   .settings h2 { margin:8px 0 0; font:700 1.15rem var(--font-display); }
@@ -410,7 +397,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .ps input { position:absolute; opacity:0; pointer-events:none; }
   .ps span { display:grid; place-items:center; width:100%; height:100%; border-radius:5px; font-size:max(9px, .9cqi); font-weight:600; }
   .ps span, .ps-free { background:#d8f0d9; border:1px solid #a4d4a8; color:#24572f; }
-  .ps input:checked + span, .ps-reserve { background:var(--surface-2); border:1px dashed var(--ink-3); color:var(--ink-3); }
+  .ps input:checked + span, .ps-reserve { background:#d9d8dc; border:1px dashed #8e8b94; color:#5e5b64; }
   .ps-held span, i.ps-held { background:#f6d6ef; border:1px solid #e7a9da; color:#8a1f78; }
   .ps-held { cursor:not-allowed; }
   .ps input:focus-visible + span { outline:2px solid var(--accent); outline-offset:1px; }
@@ -526,7 +513,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
-    $totals = db_query("SELECT status, COUNT(*) n, SUM(seat_count) seats, SUM(amount) amount FROM reservations GROUP BY status")
+    $totals = db_query('SELECT status, COUNT(*) n, SUM(seat_count) seats, SUM(amount) amount FROM reservations WHERE ' . NOT_TEST_RUN_SQL . ' GROUP BY status')
         ->fetchAll(PDO::FETCH_UNIQUE);
     $prague = new DateTimeZone('Europe/Prague');
     $fmt = static fn ($t) => $t ? new DateTimeImmutable($t, new DateTimeZone('UTC'))->setTimezone($prague)->format('j. n. Y H:i') : '';
@@ -844,7 +831,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $deleteAt = data_deletion_at();
       $local = static fn (?string $utc) => $utc ? utc_time($utc)->setTimezone(new DateTimeZone(PRAGUE))->format('Y-m-d\TH:i') : '';
       $runForms = array_values(runs());
-      $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null];
+      $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null, 'is_test' => false];
   ?>
   <p class="hint settings-intro">Každý termín má vlastní plánek míst a rezervace. Zákazníci rezervace sami rušit
     nemohou – zrušit je může jen správce (zaplacená místa se vracejí v plné výši).
@@ -883,6 +870,12 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <label>Název (nepovinný)<input name="label" maxlength="100" value="<?= $h($run['label']) ?>" placeholder="např. Premiéra"></label>
       <label>Konec rezervací (nepovinný)<input type="datetime-local" name="booking_closes_at" value="<?= $h($local($run['booking_closes_at'])) ?>"></label>
     </div>
+    <label class="check"><input type="checkbox" name="is_test" value="1"<?= $run['is_test'] ? ' checked' : '' ?><?= $dis ?>> Testovací termín</label>
+    <p class="hint">Pro vyzkoušení odbavení: termín není veřejně vidět (jen přes odkaz), rezervace jsou hned zaplacené,
+      slevové kódy nejdou použít, nepočítá se do souhrnů a lze ho smazat i s rezervacemi.</p>
+    <?php if ($run['id'] && $run['is_test'] && ($base = rtrim((string) config('PUBLIC_URL'), '/')) !== ''): ?>
+      <p class="hint">Odkaz na testovací termín: <a href="<?= $h($base . '/?termin=' . (int) $run['id']) ?>"><?= $h($base . '/?termin=' . (int) $run['id']) ?></a></p>
+    <?php endif ?>
     <?php if ($locked): ?>
       <p class="hint locked">Představení už má rezervace – začátek nelze měnit (zákazníci rezervovali na tento čas).</p>
     <?php endif ?>
@@ -893,7 +886,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <div class="actions">
       <button name="action" value="run-save"><?= $run['id'] ? 'Uložit termín' : 'Přidat termín' ?></button>
       <?php if ($run['id']): ?>
-        <button class="danger" name="action" value="run-delete" onclick="return confirm('Smazat termín? Lze jen u termínu bez rezervací.')">Smazat</button>
+        <button class="danger" name="action" value="run-delete" onclick="return confirm('<?= $run['is_test'] ? 'Smazat testovací termín i se všemi jeho rezervacemi a odbaveními?' : 'Smazat termín? Lze jen u termínu bez rezervací.' ?>')">Smazat</button>
       <?php endif ?>
     </div>
   </form>
@@ -905,11 +898,11 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <?php foreach (['pending', 'paid'] as $s): $t = $totals[$s] ?? ['n' => 0, 'seats' => 0, 'amount' => 0]; ?>
       <div class="card"><?= $h($statusLabels[$s]) ?><strong><?= (int) $t['seats'] ?> míst</strong><?= $kc($t['amount']) ?> · <?= (int) $t['n'] ?> rez.</div>
     <?php endforeach ?>
-    <?php $refunds = db_query('SELECT COUNT(*) n, COALESCE(SUM(refund_amount - refunded_amount), 0) amount FROM reservations WHERE refund_amount > refunded_amount')->fetch(); ?>
+    <?php $refunds = db_query('SELECT COUNT(*) n, COALESCE(SUM(refund_amount - refunded_amount), 0) amount FROM reservations WHERE refund_amount > refunded_amount AND ' . NOT_TEST_RUN_SQL)->fetch(); ?>
     <?php if ($refunds['n'] > 0): ?>
       <a class="card attention" href="admin.php?status=refund">K vrácení<strong><?= $kc($refunds['amount']) ?></strong><?= (int) $refunds['n'] ?> rez.</a>
     <?php endif ?>
-    <?php $onsite = db_query("SELECT COUNT(*) n, COALESCE(SUM(amount), 0) amount FROM reservations WHERE sold_by IS NOT NULL AND status = 'paid' AND payment_checked_at IS NULL")->fetch(); ?>
+    <?php $onsite = db_query("SELECT COUNT(*) n, COALESCE(SUM(amount), 0) amount FROM reservations WHERE sold_by IS NOT NULL AND status = 'paid' AND payment_checked_at IS NULL AND " . NOT_TEST_RUN_SQL)->fetch(); ?>
     <?php if ($onsite['n'] > 0): ?>
       <a class="card attention" href="admin.php?status=onsite">Na místě – ověřit platbu<strong><?= $kc($onsite['amount']) ?></strong><?= ($n = (int) $onsite['n']) ?> <?= $n === 1 ? 'prodej' : ($n < 5 ? 'prodeje' : 'prodejů') ?></a>
     <?php endif ?>
