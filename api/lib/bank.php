@@ -131,7 +131,7 @@ function bank_csv_header(array $cells): ?array
  * What recording an incoming transfer would do: ['reservation' => row or null, 'state' =>
  * 'done' (already recorded) | 'none' (nothing to record automatically) | 'match', 'note' =>
  * text for the admin, 'select' => pre-checked in the preview]. The reservation is found by
- * SS; when that fails, by the VS (unless it is the common VS) or a 10-digit number in the message.
+ * SS; when that fails, by the VS (unless it is the common VS) or a 5-digit number in the message.
  */
 function bank_match(array $tx): array
 {
@@ -152,7 +152,7 @@ function bank_match(array $tx): array
     if ($tx['vs'] !== $commonVs) {
         $candidates[] = [$tx['vs'], 'Nalezeno podle VS. '];
     }
-    preg_match_all('/(?<!\d)\d{10}(?!\d)/', $tx['message'], $found);
+    preg_match_all('/(?<!\d)\d{5}(?!\d)/', $tx['message'], $found);
     foreach ($found[0] as $number) {
         $candidates[] = [$number, 'Nalezeno podle zprávy pro příjemce. '];
     }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { SECTION_BY_ID, formatCzk, parseSeatId } from '../data/layout.js';
-import { saveTicketNames, ticketsPdfUrl } from '../data/seatService.js';
+import { ticketsPdfUrl } from '../data/seatService.js';
 import { seatsLabel } from '../plural.js';
 import { KIND_LABELS } from '../pricing.js';
 import { runLabel } from '../runs.js';
@@ -112,24 +112,9 @@ function useQrImage(text, width) {
   return qr;
 }
 
-/** Ticket card; while names are editable, the name on the ticket is saved on blur / Enter. */
-function TicketCard({ ticket, reservation, onChange }) {
+function TicketCard({ ticket }) {
   const qr = useQrImage(ticket.code, 400);
   const { sectionId, row, seat } = parseSeatId(ticket.seat);
-  const [name, setName] = useState(ticket.holder ?? '');
-  const [save, setSave] = useState(null);
-
-  const submit = async () => {
-    const value = name.trim();
-    if (value === (ticket.holder ?? '')) return;
-    setSave({ busy: true });
-    try {
-      onChange(await saveTicketNames(reservation.token, { [ticket.seat]: value }));
-      setSave({ done: true });
-    } catch (err) {
-      setSave({ error: err.message });
-    }
-  };
 
   return (
     <li className={`ticket-card ${ticket.checkedInAt ? 'is-used' : ''}`}>
@@ -148,44 +133,18 @@ function TicketCard({ ticket, reservation, onChange }) {
           {ticket.checkedInAt && ' · odbaveno'}
         </span>
       </div>
-      {reservation.ticketNamesEditable ? (
-        <label className="ticket-name">
-          <span className="muted small">Jméno na vstupence</span>
-          <input
-            className="seat-name"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setSave(null);
-            }}
-            onBlur={submit}
-            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            placeholder={`${reservation.firstName} ${reservation.lastName}`}
-            maxLength={100}
-            disabled={save?.busy}
-          />
-          {save?.busy && <span className="muted small">Ukládám…</span>}
-          {save?.done && <span className="muted small">Uloženo</span>}
-          {save?.error && <span className="form-error small">{save.error}</span>}
-        </label>
-      ) : (
-        ticket.holder && <span className="ticket-holder">{ticket.holder}</span>
-      )}
     </li>
   );
 }
 
-/** Seats of the reservation with kind, price and the name on the ticket. */
+/** Seats of the reservation with kind and price. */
 function SeatList({ reservation }) {
   return (
     <ul className="pay-seats">
       {reservation.tickets.map((t) => (
         <li key={t.seat}>
           <div className="pay-seat-row">
-            <span>
-              {seatLabel(t.seat)}
-              {t.holder && <small className="muted"> · {t.holder}</small>}
-            </span>
+            <span>{seatLabel(t.seat)}</span>
             <span className="muted">
               {KIND_LABELS[t.kind]} · {t.free ? 'kód, zdarma' : formatCzk(t.price)}
             </span>
@@ -197,7 +156,7 @@ function SeatList({ reservation }) {
 }
 
 /** Paid: one ticket (QR code) per seat and the printable PDF. */
-function Tickets({ reservation, onChange }) {
+function Tickets({ reservation }) {
   const { tickets } = reservation;
   if (!tickets.length || !tickets[0].code) return null;
   return (
@@ -205,7 +164,7 @@ function Tickets({ reservation, onChange }) {
       <div className="tickets-head">
         <div>
           <h3 id="tickets-title">Vstupenky</h3>
-          <p className="muted small">1 QR kód = 1 místo. Ukažte je u vchodu v mobilu, nebo vytiskněte.</p>
+          <p className="muted small">1 QR kód = 1 místo. Ukažte je u vchodu v mobilu nebo vytiskněte.</p>
         </div>
         <a className="btn btn-primary" href={ticketsPdfUrl(reservation.token)} download>
           PDF k tisku
@@ -213,14 +172,14 @@ function Tickets({ reservation, onChange }) {
       </div>
       <ul className="ticket-grid">
         {tickets.map((ticket) => (
-          <TicketCard key={ticket.seat} ticket={ticket} reservation={reservation} onChange={onChange} />
+          <TicketCard key={ticket.seat} ticket={ticket} />
         ))}
       </ul>
     </section>
   );
 }
 
-export default function PaymentView({ reservation, onChange, onBack }) {
+export default function PaymentView({ reservation, onBack }) {
   const { payment, status } = reservation;
   const isPending = status === 'pending';
   // Pending: bank payment QR. Paid: the tickets below, one QR per seat.
@@ -298,7 +257,7 @@ export default function PaymentView({ reservation, onChange, onBack }) {
           <SeatList reservation={reservation} />
           <p className="muted small">{reservation.email}</p>
 
-          {status === 'paid' && <Tickets reservation={reservation} onChange={onChange} />}
+          {status === 'paid' && <Tickets reservation={reservation} />}
           <CancellationInfo reservation={reservation} />
         </div>
       </div>

@@ -76,8 +76,7 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
                 $paid ? 'paid' : 'pending', db_time($now), db_time($expires), $paid ? db_time($now) : null, $soldBy,
             ]);
             $id = (int) $pdo->lastInsertId();
-            $pdo->prepare('UPDATE reservations SET specific_symbol = ? WHERE id = ?')
-                ->execute([generate_specific_symbol($pdo), $id]);
+            assign_specific_symbol($pdo, $id);
             insert_reservation_items($pdo, $id, $items);
             $useCode = $pdo->prepare('UPDATE discount_codes SET used_at = ?, reservation_id = ?, seat_id = ? WHERE id = ?');
             foreach ($codeIds as $i => $codeId) {
@@ -123,18 +122,21 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
 }
 
 /**
- * Random 10-digit specific symbol (SS) that is not used by any reservation yet.
- * Random instead of sequential so it does not reveal the number of
- * reservations and cannot be guessed; uq_ss guarantees uniqueness.
+ * Gives the reservation a random 5-digit specific symbol (SS, 10000–99999) that no other
+ * reservation has. Random so it reveals nothing; uq_ss guarantees uniqueness even for
+ * concurrent bookings – a taken value fails with a duplicate key and another one is tried.
  */
-function generate_specific_symbol(PDO $pdo): string
+function assign_specific_symbol(PDO $pdo, int $id): void
 {
-    $check = $pdo->prepare('SELECT 1 FROM reservations WHERE specific_symbol = ?');
-    for ($i = 0; $i < 20; $i++) {
-        $ss = (string) random_int(1_000_000_000, 9_999_999_999);
-        $check->execute([$ss]);
-        if (!$check->fetchColumn()) {
-            return $ss;
+    $update = $pdo->prepare('UPDATE reservations SET specific_symbol = ? WHERE id = ?');
+    for ($i = 0; $i < 50; $i++) {
+        try {
+            $update->execute([(string) random_int(10_000, 99_999), $id]);
+            return;
+        } catch (PDOException $e) {
+            if (($e->errorInfo[1] ?? null) !== 1062) {
+                throw $e;
+            }
         }
     }
     throw new RuntimeException('Could not generate a unique specific symbol.');

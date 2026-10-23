@@ -30,10 +30,9 @@ function scanner_snapshot(array $run): array
         return [
             'id' => (int) $r['id'],
             'specificSymbol' => (string) $r['specific_symbol'],
-            'name' => trim($r['first_name'] . ' ' . $r['last_name']),
+            'name' => reservation_name($r),
             'seats' => current_seat_ids($r),
             'childSeats' => array_map('strval', array_keys(array_filter($current, static fn ($i) => $i['kind'] === 'child'))),
-            'ticketNames' => (object) ticket_names($r),
             'status' => $r['status'],
             'checkedIn' => (object) reservation_checkins($r),
         ];

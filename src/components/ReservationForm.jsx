@@ -3,6 +3,7 @@ import { formatCzk } from '../data/layout.js';
 import { seatsLabel } from '../plural.js';
 import { runLabel } from '../runs.js';
 import { createAltcha } from '../altcha.js';
+import { checkDiscountCode } from '../data/seatService.js';
 import { formatCode, isCodeFormat, normalizeCode, priceSeats } from '../pricing.js';
 import Stepper from './Stepper.jsx';
 
@@ -21,6 +22,7 @@ export default function ReservationForm({ stats, deadlineHours, run, submitting,
   const [children, setChildren] = useState(0);
   const [codes, setCodes] = useState([]);
   const [codeInput, setCodeInput] = useState('');
+  const [checkingCode, setCheckingCode] = useState(false);
   const seatCount = stats.selectedCount;
   const prices = priceSeats(stats.selected, children, codes.length, stats.price, stats.childPrice);
   const [errors, setErrors] = useState({});
@@ -43,16 +45,25 @@ export default function ReservationForm({ stats, deadlineHours, run, submitting,
     setErrors((errs) => ({ ...errs, [field]: undefined }));
   };
 
-  const addCode = () => {
+  const addCode = async () => {
     const code = normalizeCode(codeInput);
-    if (!code) return;
+    if (!code || checkingCode) return;
     let error;
     if (!isCodeFormat(code)) error = 'Kód má 8 znaků, např. ABCD-EFGH.';
     else if (codes.includes(code)) error = 'Tento kód už je zadaný.';
     else if (codes.length >= seatCount) error = 'Víc kódů než míst nelze použít.';
     setErrors((errs) => ({ ...errs, codes: error }));
     if (error) return;
-    setCodes((prev) => [...prev, code]);
+    setCheckingCode(true);
+    try {
+      await checkDiscountCode(code);
+    } catch (err) {
+      setErrors((errs) => ({ ...errs, codes: err.message }));
+      return;
+    } finally {
+      setCheckingCode(false);
+    }
+    setCodes((prev) => (prev.includes(code) ? prev : [...prev, code]));
     setCodeInput('');
   };
 
@@ -166,15 +177,15 @@ export default function ReservationForm({ stats, deadlineHours, run, submitting,
                 autoComplete="off"
                 autoCapitalize="characters"
                 spellCheck={false}
-                disabled={submitting}
+                disabled={submitting || checkingCode}
               />
               <button
                 type="button"
                 className="btn btn-ghost"
                 onClick={addCode}
-                disabled={submitting || !codeInput.trim()}
+                disabled={submitting || checkingCode || !codeInput.trim()}
               >
-                Použít
+                {checkingCode ? 'Ověřuji…' : 'Použít'}
               </button>
             </div>
             {codes.length > 0 && (

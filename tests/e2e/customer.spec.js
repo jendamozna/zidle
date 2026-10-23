@@ -114,6 +114,10 @@ test('child ticket and a discount code: 2 adults + 1 child − 1 adult = 450 Kč
   await form.getByLabel('Slevový kód').fill('nesmysl');
   await form.getByRole('button', { name: 'Použít' }).click();
   await expect(form.getByText('Kód má 8 znaků, např. ABCD-EFGH.')).toBeVisible();
+  await form.getByLabel('Slevový kód').fill('ABCD-EFGH');
+  await form.getByRole('button', { name: 'Použít' }).click();
+  await expect(form.getByText('Slevový kód ABCD-EFGH neplatí nebo už byl použit.')).toBeVisible();
+  await expect(form.locator('.code-list')).toHaveCount(0);
   await form.getByLabel('Slevový kód').fill(seed().codes[0].toLowerCase());
   await form.getByRole('button', { name: 'Použít' }).click();
   await expect(form.locator('.code-list')).toContainText(`${seed().codes[0]} · místo zdarma`);
@@ -131,11 +135,8 @@ test('child ticket and a discount code: 2 adults + 1 child − 1 adult = 450 Kč
   await fillCustomer(again);
   await again.getByLabel('Slevový kód').fill(seed().codes[0]);
   await again.getByRole('button', { name: 'Použít' }).click();
-  await page.waitForTimeout(3200);
-  await again.locator('button[type=submit]').click();
-  await expect(again.getByText(`Slevový kód ${seed().codes[0]} neplatí nebo už byl použit.`).first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(again.getByText(`Slevový kód ${seed().codes[0]} neplatí nebo už byl použit.`)).toBeVisible();
+  await expect(again.locator('.code-list')).toHaveCount(0);
 });
 
 test('a reservation paid by discount codes is confirmed at once with one ticket per seat and a PDF', async ({
@@ -154,14 +155,7 @@ test('a reservation paid by discount codes is confirmed at once with one ticket 
 
   await expect(page.getByText('Zaplaceno').first()).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.ticket-card img')).toHaveCount(2);
-
-  // Own names on the tickets, edited right under the QR code.
-  const nameInput = page.locator('.ticket-card').first().getByLabel('Jméno na vstupence');
-  await nameInput.fill('Petr Testový');
-  await nameInput.press('Enter');
-  await expect(page.locator('.ticket-card').first().getByText('Uloženo')).toBeVisible();
-  await expect(page.locator('.pay-seats li').first()).toContainText('Petr Testový');
-  await expect(nameInput).toHaveValue('Petr Testový');
+  await expect(page.locator('.ticket-card input')).toHaveCount(0);
   await expect(page.locator('.ticket-card').first()).toContainText('řada');
   const pdf = await request.get(await page.getByRole('link', { name: 'PDF k tisku' }).getAttribute('href'));
   expect(pdf.headers()['content-type']).toBe('application/pdf');

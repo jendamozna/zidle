@@ -28,6 +28,7 @@ return (static function (): array {
         'SEATS_PER_IP_PER_HOUR' => 40,
         'SEATS_PER_IP_PER_DAY' => 80,
         'ALTCHA_CHALLENGES_PER_IP_PER_HOUR' => 300,
+        'CODE_CHECKS_PER_IP_PER_HOUR' => 30,   // discount codes checked in the form ("Použít"), per IP
         'PENDING_RESERVATIONS_PER_EMAIL' => 2, // unpaid reservations one e-mail may hold at once in one run
         'LOGIN_ATTEMPTS_PER_15_MIN' => 10,     // admin and scanner login, invitation, forgotten password, per IP
         'FORM_MIN_SECONDS' => 3,               // reservation sent sooner after loading the page = bot

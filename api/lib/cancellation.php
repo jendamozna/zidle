@@ -199,7 +199,7 @@ function data_deletion_at(): ?DateTimeImmutable
 }
 
 /**
- * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails, names on the tickets included
+ * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails
  * (payment records – SS, amount, seats – stay for accounting), delete the
  * offline scan conflicts and empty the e-mails of discount codes. Reservations with money still to return keep their
  * contact until the refund is marked as done (the next run then removes it).
@@ -211,10 +211,6 @@ function purge_personal_data(): int
     if ($deleteAt === null || now_utc() < $deleteAt) {
         return 0;
     }
-    db()->exec(
-        'UPDATE reservation_items i JOIN reservations r ON r.id = i.reservation_id SET i.holder_name = NULL
-         WHERE i.holder_name IS NOT NULL AND COALESCE(r.refund_amount, 0) <= r.refunded_amount'
-    );
     $stmt = db()->prepare(
         "UPDATE reservations SET first_name = '', last_name = '', email = ''
          WHERE (email <> '' OR first_name <> '') AND COALESCE(refund_amount, 0) <= refunded_amount"

@@ -36,10 +36,10 @@ function ticket_signature(string $payload): string
     return substr(rtrim(strtr(base64_encode($mac), '+/', '-_'), '='), 0, 22);
 }
 
-/** Name in the ticket code of the seat (the name on the ticket, without "|", control and invisible format characters). */
-function ticket_name(array $r, string $seat): string
+/** Name in the ticket code (the reservation name, without "|", control and invisible format characters). */
+function ticket_name(array $r): string
 {
-    return trim(preg_replace('/[|\p{Cc}\p{Cf}]+/u', ' ', ticket_holder($r, $seat)) ?? '');
+    return trim(preg_replace('/[|\p{Cc}\p{Cf}]+/u', ' ', reservation_name($r)) ?? '');
 }
 
 /** Ticket code of one seat of the reservation. */
@@ -51,7 +51,7 @@ function ticket_code(array $r, string $seat): string
         $r['specific_symbol'],
         $seat,
         TICKET_KINDS[seat_kind($r, $seat)],
-        ticket_name($r, $seat),
+        ticket_name($r),
     ]);
     return $payload . '|' . ticket_signature($payload);
 }
@@ -106,7 +106,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
     $r = with_items($r);
     $items = reservation_seat_items($r);
     $printNote = 'V příloze je PDF soubor k vytištění. Každá vstupenka platí pro jedno místo. Při vstupu můžete QR kódy ukázat i na mobilu.';
-    $seatLine = static fn ($i) => seat_label($i['seat']) . ' – ' . SEAT_KIND_LABELS[$i['kind']] . ($i['holder'] !== null ? ' – ' . $i['holder'] : '');
+    $seatLine = static fn ($i) => seat_label($i['seat']) . ' – ' . SEAT_KIND_LABELS[$i['kind']];
 
     $introLines = $intro ?: ['děkujeme, platba byla přijata. Vaše rezervace je potvrzena.'];
     $text = implode("\n", [

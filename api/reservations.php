@@ -3,12 +3,15 @@
 //      body: {runId, firstName, lastName, email, seats: ["LH-1-1", ...], children, codes: ["ABCD-EFGH"],
 //             formToken, hp, altcha}
 // GET  api/reservations.php?token= – reservation status and payment details
+// GET  api/reservations.php?code=  – can the discount code be used (form, before it is listed)
 declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 
 run_api(function (): void {
     $method = $_SERVER['REQUEST_METHOD'];
-    if ($method === 'GET') {
+    if ($method === 'GET' && isset($_GET['code'])) {
+        check_discount_code();
+    } elseif ($method === 'GET') {
         show_reservation();
     } elseif ($method === 'POST') {
         create_reservation();
@@ -29,6 +32,19 @@ function show_reservation(): void
         json_error('Rezervace nenalezena.', 404);
     }
     json_response(reservation_payload($r));
+}
+
+function check_discount_code(): void
+{
+    // Limited per IP, so the codes can't be guessed by trying.
+    if (!rate_limit('code-check|' . client_ip(), (int) config('CODE_CHECKS_PER_IP_PER_HOUR'), 3600)) {
+        json_error('Příliš mnoho pokusů o slevový kód. Zkuste to prosím později.', 429);
+    }
+    $code = normalize_discount_code((string) $_GET['code']);
+    if (!preg_match('/^[' . DISCOUNT_ALPHABET . ']{8}$/', $code) || !discount_code_usable($code)) {
+        json_error('Slevový kód ' . format_discount_code(substr($code, 0, 8)) . ' neplatí nebo už byl použit.', 422);
+    }
+    json_response(['code' => $code]);
 }
 
 function create_reservation(): void

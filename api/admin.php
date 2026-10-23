@@ -337,13 +337,19 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  /* Admin is desktop-first (accountant at a computer); narrow screens get only
-     small adjustments at the end, wide tables scroll horizontally. Light palette of the customer app (src/styles.css). */
-  :root { --bg:#fbf6f1; --surface:#fff; --surface-2:#f3ebf4; --line:#efe6f1; --ink:#140a24; --ink-2:#5a4f6b; --ink-3:#8a8099; --wall:#e2d6ea; --accent:#c42aae; --accent-dark:#a8208f;
-    --font:'Instrument Sans', system-ui, sans-serif; --font-display:'Bricolage Grotesque', system-ui, sans-serif; }
+  /* Admin is desktop-first (accountant at a computer). Below 760 px: tables with class "cards" become one card
+     per row with labels from data-label, the plan scrolls sideways. Brand palette of the customer app (src/styles.css). */
+  :root { --ink:#140a24; --paper:#fbf6f1; --magenta:#e03cc8; --magenta-dark:#c42aae; --pink:#f07ad9; --violet:#6b2cf5; --lilac:#b79bff;
+    --teal:#3fd9d0; --plum:#8a1f78; --pad-x:clamp(20px, 5vw, 64px); --display:'Bricolage Grotesque', sans-serif;
+    --bg:var(--paper); --surface:#fff; --surface-2:#f3ebf4; --line:#efe6f1; --ink-2:#5a4f6b; --ink-3:#8a8099; --wall:#e2d6ea;
+    /* white text needs the darker magenta (contrast 4.9:1; --magenta is only 3.7:1) */
+    --accent:var(--magenta-dark); --accent-dark:var(--plum);
+    --font:'Instrument Sans', system-ui, sans-serif; --font-display:var(--display); }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 var(--font); -webkit-font-smoothing:antialiased; }
-  main { max-width:1200px; margin:0 auto; padding:24px 16px 64px; }
+  main { max-width:1328px; margin:0 auto; padding:24px var(--pad-x) 64px; }
+  :focus-visible { outline:2px solid var(--violet); outline-offset:2px; }
+  input:focus, select:focus, textarea:focus { border-color:var(--lilac); }
   header { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
   h1 { margin:0; font:700 1.5rem var(--font-display); }
   .card { background:var(--surface); border-radius:16px; box-shadow:0 1px 2px rgba(20,10,36,.05), 0 6px 20px rgba(20,10,36,.07); padding:16px; }
@@ -377,9 +383,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .bank-none td, .bank-done td { color:var(--ink-2); } .bank-done { opacity:.6; }
   .bank-results { margin:0; padding-left:20px; } .bank-results li { margin:4px 0; }
   .bank-actions { margin-top:12px; } td.num { white-space:nowrap; text-align:right; }
-  .tabs { display:flex; gap:4px; padding:4px; border-radius:999px; background:var(--surface-2); margin-right:auto; }
+  .tabs { display:flex; flex-wrap:wrap; gap:4px; padding:4px; border-radius:22px; background:var(--surface-2); margin-right:auto; }
   .tabs a { padding:6px 14px; border-radius:999px; color:var(--ink-2); text-decoration:none; font-weight:600; }
-  .tabs a.active { background:var(--surface); color:var(--ink); box-shadow:0 1px 4px rgba(20,10,36,.12); }
+  .tabs a.active { background:var(--surface); color:var(--magenta-dark); box-shadow:0 1px 4px rgba(20,10,36,.12); }
   .edit-email summary { cursor:pointer; font-size:.78rem; color:var(--ink-2); margin-top:2px; }
   .edit-email form { display:flex; gap:6px; margin-top:6px; }
   .edit-email input { width:200px; padding:4px 8px; }
@@ -389,7 +395,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .seat-cancel label { font-size:.8rem; white-space:nowrap; }
   .seat-cancel button { padding:4px 10px; }
   a.card { color:inherit; text-decoration:none; }
-  .card.selected { outline:2px solid var(--accent); }
+  .card.selected { outline:2px solid var(--magenta); }
   .settings-intro { margin-bottom:12px; max-width:760px; }
   .settings + .settings { margin-top:12px; }
   .hint.locked { padding:8px 12px; border-radius:10px; background:#f9e4b7; color:#6d4a04; font-weight:600; }
@@ -400,6 +406,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .login .hint { margin:-4px 0 0; }
   .section-title { margin:28px 0 6px; font:700 1.15rem var(--font-display); }
   .checks { display:flex; flex-wrap:wrap; gap:6px 16px; }
+  .checks-title { flex:1 1 100%; }
   .check { display:inline-flex !important; flex-direction:row !important; align-items:center; gap:6px; font-weight:500 !important; color:var(--ink) !important; max-width:none !important; }
   .roles-edit { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin-top:6px; }
   .roles-edit .checks { flex-direction:column; gap:4px; }
@@ -429,23 +436,59 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .plan-name { position:absolute; display:flex; flex-direction:column; align-items:center; transform:translate(-50%, -30%); font-size:.8rem; line-height:1.2; white-space:nowrap; }
   .plan-name[data-align=left] { align-items:flex-start; transform:translate(0, -30%); }
   .plan-name[data-align=right] { align-items:flex-end; transform:translate(-100%, -30%); }
-  .plan-name .link { background:none; border:0; padding:0; color:var(--accent); font-weight:500; font-size:.75rem; text-decoration:underline; }
+  .plan-name .link { background:none; border:0; padding:0; color:var(--violet); font-weight:500; font-size:.75rem; text-decoration:underline; }
   .ps { position:absolute; width:2.2%; aspect-ratio:1; transform:translate(-50%, -50%); cursor:pointer; }
   .ps input { position:absolute; opacity:0; pointer-events:none; }
   .ps span { display:grid; place-items:center; width:100%; height:100%; border-radius:5px; font-size:max(9px, .9cqi); font-weight:600; }
   .ps span, .ps-free { background:#d8f0d9; border:1px solid #a4d4a8; color:#24572f; }
   .ps input:checked + span, .ps-reserve { background:#d9d8dc; border:1px dashed #8e8b94; color:#5e5b64; }
-  .ps-held span, i.ps-held { background:#f6d6ef; border:1px solid #e7a9da; color:#8a1f78; }
+  .ps-held span, i.ps-held { background:#f6d6ef; border:1px solid var(--pink); color:var(--plum); }
   .ps-held { cursor:not-allowed; }
-  .ps input:focus-visible + span { outline:2px solid var(--accent); outline-offset:1px; }
+  .ps input:focus-visible + span { outline:2px solid var(--violet); outline-offset:1px; }
   .settings label.wide { max-width:none; }
   textarea { font:inherit; padding:8px 12px; border-radius:10px; border:1px solid var(--wall); background:#fff; resize:vertical; }
   .code { font-family:ui-monospace, monospace; letter-spacing:.05em; white-space:nowrap; }
   .kind { display:inline-block; padding:0 6px; border-radius:6px; background:var(--surface-2); font-size:.72rem; color:var(--ink-2); }
   .kind.child { background:#dfe9f5; color:#1f3f6b; } .kind.free { background:#dcefd9; color:#1f5a2c; }
   @media (max-width: 760px) {
-    main { padding:16px 12px 48px; }
-    .tabs { order:3; width:100%; overflow-x:auto; margin-right:0; }
+    main { padding-top:12px; padding-bottom:48px; }
+    header { gap:8px 12px; margin-bottom:14px; }
+    h1 { font-size:1.25rem; }
+    .me { order:2; margin-left:auto; max-width:50vw; }
+    header > form { order:2; }
+    .tabs { order:3; width:100%; margin-right:0; border-radius:16px; }
+    .tabs a { flex:1 1 auto; padding:8px 10px; text-align:center; white-space:nowrap; }
+    .stats { flex-wrap:wrap; gap:8px; }
+    .stats .card { flex:1 1 calc(50% - 4px); padding:10px 12px; font-size:.85rem; }
+    .stats strong { font-size:1.2rem; }
+    form.filters > select, form.filters > input[type=search] { flex:1 1 100%; }
+    form.filters > button { flex:1 1 100%; }
+    .card.table { padding:0; background:none; box-shadow:none; overflow:visible; }
+    table.cards, table.cards tbody, table.cards tr, table.cards td { display:block; width:100%; }
+    table.cards thead { display:none; }
+    table.cards thead.sortable { display:block; margin-bottom:8px; }
+    table.cards thead.sortable tr { display:flex; flex-wrap:wrap; gap:6px; }
+    table.cards thead.sortable th { padding:4px 10px; border:0; border-radius:999px; background:var(--surface); font-size:.72rem; }
+    table.cards thead.sortable th:empty { display:none; }
+    table.cards tr { margin-bottom:10px; padding:8px 14px; border-radius:16px; background:var(--surface); box-shadow:0 1px 2px rgba(20,10,36,.05), 0 6px 20px rgba(20,10,36,.07); }
+    table.cards tr.test-run, tr.test-run td { background:#eef4fc; }
+    table.cards td { padding:6px 0; border-bottom:1px solid var(--line); max-width:none; }
+    table.cards td:last-child { border-bottom:0; }
+    table.cards td:empty { display:none; }
+    table.cards td[data-label]::before { content:attr(data-label); display:inline-block; min-width:6.5em; margin-right:8px; font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); }
+    table.cards td.num { text-align:left; }
+    .seat-cancel { max-width:none; }
+    .edit-email form { flex-wrap:wrap; }
+    .edit-email input { flex:1 1 160px; width:auto; }
+    .actions button, .actions a.button { padding:8px 14px; }
+    .plan-bar { position:static; gap:8px 12px; }
+    .plan-level { overflow-x:auto; }
+    .plan-map { min-width:720px; }
+    .settings label, .settings .rule label { max-width:none; flex:1 1 100%; }
+    .settings .rule input[type=number] { width:100%; }
+    .checks { flex-direction:column; gap:8px; }
+    .check { flex:none !important; align-items:flex-start !important; }
+    .check input { flex:none; margin-top:3px; }
   }
   .login { max-width:340px; margin:15vh auto; display:flex; flex-direction:column; gap:12px; }
 </style>
@@ -594,7 +637,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $planRun = run_by_id((int) ($_GET['run'] ?? 0)) ?? ($planRuns[0] ?? null);
   ?>
   <p class="hint settings-intro">Klikem přepnete místo mezi <strong>v prodeji</strong> a <strong>záložní</strong> (zákazníci ho vidí,
-    ale nemohou ho koupit). Platí jen pro vybraný termín. Obsazená místa nelze přepnout. Nový termín začíná s výchozím
+    ale nemohou ho koupit). Obsazená místa nelze přepnout. Nový termín začíná s výchozím
     rozložením (záložní řady na balkoně).</p>
   <?php if ($planRun === null): ?>
     <p class="card hint">Nejdřív přidejte termín v Nastavení.</p>
@@ -680,7 +723,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <h2>Nahrát výpis z banky</h2>
     <p class="hint">Výpis z internetového bankovnictví ve formátu CSV (KB MojeBanka: Historie transakcí → Export → CSV).
       Příchozí platby se spárují s rezervacemi podle specifického symbolu (SS); když nesedí, hledá se číslo rezervace ve VS
-      a ve zprávě pro příjemce. Nejdřív uvidíte náhled, zapíší se jen zaškrtnuté platby. Stejnou platbu nelze zapsat dvakrát.</p>
+      a ve zprávě pro příjemce. Nejdřív uvidíte náhled, zapíší se jen zaškrtnuté platby. </p>
     <label class="wide">Soubor CSV <input type="file" name="statement" accept=".csv,text/csv" required></label>
     <button name="action" value="bank-upload">Načíst výpis</button>
   </form>
@@ -708,24 +751,24 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   </div>
   <form class="card table" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
-    <table>
+    <table class="cards">
       <thead><tr><th></th><th>Datum</th><th>Plátce</th><th>Částka</th><th>VS / SS</th><th>Zpráva</th><th>Rezervace</th><th>Co se stane</th></tr></thead>
       <tbody>
       <?php foreach ($bankRows as $i => $b): $tx = $b['tx']; $br = $b['reservation']; ?>
         <tr class="bank-<?= $h($b['state']) ?>">
-          <td><?php if ($b['state'] === 'match'): ?><input type="checkbox" name="tx[]" value="<?= (int) $i ?>" aria-label="Zapsat platbu" <?= $b['select'] ? 'checked' : '' ?>><?php endif ?></td>
-          <td><?= $tx['date'] ? $h(new DateTimeImmutable($tx['date'])->format('j. n. Y')) : '–' ?></td>
-          <td><?= $h($tx['name']) ?><?= $tx['account'] !== '' ? '<br><small>' . $h($tx['account']) . '</small>' : '' ?></td>
-          <td class="num"><?= $h($cents($tx['cents'])) ?></td>
-          <td><small>VS</small> <?= $h($tx['vs'] ?: '–') ?><br><small>SS</small> <?= $h($tx['ss'] ?: '–') ?></td>
-          <td><small><?= $h($tx['message']) ?></small></td>
-          <td><?php if ($br): ?>
+          <td<?= $b['state'] === 'match' ? ' data-label="Zapsat"' : '' ?>><?php if ($b['state'] === 'match'): ?><input type="checkbox" name="tx[]" value="<?= (int) $i ?>" aria-label="Zapsat platbu" <?= $b['select'] ? 'checked' : '' ?>><?php endif ?></td>
+          <td data-label="Datum"><?= $tx['date'] ? $h(new DateTimeImmutable($tx['date'])->format('j. n. Y')) : '–' ?></td>
+          <td data-label="Plátce"><?= $h($tx['name']) ?><?= $tx['account'] !== '' ? '<br><small>' . $h($tx['account']) . '</small>' : '' ?></td>
+          <td class="num" data-label="Částka"><?= $h($cents($tx['cents'])) ?></td>
+          <td data-label="VS / SS"><small>VS</small> <?= $h($tx['vs'] ?: '–') ?><br><small>SS</small> <?= $h($tx['ss'] ?: '–') ?></td>
+          <td data-label="Zpráva"><small><?= $h($tx['message']) ?></small></td>
+          <td data-label="Rezervace"><?php if ($br): ?>
               <a href="admin.php?q=<?= $h($br['specific_symbol']) ?>">SS <?= $h($br['specific_symbol']) ?></a>
               <br><?= $h($br['first_name'] . ' ' . $br['last_name']) ?>
               <br><span class="badge s-<?= $h($br['status']) ?>"><?= $h($statusLabels[$br['status']]) ?></span>
               <small><?= $h($kc($br['amount'])) ?></small>
             <?php else: ?>–<?php endif ?></td>
-          <td><small><?= $h($b['note']) ?></small></td>
+          <td data-label="Co se stane"><small><?= $h($b['note']) ?></small></td>
         </tr>
       <?php endforeach ?>
       <?php if (!$bankRows): ?><tr><td colspan="8">Ve výpisu nejsou žádné příchozí platby.</td></tr><?php endif ?>
@@ -773,16 +816,16 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   </form>
 
   <div class="card table">
-    <table>
+    <table class="cards">
       <thead><tr><th>Kód</th><th>E-mail</th><th>Vytvořeno</th><th>Odesláno</th><th>Stav</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($codes as $c): ?>
         <tr>
-          <td><strong class="code"><?= $h(format_discount_code($c['code'])) ?></strong></td>
-          <td><?= $h($c['email']) ?: '<small>smazáno</small>' ?></td>
-          <td><?= $h($fmt($c['created_at'])) ?><?= $c['created_by'] !== '' ? '<br><small>' . $h($c['created_by']) . '</small>' : '' ?></td>
-          <td><?= $h($fmt($c['emailed_at'])) ?: '–' ?></td>
-          <td><?php if ($c['used_at']): ?>
+          <td data-label="Kód"><strong class="code"><?= $h(format_discount_code($c['code'])) ?></strong></td>
+          <td data-label="E-mail"><?= $h($c['email']) ?: '<small>smazáno</small>' ?></td>
+          <td data-label="Vytvořeno"><?= $h($fmt($c['created_at'])) ?><?= $c['created_by'] !== '' ? '<br><small>' . $h($c['created_by']) . '</small>' : '' ?></td>
+          <td data-label="Odesláno"><?= $h($fmt($c['emailed_at'])) ?: '–' ?></td>
+          <td data-label="Stav"><?php if ($c['used_at']): ?>
               <span class="badge s-paid">Použitý</span><br><small><?= $h($fmt($c['used_at'])) ?> ·
                 <?php if ($c['specific_symbol'] !== null): ?><a href="admin.php?q=<?= $h($c['specific_symbol']) ?>">SS <?= $h($c['specific_symbol']) ?></a><?php endif ?>
                 <?= ($cr = run_by_id((int) $c['run_id'])) ? '· ' . $h(run_label($cr)) : '' ?>
@@ -828,7 +871,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       };
       // Runs an Odbavovatel checks in (a Správce checks in every run).
       $runChecks = static function (array $selected) use ($h): string {
-          $out = '<span class="hint">Odbavuje termíny:</span>';
+          $out = '<span class="hint checks-title">Odbavuje termíny:</span>';
           foreach (runs() as $run) {
               $out .= '<label class="check"><input type="checkbox" name="runs[]" value="' . (int) $run['id'] . '"'
                   . (in_array($run['id'], $selected, true) ? ' checked' : '') . '> ' . $h(run_label($run)) . '</label>';
@@ -836,16 +879,15 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           return $out;
       };
   ?>
-  <p class="hint settings-intro">Uživatele zve správce zadáním e-mailu a rolí. Pozvaný dostane e-mail s odkazem
-    (platí <?= ADMIN_INVITE_DAYS ?> dní); účet vznikne, až si na něm vytvoří heslo. Přihlašovací jméno je e-mail.
-    <strong>Správce</strong> může vše, <strong>Účetní</strong> vidí jen rezervace a platby, <strong>Odbavovatel</strong>
-    jen odbavuje (scanner) – a to jen termíny, které mu tu přiřadíte (žádný, jeden i víc); správce odbavuje
-    všechny termíny. Kdo má víc rolí, vidí všechny jejich možnosti v menu. Zapomenuté heslo si každý obnoví
-    sám na přihlašovací stránce.</p>
+  
 
   <form class="card settings" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <h2>Pozvat uživatele</h2>
+    <p class="hint settings-intro">Pozvaný dostane e-mail s odkazem
+    (platí <?= ADMIN_INVITE_DAYS ?> dní); účet vznikne, až si na něm vytvoří heslo. Přihlašovací jméno je e-mail.
+    <strong>Správce</strong> může vše, <strong>Účetní</strong> vidí jen rezervace a platby, <strong>Odbavovatel</strong>
+    jen odbavuje (scanner) – a to jen termíny, které mu tu přiřadíte.</p>
     <label>E-mail (bude přihlašovací jméno)<input type="email" name="email" required maxlength="190" placeholder="jana@example.cz"></label>
     <div class="checks"><?= $roleChecks([]) ?></div>
     <div class="checks"><?= $runChecks([]) ?></div>
@@ -853,7 +895,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   </form>
 
   <div class="card table">
-    <table>
+    <table class="cards">
       <thead><tr><th>E-mail (login)</th><th>Role</th><th>Pozvánka</th><th>Naposledy přihlášen(a)</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($users as $u):
@@ -868,8 +910,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
           $self = (int) $u['id'] === $me['id'];
       ?>
         <tr>
-          <td><strong><?= $h($u['email']) ?></strong><?= $self ? ' <small>(vy)</small>' : '' ?></td>
-          <td>
+          <td data-label="E-mail"><strong><?= $h($u['email']) ?></strong><?= $self ? ' <small>(vy)</small>' : '' ?></td>
+          <td data-label="Role">
             <?= $h(implode(', ', array_map(static fn ($r) => USER_ROLES[$r], user_roles($u)))) ?>
             <?php $userRuns = user_run_ids((int) $u['id']);
                 if (in_array('scanner', user_roles($u), true) && !in_array('admin', user_roles($u), true)): ?>
@@ -885,9 +927,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
               </form>
             </details>
           </td>
-          <td><span class="badge <?= $badge ?>"><?= $h($label) ?></span>
+          <td data-label="Pozvánka"><span class="badge <?= $badge ?>"><?= $h($label) ?></span>
             <br><small><?= $u['invited_by'] === 'deploy' ? 'první správce (deploy)' : 'pozval(a) ' . $h($u['invited_by']) ?>, <?= $h($fmt($u['created_at'])) ?></small></td>
-          <td><?= $h($fmt($u['last_login_at'])) ?: '–' ?></td>
+          <td data-label="Přihlášen(a)"><?= $h($fmt($u['last_login_at'])) ?: '–' ?></td>
           <td>
             <div class="actions">
               <?php if ($u['disabled_at'] === null): ?>
@@ -926,17 +968,17 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     jakmile se spojení vrátí. Platí první odbavení. Sem se zapíše, co se pak nedalo přijmout – typicky stejná vstupenka
     puštěná na dvou mobilech.</p>
   <div class="card table">
-    <table>
+    <table class="cards">
       <thead><tr><th>Načteno</th><th>Termín</th><th>Vstupenka / host</th><th>Problém</th><th>Kdo</th><th>Dříve odbaveno</th></tr></thead>
       <tbody>
       <?php foreach ($conflicts as $c): ?>
         <tr>
-          <td><?= $h($fmt($c['scanned_at'])) ?></td>
-          <td class="seats"><?= ($cr = run_by_id((int) $c['run_id'])) ? $h(run_label($cr)) : '–' ?></td>
-          <td><strong><?= $h($c['label']) ?></strong></td>
-          <td><span class="badge <?= $c['reason'] === 'already_checked_in' ? 's-pending' : 's-expired' ?>"><?= $h(CONFLICT_REASONS[$c['reason']] ?? $c['reason']) ?></span></td>
-          <td><?= $h($c['scanned_by']) ?></td>
-          <td><?= $c['other_at'] ? $h($fmt($c['other_at'])) . ($c['other_by'] ? '<br><small>' . $h($c['other_by']) . '</small>' : '') : '' ?></td>
+          <td data-label="Načteno"><?= $h($fmt($c['scanned_at'])) ?></td>
+          <td class="seats" data-label="Termín"><?= ($cr = run_by_id((int) $c['run_id'])) ? $h(run_label($cr)) : '–' ?></td>
+          <td data-label="Vstupenka"><strong><?= $h($c['label']) ?></strong></td>
+          <td data-label="Problém"><span class="badge <?= $c['reason'] === 'already_checked_in' ? 's-pending' : 's-expired' ?>"><?= $h(CONFLICT_REASONS[$c['reason']] ?? $c['reason']) ?></span></td>
+          <td data-label="Kdo"><?= $h($c['scanned_by']) ?></td>
+          <td data-label="Dříve odbaveno"><?= $c['other_at'] ? $h($fmt($c['other_at'])) . ($c['other_by'] ? '<br><small>' . $h($c['other_by']) . '</small>' : '') : '' ?></td>
         </tr>
       <?php endforeach ?>
       <?php if (!$conflicts): ?><tr><td colspan="6">Žádné konflikty.</td></tr><?php endif ?>
@@ -950,17 +992,13 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $runForms = array_values(runs());
       $runForms[] = ['id' => 0, 'label' => '', 'starts_at' => null, 'booking_closes_at' => null, 'is_test' => false];
   ?>
-  <p class="hint settings-intro">Každý termín má vlastní plánek míst a rezervace. Zákazníci rezervace sami rušit
-    nemohou – zrušit je může jen správce (zaplacená místa se vracejí v plné výši).
-    Rezervace končí začátkem termínu (nebo dříve, je-li vyplněn konec rezervací).
-    <?php if ($deleteAt): ?>Osobní údaje budou smazány <?= $h($deleteAt->format('j. n. Y')) ?> (<?= (int) config('DATA_RETENTION_DAYS') ?> dní po posledním termínu).<?php endif ?></p>
-
+  
   <?php $deadlineRules = payment_deadline_rules();
       $deadlineRows = array_pad($deadlineRules, max(3, count($deadlineRules) + 1), ['from' => '', 'hours' => '']); ?>
-  <form class="card settings" method="post">
+  <form class="ca-rd settings" method="post">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <h2>Splatnost plateb</h2>
-    <p class="hint">Kolik hodin má zákazník na zaplacení podle toho, kdy rezervaci vytvoří. Rezervace vytvořené před prvním
+    <p class="hint">Kolik hodin má zákazník na zaplacení od okamžiku, kdy rezervaci vytvoří. Rezervace vytvořené před prvním
       datem mají <?= (int) config('PAYMENT_DEADLINE_HOURS') ?> hodin (PAYMENT_DEADLINE_HOURS). Splatnost nikdy nepřesáhne
       začátek představení. Změna platí jen pro nové rezervace. Nyní platí: <strong><?= payment_deadline_hours(now_utc()) ?> hodin</strong>.</p>
     <div class="rules">
@@ -988,7 +1026,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <label>Konec rezervací (nepovinný)<input type="datetime-local" name="booking_closes_at" value="<?= $h($local($run['booking_closes_at'])) ?>"></label>
     </div>
     <label class="check"><input type="checkbox" name="is_test" value="1"<?= $run['is_test'] ? ' checked' : '' ?><?= $dis ?>> Testovací termín</label>
-    <p class="hint">Pro vyzkoušení odbavení: termín není veřejně vidět (jen přes odkaz), rezervace jsou hned zaplacené,
+    <p class="hint">Pro vyzkoušení odbavení: termín není veřejně vidět, rezervace jsou hned zaplacené,
       slevové kódy nejdou použít, nepočítá se do souhrnů a lze ho smazat i s rezervacemi.</p>
     <?php if ($run['id'] && $run['is_test'] && ($base = rtrim((string) config('PUBLIC_URL'), '/')) !== ''): ?>
       <p class="hint">Odkaz na testovací termín: <a href="<?= $h($base . '/?termin=' . (int) $run['id']) ?>"><?= $h($base . '/?termin=' . (int) $run['id']) ?></a></p>
@@ -997,8 +1035,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <p class="hint locked">Představení už má rezervace – začátek nelze měnit (zákazníci rezervovali na tento čas).</p>
     <?php endif ?>
     <?php if ($run['id']): $scanners = run_scanner_emails((int) $run['id']); ?>
-      <p class="hint">Odbavují: <?= $scanners ? $h(implode(', ', $scanners)) : 'zatím nikdo' ?> (a všichni správci) – přiřazení v záložce
-        <a href="admin.php?view=users">Uživatelé</a>.</p>
+      <p class="hint">Odbavují: <?= $scanners ? $h(implode(', ', $scanners)) : 'zatím nikdo' ?> (a všichni správci).</p>
     <?php endif ?>
     <div class="actions">
       <button name="action" value="run-save"><?= $run['id'] ? 'Uložit termín' : 'Přidat termín' ?></button>
@@ -1060,8 +1097,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   </form>
 
   <div class="card table">
-    <table>
-      <thead><tr>
+    <table class="cards">
+      <thead class="sortable"><tr>
         <?php foreach (['ss' => 'SS', 'run' => 'Termín', 'name' => 'Jméno', 'seats' => 'Místa', 'amount' => 'Částka', 'status' => 'Stav', 'created' => 'Vytvořeno', 'expires' => 'Splatnost'] as $key => $title):
             $active = $sort === $key;
             $link = 'admin.php?' . http_build_query(array_filter(['run' => $runFilter ?: null, 'status' => $status ?: null, 'q' => $q ?: null, 'sort' => $key, 'dir' => $active && $dir === 'asc' ? 'desc' : 'asc'])); ?>
@@ -1071,9 +1108,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       <tbody>
       <?php foreach ($rows as $r): $rr = run_by_id((int) $r['run_id']); ?>
         <tr<?= $rr && $rr['is_test'] ? ' class="test-run"' : '' ?>>
-          <td><strong><?= $h($r['specific_symbol']) ?></strong></td>
-          <td class="seats<?= $rr && $rr['is_test'] ? ' run-test' : '' ?>"><?= $rr ? $h(run_label($rr)) : '–' ?></td>
-          <td><?= $h($r['first_name'] . ' ' . $r['last_name']) ?><br><a href="mailto:<?= $h($r['email']) ?>"><?= $h($r['email']) ?></a>
+          <td data-label="SS"><strong><?= $h($r['specific_symbol']) ?></strong></td>
+          <td class="seats<?= $rr && $rr['is_test'] ? ' run-test' : '' ?>" data-label="Termín"><?= $rr ? $h(run_label($rr)) : '–' ?></td>
+          <td data-label="Jméno"><?= $h($r['first_name'] . ' ' . $r['last_name']) ?><br><a href="mailto:<?= $h($r['email']) ?>"><?= $h($r['email']) ?></a>
             <?php if ($r['sold_by'] !== null): ?><small>prodal(a) <?= $h($r['sold_by']) ?></small><?php endif ?>
             <details class="edit-email"><summary>změnit e-mail</summary>
               <form method="post">
@@ -1083,10 +1120,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                 <button name="action" value="email">Uložit</button>
               </form>
             </details></td>
-          <td class="seats"><?php $checkedIn = reservation_checkins($r);
+          <td class="seats" data-label="Místa"><?php $checkedIn = reservation_checkins($r);
               $seatCount = count(current_items($r));
               foreach (current_items($r) as $seat => $item): ?>
-              <?= $h($seat) ?><?= $item['kind'] === 'child' ? ' <span class="kind child">dítě</span>' : '' ?><?= $item['free'] ? ' <span class="kind free">kód</span>' : '' ?><?= isset($checkedIn[$seat]) ? ' ✓' : '' ?><?= $item['holder'] !== null ? ' <small>' . $h($item['holder']) . '</small>' : '' ?><br>
+              <?= $h($seat) ?><?= $item['kind'] === 'child' ? ' <span class="kind child">dítě</span>' : '' ?><?= $item['free'] ? ' <span class="kind free">kód</span>' : '' ?><?= isset($checkedIn[$seat]) ? ' ✓' : '' ?><br>
             <?php endforeach ?>
             <?php if ($cancelledSeats = cancelled_seat_ids($r)): ?><br><small>zrušená místa: <?= $h(implode(', ', $cancelledSeats)) ?></small><?php endif ?>
             <?php /*if (in_array($r['status'], ['pending', 'paid'], true) && $seatCount > 1): ?>
@@ -1103,10 +1140,10 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                 </form>
               </details>
             <?php endif */ ?></td>
-          <td><?= $kc($r['amount']) ?>
+          <td data-label="Částka"><?= $kc($r['amount']) ?>
             <?php if ($r['paid_amount'] !== null && (int) $r['paid_amount'] !== (int) $r['amount']): ?><br><small>přijato <?= $kc($r['paid_amount']) ?></small><?php endif ?>
             <?php if ($r['status'] === 'pending' && (int) $r['paid_amount'] > 0): ?><br><small class="overdue">zbývá doplatit <?= $kc(amount_due($r)) ?></small><?php endif ?></td>
-          <td><span class="badge s-<?= $h($r['status']) ?>"><?= $h($statusLabels[$r['status']]) ?></span>
+          <td data-label="Stav"><span class="badge s-<?= $h($r['status']) ?>"><?= $h($statusLabels[$r['status']]) ?></span>
             <?php if ($r['paid_at']): ?><br><small>zaplaceno <?= $h($fmt($r['paid_at'])) ?></small><?php endif ?>
             <?php if ($r['sold_by'] !== null && $r['status'] === 'paid'): ?><br><small class="<?= $r['payment_checked_at'] ? '' : 'overdue' ?>"><?= $r['payment_checked_at'] ? 'platba ověřena ' . $h($fmt($r['payment_checked_at'])) : 'na místě – ověřte, že platba dorazila' ?></small><?php endif ?>
             <?php if ($r['ticket_sent_at']): ?><br><small>vstupenka <?= $h($fmt($r['ticket_sent_at'])) ?></small><?php endif ?>
@@ -1117,8 +1154,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
               <br><small class="overdue">vrátit: <?= $kc($r['refund_amount'] - $r['refunded_amount']) ?>
                 na účet plátce</small>
             <?php endif ?></td>
-          <td><?= $h($fmt($r['created_at'])) ?></td>
-          <td class="<?= $r['status'] === 'pending' && $r['expires_at'] < db_time(now_utc()) ? 'overdue' : '' ?>"><?= $h($fmt($r['expires_at'])) ?></td>
+          <td data-label="Vytvořeno"><?= $h($fmt($r['created_at'])) ?></td>
+          <td data-label="Splatnost" class="<?= $r['status'] === 'pending' && $r['expires_at'] < db_time(now_utc()) ? 'overdue' : '' ?>"><?= $h($fmt($r['expires_at'])) ?></td>
           <td>
             <div class="actions">
               <?php if ($r['status'] === 'pending'): ?>

@@ -188,9 +188,6 @@ function ResultCard({ scan, onNext }) {
               </span>
             )}
           </div>
-          {ticket.reservedBy && ticket.reservedBy !== ticket.name && (
-            <p className="muted small">Rezervace: {ticket.reservedBy}</p>
-          )}
           {result === 'seat_cancelled' && (
             <p className="small">Toto místo bylo z rezervace zrušeno, ostatní místa platí.</p>
           )}
@@ -352,7 +349,7 @@ function Scanner({ runs, name, admin, onLogout, onUnauthorized }) {
       <header className="scan-bar">
         <div>
           <h1 className="brand">
-            Odbavení <span>2026</span>
+            Odbavení <span>TZG</span>
           </h1>
           {name && <p className="scan-who">{name}</p>}
         </div>

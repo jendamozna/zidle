@@ -135,6 +135,14 @@ function revoke_discount_code(int $id): string
     return $stmt->rowCount() ? 'Kód zrušen – už ho nelze použít.' : 'Kód nelze zrušit (už byl použit nebo zrušen).';
 }
 
+/** Code (normalized) exists and is neither used nor revoked; booking checks it again. */
+function discount_code_usable(string $code): bool
+{
+    $stmt = db()->prepare('SELECT 1 FROM discount_codes WHERE code = ? AND used_at IS NULL AND revoked_at IS NULL');
+    $stmt->execute([$code]);
+    return (bool) $stmt->fetchColumn();
+}
+
 /**
  * Inside the reservation transaction: locks the codes and returns their ids in the
  * given order, or the first code that can't be used (formatted) as a string.

@@ -123,8 +123,7 @@ export function verifyOffline(decoded, snapshot, queue) {
       : found.seats.includes(decoded.seat)
         ? 'adult'
         : decoded.kind,
-    name: found.ticketNames?.[decoded.seat] || found.name || decoded.name,
-    reservedBy: found.name,
+    name: found.name || decoded.name,
     seats: found.seats,
     count: found.seats.length,
     checkedIn: found.seats.filter(checkedIn).length,

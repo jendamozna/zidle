@@ -21,7 +21,7 @@ function child_price(): int
 
 /**
  * Every seat ever in the reservation, in seat order: [seat => [seat, kind (adult/child), price, free,
- * holder (name on the ticket or null), cancelled, checkedInAt (DB time or null), checkedInBy]].
+ * cancelled, checkedInAt (DB time or null), checkedInBy]].
  * Uses $r['items'] when the caller loaded them (with_items()).
  */
 function reservation_items(array $r): array
@@ -45,7 +45,6 @@ function load_reservation_items(array $ids): array
             'kind' => (string) $i['kind'],
             'price' => (int) $i['price'],
             'free' => (bool) $i['free'],
-            'holder' => $i['holder_name'],
             'cancelled' => $i['cancelled_at'] !== null,
             'checkedInAt' => $i['checked_in_at'],
             'checkedInBy' => $i['checked_in_by'],
@@ -135,7 +134,7 @@ function insert_reservation_items(PDO $pdo, int $id, array $items): void
     }
 }
 
-/** Per-seat tickets of the reservation's current seats: [{seat, kind, price, free, holder}] in seat order. */
+/** Per-seat tickets of the reservation's current seats: [{seat, kind, price, free}] in seat order. */
 function reservation_seat_items(array $r): array
 {
     return array_values(array_map(static fn ($i) => [
@@ -143,7 +142,6 @@ function reservation_seat_items(array $r): array
         'kind' => $i['kind'],
         'price' => $i['price'],
         'free' => $i['free'],
-        'holder' => $i['holder'],
     ], current_items($r)));
 }
 
@@ -156,46 +154,10 @@ function clean_name(mixed $name): string
     return is_string($name) ? trim(preg_replace('/[|\p{Cc}\p{Cf}\s]+/u', ' ', $name) ?? '') : '';
 }
 
-/** Names the customer put on the seat tickets: [seat => name]. */
-function ticket_names(array $r): array
+/** "Jan Novák" – the name of the reservation, shown on all its tickets. */
+function reservation_name(array $r): string
 {
-    return array_filter(array_map(static fn ($i) => $i['holder'], reservation_items($r)), static fn ($n) => $n !== null && $n !== '');
-}
-
-/** Name shown on the ticket of the seat: the customer's name for it, else the reservation name. */
-function ticket_holder(array $r, string $seat): string
-{
-    return (string) (reservation_items($r)[$seat]['holder'] ?? '') ?: trim($r['first_name'] . ' ' . $r['last_name']);
-}
-
-/**
- * Customer sets names on the seat tickets ([seat => name], '' = back to the reservation name).
- * Only current seats, while the reservation is pending or paid and the run has not started.
- * Returns an error message or null.
- */
-function save_ticket_names(array $r, array $names): ?string
-{
-    $run = run_by_id((int) $r['run_id']);
-    if (!in_array($r['status'], ['pending', 'paid'], true) || $run === null || run_started($run)) {
-        return 'Jména na vstupenkách už nelze měnit.';
-    }
-    $seats = current_seat_ids($r);
-    $updates = [];
-    foreach ($names as $seat => $name) {
-        $name = clean_name($name);
-        if (!in_array((string) $seat, $seats, true)) {
-            return 'Vyberte místa z této rezervace.';
-        }
-        if (mb_strlen($name) > 100) {
-            return 'Jméno na vstupence může mít nejvýše 100 znaků.';
-        }
-        $updates[(string) $seat] = $name === '' ? null : $name;
-    }
-    $update = db()->prepare('UPDATE reservation_items SET holder_name = ? WHERE reservation_id = ? AND seat_id = ?');
-    foreach ($updates as $seat => $name) {
-        $update->execute([$name, $r['id'], $seat]);
-    }
-    return null;
+    return trim($r['first_name'] . ' ' . $r['last_name']);
 }
 
 /** "2 dospělí, 1 dítě 4–17 let" for e-mails. */

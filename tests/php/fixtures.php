@@ -48,7 +48,7 @@ function reservation(array $seats, string $status = 'pending', int $run = 1, str
          VALUES (?, ?, 'Test', ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )->execute([
         bin2hex(random_bytes(16)), $run, $lastName ?: "T{$n}", "test{$n}@example.com", $amount,
-        (string) (1000000000 + $n), $status, db_time(now_utc()), db_time(now_utc()->modify('+3 days')),
+        (string) (10000 + $n), $status, db_time(now_utc()), db_time(now_utc()->modify('+3 days')),
         $status === 'paid' ? db_time(now_utc()) : null, $status === 'paid' && $amount > 0 ? $amount : null,
     ]);
     $id = (int) $pdo->lastInsertId();

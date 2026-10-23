@@ -19,24 +19,23 @@ const check = (ok, message) => {
   if (!ok) failed++;
 };
 
-const item = (seat, kind, price, holder) => ({
+const item = (seat, kind, price) => ({
   seat,
   kind,
   price,
   free: false,
-  holder,
   cancelled: false,
   checkedInAt: null,
   checkedInBy: null,
 });
 const reservation = {
   id: 42,
-  specific_symbol: '1234567890',
+  specific_symbol: '12345',
   first_name: 'Jana',
   last_name: 'Nováková',
   items: {
-    'LH-1-1': item('LH-1-1', 'adult', 300, null),
-    'LH-1-2': item('LH-1-2', 'child', 150, 'Petr Novák'),
+    'LH-1-1': item('LH-1-1', 'adult', 300),
+    'LH-1-2': item('LH-1-2', 'child', 150),
   },
 };
 const codes = php(
@@ -46,15 +45,15 @@ const codes = php(
 const [adult, child] = codes.map(decodeTicket);
 check(
   adult?.id === 42 &&
-    adult.specificSymbol === '1234567890' &&
+    adult.specificSymbol === '12345' &&
     adult.seat === 'LH-1-1' &&
     adult.kind === 'adult' &&
     adult.name === 'Jana Nováková',
   `adult seat ticket from PHP decoded by the scanner: ${codes[0]}`,
 );
 check(
-  child?.seat === 'LH-1-2' && child.kind === 'child' && child.name === 'Petr Novák',
-  `child seat ticket with its own name decoded by the scanner: ${codes[1]}`,
+  child?.seat === 'LH-1-2' && child.kind === 'child' && child.name === 'Jana Nováková',
+  `child seat ticket decoded by the scanner: ${codes[1]}`,
 );
 
 process.exit(failed ? 1 : 0);

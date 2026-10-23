@@ -91,6 +91,16 @@ test('payment code (SPD) asks only for the missing amount, with VS 3211 and the 
     same(200, reservation_payload(row($id))['payment']['received'], 'payload received');
 });
 
+test('the SS is a random 5-digit number, unique and reassigned without clashing', function (): void {
+    $id = reservation(['LK-2-9']);
+    same(1, preg_match('/^[1-9]\d{4}$/', row($id)['specific_symbol']), '5 digits, no leading zero');
+    for ($i = 0; $i < 30; $i++) {
+        assign_specific_symbol(db(), $id);
+    }
+    same(1, preg_match('/^[1-9]\d{4}$/', row($id)['specific_symbol']), 'still 5 digits');
+    same(0, (int) db_query('SELECT COUNT(*) FROM (SELECT specific_symbol FROM reservations GROUP BY specific_symbol HAVING COUNT(*) > 1) d')->fetchColumn(), 'no SS twice');
+});
+
 test('late payment restores an expired reservation when the seats are free', function (): void {
     $id = reservation(['LK-1-5']);
     expire($id);
@@ -329,12 +339,16 @@ test('a reservation with a child seat and a code costs adult + child − the adu
 
 test('a discount code works only once and not after it was revoked', function (): void {
     $code = new_code();
+    same(true, discount_code_usable($code), 'form check before use');
     same(true, isset(book(['PH-2-1'], 0, [$code])['reservation']), 'first use');
+    same(false, discount_code_usable($code), 'form check after use');
     same('Slevový kód ' . format_discount_code($code) . ' neplatí nebo už byl použit.', book(['PH-2-2'], 0, [$code])['error'] ?? null, 'second use');
     same(false, isset(held(1)['PH-2-2']), 'nothing booked on the failed attempt');
     $revoked = new_code();
     contains('Kód zrušen', revoke_discount_code((int) db_query('SELECT MAX(id) FROM discount_codes')->fetchColumn()), 'revoke');
+    same(false, discount_code_usable($revoked), 'form check of a revoked code');
     same(422, book(['PH-2-3'], 0, [$revoked])['status'] ?? null, 'revoked code');
+    same(false, discount_code_usable('XXXXXXXX'), 'form check of an unknown code');
     same(422, book(['PH-2-4'], 0, ['XXXXXXXX'])['status'] ?? null, 'unknown code');
 });
 
@@ -507,13 +521,12 @@ test('personal data is purged after the event except while money is still to ret
     $refund = reservation(['BL-1-1'], 'paid');
     record_payment($refund, 300); // paid twice → 300 to return
     $done = reservation(['BL-1-2'], 'paid');
-    save_ticket_names(row($done), ['BL-1-2' => 'Petr Novák']);
     db()->exec('UPDATE runs SET starts_at = starts_at - INTERVAL 400 DAY');
     runs(true);
     try {
         purge_personal_data();
         same('test' . substr(row($refund)['last_name'], 1) . '@example.com', row($refund)['email'], 'kept while refund due');
-        same(['', []], [row($done)['email'], ticket_names(row($done))], 'purged with the names on the tickets');
+        same(['', ''], [row($done)['email'], row($done)['first_name']], 'purged');
         db()->prepare('UPDATE reservations SET refunded_amount = refund_amount WHERE id = ?')->execute([$refund]);
         purge_personal_data();
         same('', row($refund)['email'], 'purged after refund');
@@ -537,20 +550,10 @@ test('one ticket code per seat round-trips with its kind and rejects tampering',
     same(true, count(array_unique(array_column($payload['tickets'], 'code'))) === 2, 'codes differ');
 });
 
-test('customers put names on seat tickets; the code, payload and PDF carry them', function (): void {
-    $id = reservation(['BS-3-1', 'BS-3-2'], 'paid', 1, 'Jménová');
-    same(null, save_ticket_names(row($id), ['BS-3-2' => '  Petr   Novák ', 'BS-3-1' => '']), 'saved');
-    $r = row($id);
-    same(['BS-3-2' => 'Petr Novák'], ticket_names($r), 'stored, spaces normalized');
-    same(['Test Jménová', 'Petr Novák'], [ticket_holder($r, 'BS-3-1'), ticket_holder($r, 'BS-3-2')], 'holders');
-    same('Petr Novák', parse_ticket_code(ticket_code($r, 'BS-3-2'))['name'] ?? null, 'name in the QR code');
-    same([null, 'Petr Novák'], array_column(reservation_payload($r)['tickets'], 'holder'), 'payload');
-    same('Vyberte místa z této rezervace.', save_ticket_names($r, ['LH-1-1' => 'X']), 'foreign seat');
-    same('Jméno na vstupence může mít nejvýše 100 znaků.', save_ticket_names($r, ['BS-3-1' => str_repeat('x', 101)]), 'too long');
-    save_ticket_names($r, ['BS-3-2' => '']);
-    same([], ticket_names(row($id)), 'back to the reservation name');
-    $past = reservation(['BS-3-3'], 'paid', 2);
-    same('Jména na vstupenkách už nelze měnit.', save_ticket_names(row($past), ['BS-3-3' => 'X']), 'run started');
+test('every ticket of a reservation carries the reservation name', function (): void {
+    $r = row(reservation(['BS-3-1', 'BS-3-2'], 'paid', 1, 'Jménová'));
+    same(['Test Jménová', 'Test Jménová'], array_map(static fn ($s) => parse_ticket_code(ticket_code($r, $s))['name'] ?? null, ['BS-3-1', 'BS-3-2']), 'name in the QR codes');
+    same(false, array_key_exists('holder', reservation_payload($r)['tickets'][0]), 'no per-seat name in the payload');
 });
 
 test('the printable PDF holds the tickets of the current seats', function (): void {

@@ -57,8 +57,7 @@ export const createReservation = ({
 /** Printable tickets of a paid reservation (PDF, one ticket per seat). */
 export const ticketsPdfUrl = (token) => `${API_URL}/tickets.php?token=${encodeURIComponent(token)}`;
 
-export const fetchReservation = (token) => request(`reservations.php?token=${encodeURIComponent(token)}`);
+/** Resolves when the discount code can be used; ApiError with the reason otherwise. */
+export const checkDiscountCode = (code) => request(`reservations.php?code=${encodeURIComponent(code)}`);
 
-/** Names on the seat tickets ({seat: name}, '' = the reservation name); returns the reservation. */
-export const saveTicketNames = (token, names) =>
-  request('ticket-names.php', { method: 'POST', body: JSON.stringify({ token, names }) });
+export const fetchReservation = (token) => request(`reservations.php?token=${encodeURIComponent(token)}`);
