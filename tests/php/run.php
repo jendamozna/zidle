@@ -925,6 +925,22 @@ test('errors are written to LOG_DIR/php-error-YYYY-MM.log by the app itself, clo
     @rmdir($dir);
 });
 
+// Runs last: checks every reservation the tests above left behind.
+test('stored totals match the items: amount = current seat prices, first check-in = earliest seat check-in', function (): void {
+    $bad = db_query(
+        'SELECT r.id, r.amount, r.checked_in_at, r.checked_in_by,
+                COALESCE(SUM(CASE WHEN i.cancelled_at IS NULL THEN i.price END), 0) AS items_amount,
+                MIN(i.checked_in_at) AS first_at,
+                (SELECT f.checked_in_by FROM reservation_items f WHERE f.reservation_id = r.id AND f.checked_in_at IS NOT NULL
+                  ORDER BY f.checked_in_at, f.seat_id LIMIT 1) AS first_by
+           FROM reservations r LEFT JOIN reservation_items i ON i.reservation_id = r.id
+          GROUP BY r.id
+         HAVING r.amount <> items_amount OR NOT (r.checked_in_at <=> first_at) OR NOT (r.checked_in_by <=> first_by)'
+    )->fetchAll();
+    same([], $bad, 'reservations whose stored totals differ from their items');
+    same(true, (int) db_query('SELECT COUNT(*) FROM reservations WHERE checked_in_at IS NOT NULL')->fetchColumn() > 0, 'some check-ins were covered');
+});
+
 // ---------------------------------------------------------------------- run
 
 reset_database();

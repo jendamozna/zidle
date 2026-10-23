@@ -1255,7 +1255,7 @@ payment for cancelled and already paid reservations; invalid amount;
 admin cancellation of single seats (full refund, seat freed, foreign seat
 refused) and of a whole paid reservation; cancelling a partly paid pending
 reservation; partial cancellation completing a covered reservation; double
-booking rejected by the primary key; schema constraints refuse inconsistent rows (seat held in another run, unknown run, paid without `paid_at`, cancelled without `cancelled_at`, refunded more than due, free seat with a price, two codes for one seat, deleting a reservation with a used code); GDPR purge keeping contacts while a refund is due and removing the names on the tickets; ticket code
+booking rejected by the primary key; schema constraints refuse inconsistent rows (seat held in another run, unknown run, paid without `paid_at`, cancelled without `cancelled_at`, refunded more than due, free seat with a price, two codes for one seat, deleting a reservation with a used code); a final test checks that every reservation left by the tests has `amount` = sum of its current items' prices and `checked_in_at` / `checked_in_by` = its earliest seat check-in; GDPR purge keeping contacts while a refund is due and removing the names on the tickets; ticket code
 round trip per seat with its kind, tamper detection and one ticket per seat
 in the payload; printable PDF (four tickets per page); ticket names (saved per
 seat, too long / foreign seat refused, '' back to the reservation name, carried
