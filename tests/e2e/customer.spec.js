@@ -19,14 +19,21 @@ async function fillCustomer(form) {
   await form.locator('input[name=email]').fill('jana.testova@example.com');
 }
 
-test('customer books two seats and sees the QR payment; only the admin can cancel', async ({ page, request, browser }) => {
+test('customer books two seats and sees the QR payment; only the admin can cancel', async ({
+  page,
+  request,
+  browser,
+}) => {
   await page.goto('/');
   await page.locator('.run-card', { hasText: 'Premiéra' }).click();
   // The plan is drawn from the layout the server sends.
   const layout = (await (await request.get('/api/seats.php')).json()).layout;
   await expect(page.locator('.plan-hit')).toHaveCount(layout.sections.length);
   // Reserve balcony seats ("Záložní") are shown but not for sale until the admin opens them.
-  const reserve = layout.sections.flatMap((s) => s.rows).filter((r) => r.reserve).reduce((sum, r) => sum + r.seats, 0);
+  const reserve = layout.sections
+    .flatMap((s) => s.rows)
+    .filter((r) => r.reserve)
+    .reduce((sum, r) => sum + r.seats, 0);
   await expect(page.locator('.plan-seat.seat-reserve')).toHaveCount(reserve);
   await expect(page.locator('.level-balcony h2')).toHaveText(layout.levels.balcony);
   await page.locator('.plan-hit').first().click();
@@ -62,7 +69,10 @@ test('customer books two seats and sees the QR payment; only the admin can cance
   const admin = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   await adminLogin(admin);
   admin.once('dialog', (d) => d.accept());
-  await admin.locator('tr', { hasText: reservation.payment.specificSymbol }).getByRole('button', { name: 'Zrušit', exact: true }).click();
+  await admin
+    .locator('tr', { hasText: reservation.payment.specificSymbol })
+    .getByRole('button', { name: 'Zrušit', exact: true })
+    .click();
   await expect(admin.locator('.flash')).toContainText('Rezervace zrušena, místa uvolněna.');
   await page.reload();
   await expect(page.getByText('Rezervace byla zrušena.')).toBeVisible();
@@ -104,10 +114,15 @@ test('child ticket and a discount code: 2 adults + 1 child − 1 adult = 450 Kč
   await again.getByRole('button', { name: 'Použít' }).click();
   await page.waitForTimeout(3200);
   await again.locator('button[type=submit]').click();
-  await expect(again.getByText(`Slevový kód ${seed().codes[0]} neplatí nebo už byl použit.`).first()).toBeVisible({ timeout: 30_000 });
+  await expect(again.getByText(`Slevový kód ${seed().codes[0]} neplatí nebo už byl použit.`).first()).toBeVisible({
+    timeout: 30_000,
+  });
 });
 
-test('a reservation paid by discount codes is confirmed at once with one ticket per seat and a PDF', async ({ page, request }) => {
+test('a reservation paid by discount codes is confirmed at once with one ticket per seat and a PDF', async ({
+  page,
+  request,
+}) => {
   const form = await pickSeats(page, 2);
   await fillCustomer(form);
   for (const code of seed().codes.slice(1, 3)) {

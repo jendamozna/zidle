@@ -6,7 +6,12 @@ import { execFileSync } from 'node:child_process';
 import { decodeTicket } from '../src/scanner/ticket.js';
 
 const php = (code) =>
-  JSON.parse(execFileSync('php', ['-r', code], { encoding: 'utf8', env: { ...process.env, TICKET_SECRET: 'consistency-check-secret-0123456789ab' } }));
+  JSON.parse(
+    execFileSync('php', ['-r', code], {
+      encoding: 'utf8',
+      env: { ...process.env, TICKET_SECRET: 'consistency-check-secret-0123456789ab' },
+    }),
+  );
 
 let failed = 0;
 const check = (ok, message) => {
@@ -15,8 +20,16 @@ const check = (ok, message) => {
 };
 
 const reservation = {
-  id: 42, specific_symbol: '1234567890', seat_count: 2, first_name: 'Jana', last_name: 'Nováková',
-  seats: 'ML-1-1,ML-1-2', child_seats: 'ML-1-2', free_seats: '', adult_price: 300, child_price: 150,
+  id: 42,
+  specific_symbol: '1234567890',
+  seat_count: 2,
+  first_name: 'Jana',
+  last_name: 'Nováková',
+  seats: 'ML-1-1,ML-1-2',
+  child_seats: 'ML-1-2',
+  free_seats: '',
+  adult_price: 300,
+  child_price: 150,
   ticket_names: JSON.stringify({ 'ML-1-2': 'Petr Novák' }),
 };
 const codes = php(
@@ -25,7 +38,10 @@ const codes = php(
 );
 const [adult, child] = codes.map(decodeTicket);
 check(
-  adult?.id === 42 && adult.specificSymbol === '1234567890' && adult.seat === 'ML-1-1' && adult.kind === 'adult' &&
+  adult?.id === 42 &&
+    adult.specificSymbol === '1234567890' &&
+    adult.seat === 'ML-1-1' &&
+    adult.kind === 'adult' &&
     adult.name === 'Jana Nováková',
   `adult seat ticket from PHP decoded by the scanner: ${codes[0]}`,
 );

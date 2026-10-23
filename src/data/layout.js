@@ -37,7 +37,9 @@ export function parseSeatId(id) {
 }
 
 export function sectionSeatIds(section) {
-  return section.rows.flatMap((row, r) => Array.from({ length: row.seats }, (_, i) => seatId(section.id, r + 1, i + 1)));
+  return section.rows.flatMap((row, r) =>
+    Array.from({ length: row.seats }, (_, i) => seatId(section.id, r + 1, i + 1)),
+  );
 }
 
 /** Seats of the section with their plan position: [{id, row, seat, reserve, x, y}]. */
@@ -83,5 +85,4 @@ export function occupancyLevel(pct) {
   return 'low';
 }
 
-export const formatCzk = (amount) =>
-  `${new Intl.NumberFormat('cs-CZ').format(amount)} Kč`;
+export const formatCzk = (amount) => `${new Intl.NumberFormat('cs-CZ').format(amount)} Kč`;

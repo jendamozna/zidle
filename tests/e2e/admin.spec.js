@@ -19,7 +19,10 @@ test('accountant records a partial payment and then the rest', async ({ page }) 
   await expect(row.locator('.badge')).toHaveText('Zaplaceno');
 });
 
-test('admin invites an accountant, who sets a password, sees only reservations and signs in with the e-mail', async ({ page, browser }) => {
+test('admin invites an accountant, who sets a password, sees only reservations and signs in with the e-mail', async ({
+  page,
+  browser,
+}) => {
   await adminLogin(page);
   await page.goto('http://127.0.0.1:8000/api/admin.php?view=users');
   await page.fill('input[name=email]', 'jana.ucetni@example.cz');
@@ -42,7 +45,9 @@ test('admin invites an accountant, who sets a password, sees only reservations a
   await jana.fill('input[name=password]', 'janino-heslo-1');
   await jana.fill('input[name=password_again]', 'janino-heslo-1');
   await jana.getByRole('button', { name: 'Uložit heslo a přihlásit' }).click();
-  await expect(jana.locator('.flash')).toContainText('Vítejte. Heslo je nastavené, příště se přihlásíte e-mailem jana.ucetni@example.cz.');
+  await expect(jana.locator('.flash')).toContainText(
+    'Vítejte. Heslo je nastavené, příště se přihlásíte e-mailem jana.ucetni@example.cz.',
+  );
   await expect(jana.locator('.me')).toContainText('jana.ucetni@example.cz');
   await expect(jana.locator('.tabs a')).toHaveText(['Rezervace']);
   await jana.goto('http://127.0.0.1:8000/api/admin.php?view=users');
@@ -87,7 +92,9 @@ test('admin sends discount codes to e-mails and revokes an unused one', async ({
   page.once('dialog', (dialog) => dialog.accept());
   await rows.first().getByRole('button', { name: 'Zrušit' }).click();
   await expect(page.locator('.flash')).toContainText('Kód zrušen');
-  await expect(page.locator('tr', { hasText: 'rodina@example.com' }).locator('.badge', { hasText: 'Zrušený' })).toHaveCount(1);
+  await expect(
+    page.locator('tr', { hasText: 'rodina@example.com' }).locator('.badge', { hasText: 'Zrušený' }),
+  ).toHaveCount(1);
 });
 
 test('admin sets a shorter payment deadline for reservations from a date', async ({ page, request }) => {
@@ -132,7 +139,9 @@ test('forgotten password: the login page sends a link without telling whether th
   await page.getByRole('link', { name: 'Zapomněl jsem heslo' }).click();
   await page.fill('input[name=email]', 'nikdo@example.cz');
   await page.getByRole('button', { name: 'Poslat odkaz' }).click();
-  await expect(page.locator('.login')).toContainText('Pokud e-mail u nás má účet, poslali jsme na něj odkaz na nové heslo.');
+  await expect(page.locator('.login')).toContainText(
+    'Pokud e-mail u nás má účet, poslali jsme na něj odkaz na nové heslo.',
+  );
   await page.goto('http://127.0.0.1:8000/api/admin.php?heslo=' + 'a'.repeat(48));
   await expect(page.locator('.error')).toHaveText('Odkaz neplatí nebo vypršel. Požádejte o nový.');
 });

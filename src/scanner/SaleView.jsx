@@ -16,7 +16,9 @@ const shortSeat = (id) => {
 function SalePayment({ sale, busy, onPaid, onCancel }) {
   const [qr, setQr] = useState(null);
   useEffect(() => {
-    QRCode.toDataURL(sale.spd, { width: 560, margin: 1, errorCorrectionLevel: 'M' }).then(setQr).catch(() => setQr(null));
+    QRCode.toDataURL(sale.spd, { width: 560, margin: 1, errorCorrectionLevel: 'M' })
+      .then(setQr)
+      .catch(() => setQr(null));
   }, [sale.spd]);
   return (
     <section className="sale-pay">
@@ -61,7 +63,8 @@ export default function SaleView({ runId, onUnauthorized }) {
   const fail = useCallback(
     (err) => {
       if (err.status === 401) onUnauthorized();
-      else setError(err.offline ? 'Prodej na místě potřebuje internet. Zkuste to znovu, až bude spojení.' : err.message);
+      else
+        setError(err.offline ? 'Prodej na místě potřebuje internet. Zkuste to znovu, až bude spojení.' : err.message);
     },
     [onUnauthorized],
   );
@@ -141,13 +144,15 @@ export default function SaleView({ runId, onUnauthorized }) {
       </div>
     );
   }
-  if (!info) return <div className="sale">{error ? <p className="form-error">{error}</p> : <p className="muted">Načítám…</p>}</div>;
+  if (!info)
+    return (
+      <div className="sale">{error ? <p className="form-error">{error}</p> : <p className="muted">Načítám…</p>}</div>
+    );
 
   const section = SECTIONS.find((s) => s.id === sectionId) ?? null;
   // "Záložní" seats: not for sale in this run.
   const closed = new Set(info.reserveSeats);
-  const free = (s) =>
-    capacity(s) - [...info.taken, ...closed].filter((id) => id.startsWith(`${s.id}-`)).length;
+  const free = (s) => capacity(s) - [...info.taken, ...closed].filter((id) => id.startsWith(`${s.id}-`)).length;
   const seatState = (id) =>
     selected.has(id) ? 'selected' : info.taken.has(id) ? 'taken' : closed.has(id) ? 'reserve' : 'available';
   const prices = priceSeats([...selected], children, 0, info.price, info.childPrice);
@@ -187,7 +192,13 @@ export default function SaleView({ runId, onUnauthorized }) {
             </span>
             <output className="stepper-fixed">{selected.size - children}</output>
           </div>
-          <Stepper label="Děti 4–17 let" hint={formatCzk(info.childPrice)} value={children} max={selected.size} onChange={setChildren} />
+          <Stepper
+            label="Děti 4–17 let"
+            hint={formatCzk(info.childPrice)}
+            value={children}
+            max={selected.size}
+            onChange={setChildren}
+          />
           <button type="button" className="btn btn-primary btn-block btn-large" disabled={busy} onClick={create}>
             QR platba {formatCzk(prices.total)} · {seatsLabel(selected.size)}
           </button>

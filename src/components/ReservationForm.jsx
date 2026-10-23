@@ -16,7 +16,15 @@ function validate(values) {
   return errors;
 }
 
-export default function ReservationForm({ stats, deadlineHours, run, dataRetentionDays, submitting, onSubmit, onClose }) {
+export default function ReservationForm({
+  stats,
+  deadlineHours,
+  run,
+  dataRetentionDays,
+  submitting,
+  onSubmit,
+  onClose,
+}) {
   const [values, setValues] = useState({ firstName: '', lastName: '', email: '', hp: '' });
   const [children, setChildren] = useState(0);
   const [codes, setCodes] = useState([]);
@@ -167,7 +175,12 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
               spellCheck={false}
               disabled={submitting}
             />
-            <button type="button" className="btn btn-ghost" onClick={addCode} disabled={submitting || !codeInput.trim()}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={addCode}
+              disabled={submitting || !codeInput.trim()}
+            >
               Použít
             </button>
           </div>
@@ -216,14 +229,22 @@ export default function ReservationForm({ stats, deadlineHours, run, dataRetenti
         <div className="modal-notes">
           {deadlineHours && prices.total > 0 ? <p>Zaplaťte do {deadlineHours} hodin, jinak se místa uvolní.</p> : null}
           <p>Vstupenky přijdou e-mailem, na každé místo jedna.</p>
-          <p>
-            Jméno a e-mail smažeme{dataRetentionDays ? ` ${dataRetentionDays} dnů` : ''} po posledním představení.
-          </p>
+          <p>Jméno a e-mail smažeme{dataRetentionDays ? ` ${dataRetentionDays} dnů` : ''} po posledním představení.</p>
         </div>
-        {formError && <p className="form-error" role="alert">{formError}</p>}
+        {formError && (
+          <p className="form-error" role="alert">
+            {formError}
+          </p>
+        )}
 
         <button type="submit" className="btn btn-primary btn-block" disabled={submitting || verifying}>
-          {verifying ? 'Ověřuji…' : submitting ? 'Rezervuji…' : prices.total > 0 ? 'Rezervovat a zaplatit' : 'Rezervovat zdarma'}
+          {verifying
+            ? 'Ověřuji…'
+            : submitting
+              ? 'Rezervuji…'
+              : prices.total > 0
+                ? 'Rezervovat a zaplatit'
+                : 'Rezervovat zdarma'}
         </button>
       </form>
     </div>

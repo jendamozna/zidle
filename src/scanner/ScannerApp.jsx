@@ -4,7 +4,15 @@ import { seatsLabel } from '../plural.js';
 import { KIND_LABELS } from '../pricing.js';
 import { decodeTicket } from './ticket.js';
 import { adminUrl, getSession, login, logout, verifyTicket } from './api.js';
-import { STALE_MS, cachedSession, clearOffline, getQueue, markTicketCheckedIn, saveSession, verifyOffline } from './offline.js';
+import {
+  STALE_MS,
+  cachedSession,
+  clearOffline,
+  getQueue,
+  markTicketCheckedIn,
+  saveSession,
+  verifyOffline,
+} from './offline.js';
 import { useOffline } from './useOffline.js';
 import { useQrCamera } from './useQrCamera.js';
 import SaleView from './SaleView.jsx';
@@ -14,7 +22,9 @@ const RUN_KEY = 'zidle-scanner-run';
 
 const inWindow = (run, now) => now >= new Date(run.scanFrom).getTime() && now <= new Date(run.scanTo).getTime();
 const clock = (iso) =>
-  new Intl.DateTimeFormat('cs-CZ', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Prague' }).format(new Date(iso));
+  new Intl.DateTimeFormat('cs-CZ', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Prague' }).format(
+    new Date(iso),
+  );
 
 /**
  * Run to check in by default: the run whose check-in window is open now;
@@ -51,7 +61,11 @@ function WindowWarning({ run, openRun, onSwitch, onConfirm }) {
           Přepnout na probíhající {runLabel(openRun)}
         </button>
       )}
-      <button type="button" className={`btn btn-block ${openRun ? 'btn-ghost' : 'btn-primary btn-large'}`} onClick={onConfirm}>
+      <button
+        type="button"
+        className={`btn btn-block ${openRun ? 'btn-ghost' : 'btn-primary btn-large'}`}
+        onClick={onConfirm}
+      >
         Přesto odbavovat tento termín
       </button>
     </section>
@@ -179,7 +193,9 @@ function ResultCard({ scan, onNext }) {
           {ticket.reservedBy && ticket.reservedBy !== ticket.name && (
             <p className="muted small">Rezervace: {ticket.reservedBy}</p>
           )}
-          {result === 'seat_cancelled' && <p className="small">Toto místo bylo z rezervace zrušeno, ostatní místa platí.</p>}
+          {result === 'seat_cancelled' && (
+            <p className="small">Toto místo bylo z rezervace zrušeno, ostatní místa platí.</p>
+          )}
           {result === 'unknown' && (
             <p className="small">Vstupenka není v seznamu tohoto termínu – může být na jiný termín, nebo neplatná.</p>
           )}
@@ -205,7 +221,12 @@ function ResultCard({ scan, onNext }) {
         </p>
       )}
 
-      <button type="button" className="btn btn-primary btn-block btn-large" onClick={onNext} disabled={result === 'checking'}>
+      <button
+        type="button"
+        className="btn btn-primary btn-block btn-large"
+        onClick={onNext}
+        disabled={result === 'checking'}
+      >
         Skenovat další
       </button>
     </section>
@@ -228,7 +249,10 @@ function OfflineStrip({ offline }) {
     if (pending) text += ` · k odeslání: ${pending}`;
   }
   return (
-    <p className={`offline-strip ${online ? 'is-online' : ''} ${!online && (!snapshot || stale) ? 'is-bad' : ''}`} role="status">
+    <p
+      className={`offline-strip ${online ? 'is-online' : ''} ${!online && (!snapshot || stale) ? 'is-bad' : ''}`}
+      role="status"
+    >
       {text}
     </p>
   );
@@ -299,7 +323,12 @@ function Scanner({ runs, name, admin, onLogout, onUnauthorized }) {
         fail(err);
         const res = verifyOffline(decoded, snapshot, getQueue());
         if (res.result === 'valid') {
-          enqueue({ type: 'ticket', id: res.ticket.id, specificSymbol: res.ticket.specificSymbol, seat: res.ticket.seat });
+          enqueue({
+            type: 'ticket',
+            id: res.ticket.id,
+            specificSymbol: res.ticket.specificSymbol,
+            seat: res.ticket.seat,
+          });
         }
         setScan({ raw, ...res, offlineAt: snapshot.at });
       }
@@ -445,7 +474,10 @@ export default function ScannerApp() {
 
   const handleLogout = useCallback(() => {
     const pending = getQueue().length;
-    if (pending && !window.confirm(`${pending} odbavení bez spojení ještě nebylo odesláno. Odhlášením se ztratí. Přesto odhlásit?`)) {
+    if (
+      pending &&
+      !window.confirm(`${pending} odbavení bez spojení ještě nebylo odesláno. Odhlášením se ztratí. Přesto odhlásit?`)
+    ) {
       return;
     }
     clearOffline();
@@ -477,6 +509,12 @@ export default function ScannerApp() {
     );
   }
   return (
-    <Scanner runs={info.runs} name={info.name} admin={info.admin} onLogout={handleLogout} onUnauthorized={handleUnauthorized} />
+    <Scanner
+      runs={info.runs}
+      name={info.name}
+      admin={info.admin}
+      onLogout={handleLogout}
+      onUnauthorized={handleUnauthorized}
+    />
   );
 }

@@ -293,16 +293,16 @@ x2, y2}]}]}]}`
   one); `seatPositions(section)` and `seatSpacing(section)` derive the seat
   positions:
 
-  | Id  | Name (short)                                                                                      | Level   | Seats per row (row 1 first)                                                                                          | Capacity             |
+  | Id | Name (short) | Level | Seats per row (row 1 first) | Capacity |
   | --- | ------------------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------- | -------------------- | --------------- |
-  | WL  | Levé křídlo (L. křídlo) – just below the band, its name above the band level with the other names | main    | 5, 5, 5, 5                                                                                                           | 20                   |
-  | ML  | Levá hlavní (L. hlavní) – a narrow aisle to MR                                                    | main    | 9 × 8                                                                                                                | 72                   |
-  | MR  | Pravá hlavní (P. hlavní)                                                                          | main    | 9 × 8                                                                                                                | 72                   |
-  | WR  | Pravé křídlo (P. křídlo)                                                                          | main    | 4, 4, 4, 5, 5, 5, 4 (the last row set apart)                                                                         | 31                   |
-  | BL  | Balkon vlevo (Balkon L)                                                                           | balcony | 12 (bench along the railing, seats 1–5 and 6–12 split by a gap); reserve rows 2–4: 11, 11, 6 (rows 2 and 3 split 1–5 | 6–11 like the bench) | 40 (28 reserve) |
-  | BC  | Balkon střed (Balkon S)                                                                           | balcony | 7, 14, 14, 7, 7 (rows 4–5 shifted by 5 seats)                                                                        | 49                   |
-  | BR  | Balkon vpravo (Balkon P)                                                                          | balcony | 11 (bench along the railing, seats 1–6 and 7–11 split by a gap, mirroring the left part); reserve rows 2–3: 3, 3     | 17 (6 reserve)       |
-  |     | total (main 195, balcony 106)                                                                     |         |                                                                                                                      | 301                  |
+  | WL | Levé křídlo (L. křídlo) – just below the band, its name above the band level with the other names | main | 5, 5, 5, 5 | 20 |
+  | ML | Levá hlavní (L. hlavní) – a narrow aisle to MR | main | 9 × 8 | 72 |
+  | MR | Pravá hlavní (P. hlavní) | main | 9 × 8 | 72 |
+  | WR | Pravé křídlo (P. křídlo) | main | 4, 4, 4, 5, 5, 5, 4 (the last row set apart) | 31 |
+  | BL | Balkon vlevo (Balkon L) | balcony | 12 (bench along the railing, seats 1–5 and 6–12 split by a gap); reserve rows 2–4: 11, 11, 6 (rows 2 and 3 split 1–5 | 6–11 like the bench) | 40 (28 reserve) |
+  | BC | Balkon střed (Balkon S) | balcony | 7, 14, 14, 7, 7 (rows 4–5 shifted by 5 seats) | 49 |
+  | BR | Balkon vpravo (Balkon P) | balcony | 11 (bench along the railing, seats 1–6 and 7–11 split by a gap, mirroring the left part); reserve rows 2–3: 3, 3 | 17 (6 reserve) |
+  | | total (main 195, balcony 106) | | | 301 |
 
   Seat id `SECTION-ROW-SEAT`, e.g. `ML-1-1`, `BC-2-14`; `is_valid_seat_id()`
   accepts only this exact form (no leading zeros, nothing after it – one chair
@@ -466,21 +466,21 @@ deletes `reservation_seats` of `expired`/`cancelled` reservations.
 
 **Create** (`POST reservations.php`), checks in order:
 
-| Check                                                                                                                                                                              | Response                                                                                                                                                              |
+| Check | Response |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `BANK_IBAN` set                                                                                                                                                                    | 503 `Platby nejsou nastaveny (BANK_IBAN).`                                                                                                                            |
-| run exists                                                                                                                                                                         | 422 `Vyberte termín.`                                                                                                                                                 |
-| `run_booking_open()`                                                                                                                                                               | 403 `Rezervace na tento termín jsou uzavřeny.`                                                                                                                        |
-| honeypot empty, form token valid                                                                                                                                                   | 400 `Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.`                                                                                             |
-| ALTCHA payload valid and unused (if `ALTCHA_ENABLED`)                                                                                                                              | 400 `Ověření proti robotům se nezdařilo. Zkuste to prosím znovu.` + `code: "altcha"`                                                                                  |
-| names (after `clean_name()`: line breaks, control and invisible format characters, `                                                                                               | ` → one space), e-mail, 1–20 valid unique seats                                                                                                                       | 422 `Zkontrolujte zadané údaje.` / seat message, `fields` |
-| `children` integer 0…seats                                                                                                                                                         | 422 `Dětských vstupenek může být nejvýše tolik, kolik je míst.`                                                                                                       |
-| `codes` array, ≤ seats, each once, 8 chars of the code alphabet (after `normalize_discount_code()`)                                                                                | 422 `Slevových kódů může být nejvýše tolik, kolik je míst.` / `Každý slevový kód lze zadat jen jednou.` / `Slevový kód X neplatí nebo už byl použit.` (field `codes`) |
-| seats of the IP within `SEATS_PER_IP_PER_HOUR` and `SEATS_PER_IP_PER_DAY` (`seat_quota_take()`; a refused request counts nothing, a booking that fails later gives the seats back) | 429 `Z tohoto zařízení už bylo rezervováno příliš mnoho míst. Zkuste to prosím později.`                                                                              |
-| < 2 pending for the e-mail in this run (not for a reservation costing 0 or an on-site sale)                                                                                        | 429 `Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.`                                                                |
-| no „Záložní“ seat (`seat_closed_in_run()`)                                                                                                                                         | 409 `Některá místa zatím nejsou v prodeji.` + `conflict`                                                                                                              |
-| seats free in the run (`FOR UPDATE`; duplicate key fallback; a deadlock of simultaneous bookings, SQLSTATE 40001, retries the transaction up to 3 times)                           | 409 `Některá místa už mezitím někdo rezervoval.` + `conflict`                                                                                                         |
-| every code exists, unused, not revoked (`lock_discount_codes()`, `FOR UPDATE`)                                                                                                     | 422 `Slevový kód XXXX-XXXX neplatí nebo už byl použit.` + `fields.codes`                                                                                              |
+| `BANK_IBAN` set | 503 `Platby nejsou nastaveny (BANK_IBAN).` |
+| run exists | 422 `Vyberte termín.` |
+| `run_booking_open()` | 403 `Rezervace na tento termín jsou uzavřeny.` |
+| honeypot empty, form token valid | 400 `Rezervaci se nepodařilo odeslat. Obnovte stránku a zkuste to znovu.` |
+| ALTCHA payload valid and unused (if `ALTCHA_ENABLED`) | 400 `Ověření proti robotům se nezdařilo. Zkuste to prosím znovu.` + `code: "altcha"` |
+| names (after `clean_name()`: line breaks, control and invisible format characters, `                                                                                              |` → one space), e-mail, 1–20 valid unique seats | 422 `Zkontrolujte zadané údaje.` / seat message, `fields` |
+| `children` integer 0…seats | 422 `Dětských vstupenek může být nejvýše tolik, kolik je míst.` |
+| `codes` array, ≤ seats, each once, 8 chars of the code alphabet (after `normalize_discount_code()`) | 422 `Slevových kódů může být nejvýše tolik, kolik je míst.` / `Každý slevový kód lze zadat jen jednou.` / `Slevový kód X neplatí nebo už byl použit.` (field `codes`) |
+| seats of the IP within `SEATS_PER_IP_PER_HOUR` and `SEATS_PER_IP_PER_DAY` (`seat_quota_take()`; a refused request counts nothing, a booking that fails later gives the seats back) | 429 `Z tohoto zařízení už bylo rezervováno příliš mnoho míst. Zkuste to prosím později.` |
+| < 2 pending for the e-mail in this run (not for a reservation costing 0 or an on-site sale) | 429 `Na tento e-mail už na toto představení čekají nezaplacené rezervace. Nejdříve je prosím uhraďte.` |
+| no „Záložní“ seat (`seat_closed_in_run()`) | 409 `Některá místa zatím nejsou v prodeji.` + `conflict` |
+| seats free in the run (`FOR UPDATE`; duplicate key fallback; a deadlock of simultaneous bookings, SQLSTATE 40001, retries the transaction up to 3 times) | 409 `Některá místa už mezitím někdo rezervoval.` + `conflict` |
+| every code exists, unused, not revoked (`lock_discount_codes()`, `FOR UPDATE`) | 422 `Slevový kód XXXX-XXXX neplatí nebo už byl použit.` + `fields.codes` |
 
 The last three checks and the rest are `book_reservation()`
 (`lib/booking.php`). Prices: seats sorted, the last `children` seats are

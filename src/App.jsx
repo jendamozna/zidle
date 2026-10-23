@@ -52,7 +52,8 @@ export default function App() {
   }, [runId, seats.runs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chooseRun = (id) => {
-    if (id !== runId && stats.selectedCount && !window.confirm('Změnou termínu se zruší vybraná místa. Pokračovat?')) return;
+    if (id !== runId && stats.selectedCount && !window.confirm('Změnou termínu se zruší vybraná místa. Pokračovat?'))
+      return;
     setSectionId(null);
     setRunId(id);
     setParam('termin', id);
@@ -104,7 +105,8 @@ export default function App() {
 
   let view;
   if (!seats.layoutReady) view = <p className="muted plan-loading">{seats.loadError ? '' : 'Načítám…'}</p>;
-  else if (reservation) view = <PaymentView reservation={reservation} onChange={setReservation} onBack={closePayment} />;
+  else if (reservation)
+    view = <PaymentView reservation={reservation} onChange={setReservation} onBack={closePayment} />;
   else if (choosing) view = <RunPicker runs={seats.runs} onSelect={chooseRun} />;
   else if (section) view = <SectionDetail section={section} seats={seats} onBack={() => setSectionId(null)} />;
   else view = <Overview stats={stats} seatState={seats.seatState} loading={seats.loading} onOpen={setSectionId} />;

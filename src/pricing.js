@@ -9,7 +9,10 @@ export const KIND_LABELS = { adult: 'Dospělý', child: 'Dítě 4–17 let' };
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 /** "abcd efgh" → "ABCDEFGH" */
-export const normalizeCode = (input) => String(input).toUpperCase().replace(/[^A-Z0-9]/g, '');
+export const normalizeCode = (input) =>
+  String(input)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
 
 /** "ABCDEFGH" → "ABCD-EFGH" */
 export const formatCode = (code) => `${code.slice(0, 4)}-${code.slice(4)}`;

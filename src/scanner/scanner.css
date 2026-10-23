@@ -362,7 +362,7 @@
     box-shadow 0.2s;
 }
 
-.mode-switch button[aria-selected="true"] {
+.mode-switch button[aria-selected='true'] {
   background: var(--surface);
   color: var(--ink);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);

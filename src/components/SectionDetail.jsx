@@ -25,15 +25,19 @@ export default function SectionDetail({ section, seats, onBack }) {
       </div>
 
       <div className="seatmap-card">
-        <div className={`stage-dir ${isBalcony ? 'is-balcony' : ''}`}>
-          {isBalcony ? '↑ Směr k pódiu' : 'Pódium'}
-        </div>
+        <div className={`stage-dir ${isBalcony ? 'is-balcony' : ''}`}>{isBalcony ? '↑ Směr k pódiu' : 'Pódium'}</div>
         <SeatPlan section={section} seatState={seats.seatState} onToggle={seats.toggleSeat} />
         {!isBalcony && <div className="back-dir">↓ Vchod</div>}
         <div className="legend">
-          <span><i className="seat-dot seat-available" /> Volné</span>
-          <span><i className="seat-dot seat-selected" /> Moje</span>
-          <span><i className="seat-dot seat-taken" /> Obsazené</span>
+          <span>
+            <i className="seat-dot seat-available" /> Volné
+          </span>
+          <span>
+            <i className="seat-dot seat-selected" /> Moje
+          </span>
+          <span>
+            <i className="seat-dot seat-taken" /> Obsazené
+          </span>
           {hasReserve && (
             <span>
               <i className="seat-dot seat-reserve" /> Záložní

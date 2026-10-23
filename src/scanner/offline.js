@@ -45,7 +45,9 @@ export function saveSession(session) {
   update((data) => {
     data.session = { name: session.name, admin: session.admin, runs: session.runs, layout: session.layout };
     const keep = new Set(
-      session.runs.filter((r) => new Date(r.scanTo).getTime() + KEEP_AFTER_RUN_MS > Date.now()).map((r) => String(r.id)),
+      session.runs
+        .filter((r) => new Date(r.scanTo).getTime() + KEEP_AFTER_RUN_MS > Date.now())
+        .map((r) => String(r.id)),
     );
     for (const runId of Object.keys(data.snapshots)) {
       if (!keep.has(runId)) delete data.snapshots[runId];
@@ -65,14 +67,19 @@ export function saveSnapshot(snapshot) {
 export function markTicketCheckedIn(runId, id, seat, checkedInAt) {
   update((data) => {
     const ticket = data.snapshots[runId]?.tickets.find((t) => t.id === id);
-    if (ticket && !ticket.checkedIn?.[seat]) ticket.checkedIn = { ...ticket.checkedIn, [seat]: { at: checkedInAt, by: null } };
+    if (ticket && !ticket.checkedIn?.[seat])
+      ticket.checkedIn = { ...ticket.checkedIn, [seat]: { at: checkedInAt, by: null } };
   });
 }
 
 export const getQueue = () => load().queue;
 
 export function enqueue(event) {
-  const full = { uid: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, at: new Date().toISOString(), ...event };
+  const full = {
+    uid: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    at: new Date().toISOString(),
+    ...event,
+  };
   update((data) => {
     data.queue.push(full);
   });
@@ -111,7 +118,11 @@ export function verifyOffline(decoded, snapshot, queue) {
     id: found.id,
     specificSymbol: found.specificSymbol,
     seat: decoded.seat,
-    kind: found.childSeats?.includes(decoded.seat) ? 'child' : found.seats.includes(decoded.seat) ? 'adult' : decoded.kind,
+    kind: found.childSeats?.includes(decoded.seat)
+      ? 'child'
+      : found.seats.includes(decoded.seat)
+        ? 'adult'
+        : decoded.kind,
     name: found.ticketNames?.[decoded.seat] || found.name || decoded.name,
     reservedBy: found.name,
     seats: found.seats,

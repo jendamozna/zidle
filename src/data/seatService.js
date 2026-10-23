@@ -37,7 +37,17 @@ export const fetchSeats = (runId) => request(runId ? `seats.php?run=${encodeURIC
 // altcha is the invisible ALTCHA payload (src/altcha.js). children = number of child seats (4–17 years),
 // infants = children up to 3 years on a lap, codes = discount codes.
 export const createReservation = ({
-  runId, firstName, lastName, email, seats, children = 0, infants = 0, codes = [], formToken, hp = '', altcha = '',
+  runId,
+  firstName,
+  lastName,
+  email,
+  seats,
+  children = 0,
+  infants = 0,
+  codes = [],
+  formToken,
+  hp = '',
+  altcha = '',
 }) =>
   request('reservations.php', {
     method: 'POST',
@@ -52,4 +62,3 @@ export const fetchReservation = (token) => request(`reservations.php?token=${enc
 /** Names on the seat tickets ({seat: name}, '' = the reservation name); returns the reservation. */
 export const saveTicketNames = (token, names) =>
   request('ticket-names.php', { method: 'POST', body: JSON.stringify({ token, names }) });
-

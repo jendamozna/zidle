@@ -8,30 +8,35 @@ import { SCANNER, adminLogin, seed } from './helpers.js';
  */
 async function fakeCamera(page, text, hidden = false) {
   const dataUrl = await QRCode.toDataURL(text, { width: 480, margin: 4 });
-  await page.addInitScript(({ src, hidden }) => {
-    window.__showQr = !hidden;
-    navigator.mediaDevices.getUserMedia = async () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-      img.src = src;
-      await img.decode();
-      const draw = () => {
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, 640, 480);
-        if (window.__showQr) ctx.drawImage(img, 80, 0, 480, 480);
-        requestAnimationFrame(draw);
+  await page.addInitScript(
+    ({ src, hidden }) => {
+      window.__showQr = !hidden;
+      navigator.mediaDevices.getUserMedia = async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.src = src;
+        await img.decode();
+        const draw = () => {
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, 640, 480);
+          if (window.__showQr) ctx.drawImage(img, 80, 0, 480, 480);
+          requestAnimationFrame(draw);
+        };
+        draw();
+        return canvas.captureStream(15);
       };
-      draw();
-      return canvas.captureStream(15);
-    };
-  }, { src: dataUrl, hidden });
+    },
+    { src: dataUrl, hidden },
+  );
 }
 
 const snapshotLoaded = (page) =>
-  page.waitForResponse((r) => r.url().includes('organizer.php') && (r.request().postData() ?? '').includes('"snapshot"'));
+  page.waitForResponse(
+    (r) => r.url().includes('organizer.php') && (r.request().postData() ?? '').includes('"snapshot"'),
+  );
 
 async function login(page) {
   await page.goto('/scanner.html');
@@ -73,7 +78,9 @@ test('without a connection the scanner checks tickets against the downloaded lis
   await context.setOffline(false);
   await expect(page.locator('.offline-strip')).toContainText('Odesláno 1 odbavení bez spojení.', { timeout: 20_000 });
 
-  const snapshot = await (await page.request.post('/api/organizer.php', { data: { action: 'snapshot', runId: 2 } })).json();
+  const snapshot = await (
+    await page.request.post('/api/organizer.php', { data: { action: 'snapshot', runId: 2 } })
+  ).json();
   expect(snapshot.tickets.find((t) => t.name === 'Test Offline').checkedIn['BC-2-1'].by).toContain('(offline)');
 });
 
@@ -82,7 +89,8 @@ test('the scanner opens without a connection after it was used online once', asy
   await expect(page.locator('.run-select select')).toBeVisible();
   await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
-    if (!navigator.serviceWorker.controller) await new Promise((r) => navigator.serviceWorker.addEventListener('controllerchange', r));
+    if (!navigator.serviceWorker.controller)
+      await new Promise((r) => navigator.serviceWorker.addEventListener('controllerchange', r));
     return registration.active?.state;
   });
 
@@ -110,7 +118,10 @@ test('organizer sells free seats at the entrance: QR payment, then the seats are
   await expect(page.getByRole('button', { name: /Řada 4, místo 5/ })).toBeDisabled();
 });
 
-test('an invited Odbavovatel lands in the scanner; without an assigned run it asks for one, then checks in only that run', async ({ page, browser }) => {
+test('an invited Odbavovatel lands in the scanner; without an assigned run it asks for one, then checks in only that run', async ({
+  page,
+  browser,
+}) => {
   const admin = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   await adminLogin(admin);
   await admin.goto('http://127.0.0.1:8000/api/admin.php?view=users');

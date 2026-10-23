@@ -100,9 +100,7 @@ export function useSeats(runId) {
   );
 
   const stats = useMemo(() => {
-    const bySection = Object.fromEntries(
-      SECTIONS.map((s) => [s.id, { capacity: capacity(s), taken: 0, mine: [] }]),
-    );
+    const bySection = Object.fromEntries(SECTIONS.map((s) => [s.id, { capacity: capacity(s), taken: 0, mine: [] }]));
     for (const id of closedSeats) bySection[parseSeatId(id).sectionId].capacity -= 1;
     for (const id of taken) {
       const section = bySection[parseSeatId(id).sectionId];

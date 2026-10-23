@@ -87,9 +87,7 @@ function CancellationInfo({ reservation }) {
         <strong>Zrušená místa: {cancelledSeats.map(seatLabel).join(', ')}</strong>
       )}
       {refundedAmount > 0 && <span>Vráceno {formatCzk(refundedAmount)}.</span>}
-      {due > 0 && (
-        <span>Částku {formatCzk(due)} pošleme zpět na účet, ze kterého platba přišla.</span>
-      )}
+      {due > 0 && <span>Částku {formatCzk(due)} pošleme zpět na účet, ze kterého platba přišla.</span>}
     </div>
   );
 }
@@ -102,7 +100,12 @@ function useQrImage(text, width) {
       setQr(null);
       return;
     }
-    QRCode.toDataURL(text, { width, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#2b2620', light: '#ffffff' } })
+    QRCode.toDataURL(text, {
+      width,
+      margin: 1,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#2b2620', light: '#ffffff' },
+    })
       .then(setQr)
       .catch(() => setQr(null));
   }, [text, width]);
@@ -114,7 +117,11 @@ function TicketCard({ ticket }) {
   const { sectionId, row, seat } = parseSeatId(ticket.seat);
   return (
     <li className={`ticket-card ${ticket.checkedInAt ? 'is-used' : ''}`}>
-      {qr ? <img src={qr} alt={`QR kód vstupenky ${ticket.seat}`} width="200" height="200" /> : <div className="qr-placeholder" />}
+      {qr ? (
+        <img src={qr} alt={`QR kód vstupenky ${ticket.seat}`} width="200" height="200" />
+      ) : (
+        <div className="qr-placeholder" />
+      )}
       <div>
         {ticket.holder && <span className="ticket-holder">{ticket.holder}</span>}
         <strong>{SECTION_BY_ID[sectionId]?.short ?? sectionId}</strong>
@@ -278,7 +285,11 @@ export default function PaymentView({ reservation, onChange, onBack }) {
       <div className="payment">
         {isPending && (
           <div className="payment-qr">
-            {qr ? <img src={qr} alt="QR kód pro platbu" width="260" height="260" /> : <div className="qr-placeholder" />}
+            {qr ? (
+              <img src={qr} alt="QR kód pro platbu" width="260" height="260" />
+            ) : (
+              <div className="qr-placeholder" />
+            )}
             <span className="muted">QR Platba</span>
           </div>
         )}
@@ -304,19 +315,20 @@ export default function PaymentView({ reservation, onChange, onBack }) {
               </dl>
               {payment.received > 0 && (
                 <p className="deadline">
-                  Už jsme přijali <strong>{formatCzk(payment.received)}</strong> z {formatCzk(reservation.amount)}. Doplaťte
-                  prosím zbývajících <strong>{formatCzk(payment.amount)}</strong> se stejným variabilním a specifickým symbolem.
+                  Už jsme přijali <strong>{formatCzk(payment.received)}</strong> z {formatCzk(reservation.amount)}.
+                  Doplaťte prosím zbývajících <strong>{formatCzk(payment.amount)}</strong> se stejným variabilním a
+                  specifickým symbolem.
                 </p>
               )}
               {new Date(reservation.expiresAt) < new Date() ? (
                 <p className="deadline is-overdue">
-                  Splatnost <strong>{formatDeadline(reservation.expiresAt)}</strong> uplynula. Zaplaťte prosím
-                  co nejdříve, jinak bude rezervace brzy zrušena.
+                  Splatnost <strong>{formatDeadline(reservation.expiresAt)}</strong> uplynula. Zaplaťte prosím co
+                  nejdříve, jinak bude rezervace brzy zrušena.
                 </p>
               ) : (
                 <p className="deadline">
-                  Zaplaťte do <strong>{formatDeadline(reservation.expiresAt)}</strong>. Jinak bude rezervace zrušena
-                  a místa uvolněna.
+                  Zaplaťte do <strong>{formatDeadline(reservation.expiresAt)}</strong>. Jinak bude rezervace zrušena a
+                  místa uvolněna.
                 </p>
               )}
             </>

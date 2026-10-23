@@ -7,11 +7,21 @@ export default function Stepper({ label, hint, value, max, onChange, disabled })
         {hint && <span className="muted"> · {hint}</span>}
       </span>
       <span className="stepper-controls">
-        <button type="button" onClick={() => onChange(value - 1)} disabled={disabled || value <= 0} aria-label={`${label}: méně`}>
+        <button
+          type="button"
+          onClick={() => onChange(value - 1)}
+          disabled={disabled || value <= 0}
+          aria-label={`${label}: méně`}
+        >
           −
         </button>
         <output aria-live="polite">{value}</output>
-        <button type="button" onClick={() => onChange(value + 1)} disabled={disabled || value >= max} aria-label={`${label}: více`}>
+        <button
+          type="button"
+          onClick={() => onChange(value + 1)}
+          disabled={disabled || value >= max}
+          aria-label={`${label}: více`}
+        >
           +
         </button>
       </span>

@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSnapshot as fetchSnapshot, syncScans } from './api.js';
-import {
-  enqueue as storeEnqueue,
-  getQueue,
-  getSnapshot,
-  removeFromQueue,
-  saveSnapshot,
-} from './offline.js';
+import { enqueue as storeEnqueue, getQueue, getSnapshot, removeFromQueue, saveSnapshot } from './offline.js';
 
 const REFRESH_MS = 60_000;
 
@@ -103,10 +97,13 @@ export function useOffline(runId, onUnauthorized) {
     return () => clearTimeout(timer);
   }, [note]);
 
-  const enqueue = useCallback((event) => {
-    storeEnqueue({ runId, ...event });
-    setQueue(getQueue());
-  }, [runId]);
+  const enqueue = useCallback(
+    (event) => {
+      storeEnqueue({ runId, ...event });
+      setQueue(getQueue());
+    },
+    [runId],
+  );
 
   /** Called after any successful request: the server is reachable again. */
   const reachable = useCallback(() => {

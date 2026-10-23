@@ -29,7 +29,12 @@ function LevelMap({ level, stats, seatState, loading, onOpen }) {
         const pad = size * 0.9;
         const xs = seats.map((s) => s.x);
         const ys = seats.map((s) => s.y);
-        const box = { x: Math.min(...xs) - pad, y: Math.min(...ys) - pad, x2: Math.max(...xs) + pad, y2: Math.max(...ys) + pad };
+        const box = {
+          x: Math.min(...xs) - pad,
+          y: Math.min(...ys) - pad,
+          x2: Math.max(...xs) + pad,
+          y2: Math.max(...ys) + pad,
+        };
         const open = () => onOpen(section.id);
         const label = loading ? '–' : freeLabel(stat.free);
         return (
