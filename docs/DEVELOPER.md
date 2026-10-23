@@ -81,6 +81,7 @@ api/
   lib/onsite.php       selling at the entrance (scanner tab Prodej)
   lib/cancellation.php cancel_seats() (admin), notices, reminders, GDPR purge
   lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
+  lib/bank.php         bank statement CSV import: parse_bank_csv(), bank_match(), bank_record()
   lib/offline.php      scanning without a connection: scanner_snapshot(), apply_offline_scans(), conflicts
   lib/admin_users.php  accounts and roles: user_can(), admin_login(), create_first_admin(), admin_invite(), admin_accept_invite(), request_password_reset(), reset_password()
   lib/ticket.php       seat ticket QR code (sign/parse), qr_png(), ticket e-mail + calendar event (ticket_ics()), seat_label(s)()
@@ -366,6 +367,7 @@ All `DATETIME` columns and JSON dates are UTC.
 | `discount_codes`    | `code` (8 chars, unique, shown `XXXX-XXXX`), `email`, `created_at`, `created_by`, `emailed_at`, `used_at`, `reservation_id`, `seat_id` (the seat made free), `revoked_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `reservation_seats` | PK (`run_id`, `seat_id`), `reservation_id` (FK cascade). Prevents double booking per run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `scan_conflicts`    | offline check-ins that could not be applied (§11): `run_id`, `reservation_id` (NULL when unknown), `label` (SS + name + seat), `reason` (`already_checked_in` / `not_paid` / `unknown`), `scanned_at` (device time), `scanned_by`, `other_at` / `other_by` (the check-in that won), `created_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `bank_payments`     | transfers recorded from a bank statement (§9), so none is recorded twice: `transaction_id` (PK, the bank's _Identifikace transakce_ or `h:` + sha1 of the row), `reservation_id` (FK, SET NULL), `amount` (CZK), `booked_on` (DATE from the statement), `imported_at`, `imported_by` (e-mail); no personal data                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `rate_limits`       | `bucket` (sha256 of key), `hits`, `window_start`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `settings`          | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `admin_users`       | accounts (§12): `email` (unique, lower case, login – the account has no other name), `roles` (CSV of `admin` / `accountant` / `scanner`), `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open invitation token, unique), `invite_expires_at`, `reset_hash` (sha256 of the open forgotten-password token, unique), `reset_expires_at`, `invited_by` (e-mail of the inviting Správce, `deploy` for the first one), `created_at`, `accepted_at`, `last_login_at`, `disabled_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -542,7 +544,8 @@ made from then on (existing ones keep their due date); `seats.php`
 
 - **SPD** (`spd_string()`): `SPD*1.0*ACC:<IBAN>[+BIC]*AM:<amount>*CC:CZK*X-VS:<PAYMENT_VARIABLE_SYMBOL>*X-SS:<SS>*DT:<due date Prague YYYYMMDD>*MSG:<PAYMENT_MESSAGE + last name, ASCII, ≤60>[*RN:<recipient ≤35>]`.
   `AM` = `amount_due()` (what is still missing after a partial payment).
-- Payments are matched manually by SS. The accountant records every received
+- Payments are matched by SS – manually or from an uploaded bank statement
+  (below). The accountant records every received
   transfer with its real amount (admin action `payment`, field `received`
   1–1 000 000 Kč; pending rows: input prefilled with `amount_due()` + button
   **Zaplaceno**; other statuses: _přišla platba_ → input + **Zapsat platbu**
@@ -571,6 +574,48 @@ made from then on (existing ones keep their due date); `seats.php`
   [Přeplatek Y k vrácení.]“_, _„Přijato X, zbývá doplatit Y.“_, _„Přijato X,
   rezervace obnovena – zaplaceno.“_, _„Přijato X – <reason>. K vrácení na účet
   plátce: Y.“_ + ticket/e-mail result.
+
+- **Bank statement** (`lib/bank.php`, admin tab _Výpis z banky_, Správce and
+  Účetní): instead of recording transfers one by one, upload the CSV export of
+  the account (KB MojeBanka; Fio column names work too).
+  `parse_bank_csv()`: max 2 MB (`BANK_CSV_MAX_BYTES`, _„Soubor je příliš velký
+  (nejvýš 2 MB).“_), empty → _„Soubor je prázdný.“_; UTF-8 (BOM dropped) or
+  Windows-1250 (converted by `iconv`); lines before the header are skipped –
+  the header is the first line (separator `;`, else `,`) with an amount and an
+  SS column (`BANK_COLUMNS`: amount _Částka_/_Objem_, _VS_/_Variabilní symbol_,
+  _SS_/_Specifický symbol_, id _Identifikace transakce_/_ID pohybu_/_ID
+  transakce_, date _Datum splatnosti_/_Datum zaúčtování_/_Datum_ (`d.m.Y` or
+  `Y-m-d`), _Protiúčet a kód banky_/_Protiúčet_, _Název protiúčtu_; message =
+  non-empty `BANK_MESSAGE_COLUMNS` _Popis pro příjemce_, _Zpráva pro příjemce_,
+  _AV pole 1–4_ joined), else _„Ve souboru chybí řádek se záhlavím (sloupce
+  Částka a SS). Nahrajte výpis z internetového bankovnictví ve formátu CSV.“_
+  Amounts like `+1 200,50`; rows without a valid amount are ignored, outgoing
+  (≤ 0) counted and skipped. VS/SS keep digits without leading zeros. A row
+  without a transaction id gets `h:` + sha1 of its values.
+  `bank_match(tx)` → `state`:
+  - `done` – the transaction is in `bank_payments`: _„Už zapsáno <time>
+    (<e-mail>).“_;
+  - reservation by `specific_symbol` = SS, else = VS (when not the common
+    `PAYMENT_VARIABLE_SYMBOL`, note _„Nalezeno podle VS.“_), else any 10-digit
+    number in the message (_„Nalezeno podle zprávy pro příjemce.“_); none →
+    `none` _„Platba nemá SS / Rezervace se SS X neexistuje – zapište ručně,
+    pokud k rezervaci patří.“_; an amount with haléře (_„Částka s haléři –
+    zapište ručně.“_) or over 1 000 000 Kč → `none`;
+  - otherwise `match`, a VS other than the common one is noted (_„VS X (má
+    být 3211).“_), then by status: pending _„Celá částka → Zaplaceno,
+    vstupenka e-mailem.“_ / _„Částečná platba, zbude doplatit X.“_ /
+    _„Zaplaceno, přeplatek X k vrácení.“_; expired _„Rezervace propadla –
+    obnoví se jako zaplacená, pokud to jde, jinak půjde platba k vrácení.“_;
+    paid / cancelled _„Rezervace už je zaplacená / je zrušená – platba půjde
+    k vrácení. Pokud jste ji už zapsali ručně, nezapisujte ji znovu.“_
+    Pre-checked (`select`) only pending and expired; a pending one that
+    already has `paid_amount` > 0 adds _„Už evidováno X – pokud jste tuto
+    platbu zapsali ručně, nezapisujte ji znovu.“_ and is not pre-checked.
+
+  `bank_record(tx, by)` re-matches, inserts the `bank_payments` row (`INSERT
+IGNORE`; already there → _„Už zapsáno.“_) and calls `record_payment(id,
+amount)` (all outcomes and e-mails as above); a refused payment or an
+  exception removes the row again. Returns `{ok, message}`.
 
 - Reminder 24 h before the due date, expiry notice after expiry (§16).
 - **On-site sale** (`lib/onsite.php`, scanner tab _Prodej_, §11): while seats
@@ -787,7 +832,7 @@ have several; `user_can(me, what)`):
 | Role        | `roles`      | May                                                                                                                                       | `user_can`                       |
 | ----------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
 | Správce     | `admin`      | everything: all admin tabs and the scanner                                                                                                | `manage`, `reservations`, `scan` |
-| Účetní      | `accountant` | admin tab _Rezervace_ (reservations and payments, all its actions)                                                                        | `reservations`                   |
+| Účetní      | `accountant` | admin tabs _Rezervace_ (reservations and payments, all its actions) and _Výpis z banky_                                                   | `reservations`                   |
 | Odbavovatel | `scanner`    | only the scanner (check-in, on-site sale), only the runs assigned to the account (`user_runs`, 0..n; a run can have several Odbavovatelé) | `scan`                           |
 
 - **Deploy** (`POST api/deploy.php {token, email, password}`, JSON or
@@ -896,14 +941,28 @@ used; the code also stays used when the reservation expires or is cancelled.
 
 `api/admin.php` (CSRF token on every POST). Sign-in, invitations and the
 forgotten password: §12. The header shows the signed-in e-mail (shortened with … when long; tooltip _Přihlášen: <e-mail> · <roles>_)
-and the menu by role: Správce _Rezervace_, _Plánek_, _Slevové kódy_,
-_Uživatelé_, _Nastavení_, _Odbavení_; Účetní only _Rezervace_ (other `view=`
+and the menu by role: Správce _Rezervace_, _Výpis z banky_, _Plánek_, _Slevové kódy_,
+_Uživatelé_, _Nastavení_, _Odbavení_; Účetní only _Rezervace_ and _Výpis z banky_ (other `view=`
 values show Rezervace, other actions are ignored); _Odbavení_ (link to
 `app_base_url()/scanner.html`) for accounts with `scan`. Actions are checked
 by role: reservation actions need `reservations`, everything else `manage`.
 
 Tabs:
 
+- **Výpis z banky** (`view=bank`, Správce and Účetní, §9) – form _Nahrát výpis
+  z banky_ (hint how to export it from KB MojeBanka and how matching works,
+  file input `statement`, **Načíst výpis** → `bank-upload`: parse errors as
+  flash, no file _„Vyberte soubor CSV s výpisem.“_; the parsed rows, file name
+  and outgoing count are kept in `$_SESSION['bank_import']`). Preview: cards
+  _Příchozích plateb_ (+ file, _odchozí přeskočeny: N_) / _Spárováno_ /
+  _Nespárováno_ / _Už zapsáno_, table (matched again on every load): checkbox
+  `tx[]` for `match` rows (pre-checked by `select`), date, payer name +
+  account, amount, VS / SS, message, reservation (SS link to the search, name,
+  status badge, price), _Co se stane_ (the note). **Zapsat vybrané platby**
+  (`bank-apply` → `bank_record()` per checked row, by the signed-in e-mail):
+  flash _„Zapsáno plateb: N z M.“_ (nothing checked: _„Nevybrali jste žádnou
+  platbu.“_) and a card _Výsledek zápisu_ with date · amount · payer and the
+  message of each row; **Zavřít výpis** (`bank-clear`) forgets the preview.
 - **Plánek** (`view=plan`, run select, default the first run) – hint _„Klikem
   přepnete místo mezi v prodeji a záložní (zákazníci ho vidí, ale nemohou ho
   koupit). Platí jen pro vybraný termín. Obsazená místa nelze přepnout. Nový
@@ -1222,7 +1281,13 @@ unpaid / unknown / other-run tickets → conflicts, device time limits; test
 run (label _· TEST_, not the last run for the purge, code refused and not
 used up, online booking paid at once, `[TEST]` subject, on-site sale still
 pending, check-in, a real run with reservations not deletable, the test run
-deleted with reservations, seats and check-ins). Locally:
+deleted with reservations, seats and check-ins); bank statement (a KB CSV in
+Windows-1250 with lines before the header: outgoing skipped, leading zeros of
+symbols dropped, matched by SS, by a number in the message with a wrong VS
+noted, a paid reservation not pre-checked, unknown SS and an amount with
+haléře not matched; full and partial payments recorded, the same transaction
+refused the second time, a second payment of a partly paid reservation not
+pre-checked, empty file and missing header). Locally:
 `DB_NAME=zidle_test MAIL_ENABLED=0 BANK_IBAN=CZ6508000000192000145399 php tests/php/run.php` (values in
 `config.local.php` take precedence over the environment).
 
@@ -1235,15 +1300,15 @@ _mobile_ (Pixel 7, `cs-CZ`, Europe/Prague); admin tests use a 1360 × 900
 desktop viewport. Web servers: `php -S 127.0.0.1:8000 -t .` with `ENV`
 (`DB_NAME=zidle_test`, `PUBLIC_URL=http://127.0.0.1:4173` (admin links lead to
 the built apps), test IBAN and ticket secret,
-`MAIL_ENABLED=0`; the process environment overrides them) and `npm run build
+`MAIL_ENABLED=0`, `LOGIN_ATTEMPTS_PER_15_MIN=100` – every test signs in from the same IP; the process environment overrides them) and `npm run build
 && vite preview` on 127.0.0.1:4173 (proxies `/api`). `global-setup.js` runs
-`tests/e2e/seed.php` (fresh database: run 1 _Premiéra_ in 30 days with a
-pending reservation, run 2 _Dnes_ in 20 minutes with a paid reservation
+`tests/e2e/seed.php` (fresh database: run 1 _Premiéra_ in 30 days with two
+pending reservations (payment test, bank statement test), run 2 _Dnes_ in 20 minutes with a paid reservation
 (BS-1-1 adult, BS-1-2 child) and a second one for the offline test, run 3
 _Zkouška_ (test run) in 40 days, three discount codes
 for *zakaznik@example.com*, the Správce *spravce@example.cz* created by
 `create_first_admin()` and the Odbavovatel *vchod@example.cz*; passwords in
-`helpers.js`) and stores its JSON output (`ticket` /
+`helpers.js`) and stores its JSON output (`pendingVs` / `bankSs` = their SS, `ticket` /
 `offlineTicket` = seat ticket codes, `codes`) in `tests/e2e/.seed.json`.
 `inviteLink(email)` in `helpers.js` runs `tests/e2e/invite-link.php`, which
 issues a fresh invitation token for the account and prints its link (e-mails
@@ -1265,14 +1330,19 @@ Tests:
   picker, opened by `/?termin=3` the form shows _· TEST_, no code field,
   **Rezervovat (test)** → _Zaplaceno_ with one ticket QR code.
 - `admin.spec.js` – record 200 Kč (_zbývá doplatit 400 Kč_, input prefilled
-  400), then the rest → _Zaplaceno_; _Plánek_: LH-1-1 of _Premiéra_ switched
+  400), then the rest → _Zaplaceno_; _Výpis z banky_: an uploaded CSV with a
+  transfer of 600 Kč with the seeded SS (pre-checked, _Celá částka →
+  Zaplaceno_) and one without SS (_Platba nemá SS_) → **Zapsat vybrané
+  platby** → _Zapsáno plateb: 1 z 1._, _Přijato 600 Kč – zaplaceno._, the row
+  shows _Už zapsáno_ without a checkbox, the reservation is _Zaplaceno_;
+  _Plánek_: LH-1-1 of _Premiéra_ switched
   to záložní and saved (_„V prodeji 266 míst, záložních 35.“_, in `seats.php`
   `reserveSeats`), then _Výchozí rozložení_; discount codes (invalid e-mail →
   nothing created, the same e-mail twice → two codes, revoke one); payment
   deadline rule (_Nyní platí: 24 hodin_, `seats.php` `deadlineHours`, removed
   again); invite an Účetní (role checkbox, link shown in the tab, _Nepřijata_),
   in another browser context the link → mismatched passwords error → password
-  set and signed in (_Vítejte_, the e-mail in the header), the menu shows only _Rezervace_
+  set and signed in (_Vítejte_, the e-mail in the header), the menu shows only _Rezervace_ and _Výpis z banky_
   (also for `view=users`), the admin sees _Přijata_, sign out and in with
   e-mail + password, the used link is invalid, the admin disables the account
   → signed out on the next load; _Zapomněl jsem heslo_ → the same answer for

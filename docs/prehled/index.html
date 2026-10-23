@@ -461,7 +461,10 @@
         <h3>Účetní</h3>
         <span class="where">správa · počítač · vidí jen rezervace a platby</span>
         <ul>
-          <li>kontroluje platby ve výpisu a zapisuje, kolik skutečně přišlo</li>
+          <li>
+            kontroluje platby ve výpisu a zapisuje, kolik skutečně přišlo – nebo nahraje výpis z banky (CSV) a platby se
+            spárují samy
+          </li>
           <li>vrací peníze a ověřuje platby za vstupenky prodané u vchodu</li>
           <li>posílá vstupenky znovu, opravuje e-mail zákazníka</li>
         </ul>
@@ -845,7 +848,10 @@
         <p>
           Aplikace není napojená na banku. Všechny platby mají stejný variabilní symbol 3211, rezervace se liší
           specifickým symbolem (SS), který systém každé rezervaci vygeneruje. Účetní páruje platby podle specifického
-          symbolu a zapíše, kolik skutečně přišlo. Vstupenka proto přijde až po potvrzení.
+          symbolu a zapíše, kolik skutečně přišlo – buď ručně u rezervace, nebo nahraje výpis z banky (CSV z KB
+          MojeBanky): systém platby spáruje podle SS (případně čísla ve zprávě), ukáže náhled, co se stane, a zapíše
+          zaškrtnuté. Nespárované platby vypíše k ručnímu zápisu, stejnou platbu nezapíše dvakrát. Vstupenka proto
+          přijde až po potvrzení.
         </p>
       </div>
       <div class="rule">

@@ -106,9 +106,9 @@ if ($me !== null && !$canReservations && $inviteToken === '' && $resetToken === 
 }
 
 $flash = null;
-// Tabs the user may open (Účetní: only reservations).
+// Tabs the user may open (Účetní: reservations and the bank statement).
 $view = (string) ($_GET['view'] ?? 'reservations');
-if (!in_array($view, ['plan', 'codes', 'users', 'settings'], true) || !$canManage) {
+if (!in_array($view, $canManage ? ['plan', 'codes', 'users', 'settings', 'bank'] : ['bank'], true) || !$canReservations) {
     $view = 'reservations';
 }
 
@@ -290,6 +290,37 @@ if ($canReservations && $csrfOk && in_array($action, ['payment', 'cancel', 'canc
     header('Location: admin.php?' . http_build_query(['status' => $_GET['status'] ?? '', 'q' => $_GET['q'] ?? '', 'run' => $_GET['run'] ?? '']));
     exit;
 }
+
+// Výpis z banky: upload a CSV statement → preview kept in the session → record the checked transfers.
+if ($canReservations && $csrfOk && in_array($action, ['bank-upload', 'bank-apply', 'bank-clear'], true)) {
+    if ($action === 'bank-upload') {
+        $file = $_FILES['statement'] ?? null;
+        $parsed = !is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string) $file['tmp_name'])
+            ? (($file['error'] ?? null) === UPLOAD_ERR_INI_SIZE ? 'Soubor je příliš velký (nejvýš 2 MB).' : 'Vyberte soubor CSV s výpisem.')
+            : parse_bank_csv((string) file_get_contents((string) $file['tmp_name'], false, null, 0, BANK_CSV_MAX_BYTES + 1));
+        unset($_SESSION['bank_results']);
+        if (is_string($parsed)) {
+            $_SESSION['flash'] = $parsed;
+        } else {
+            $_SESSION['bank_import'] = ['file' => mb_substr(basename((string) $file['name']), 0, 100)] + $parsed;
+        }
+    } elseif ($action === 'bank-apply') {
+        $rows = $_SESSION['bank_import']['rows'] ?? [];
+        $results = [];
+        foreach (array_unique(array_map('intval', (array) ($_POST['tx'] ?? []))) as $i) {
+            if (isset($rows[$i])) {
+                $results[] = ['tx' => $rows[$i]] + bank_record($rows[$i], $me['email']);
+            }
+        }
+        $recorded = count(array_filter($results, static fn ($r) => $r['ok']));
+        $_SESSION['bank_results'] = $results;
+        $_SESSION['flash'] = $results ? "Zapsáno plateb: {$recorded} z " . count($results) . '.' : 'Nevybrali jste žádnou platbu.';
+    } else {
+        unset($_SESSION['bank_import'], $_SESSION['bank_results']);
+    }
+    header('Location: admin.php?view=bank');
+    exit;
+}
 $flash = $_SESSION['flash'] ?? null;
 
 unset($_SESSION['flash']);
@@ -343,6 +374,9 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .pay-form input[type=number] { width:96px; padding:6px 8px; }
   details .pay-form { margin-top:6px; }
   .error { color:#8f2a20; }
+  .bank-none td, .bank-done td { color:var(--ink-2); } .bank-done { opacity:.6; }
+  .bank-results { margin:0; padding-left:20px; } .bank-results li { margin:4px 0; }
+  .bank-actions { margin-top:12px; } td.num { white-space:nowrap; text-align:right; }
   .tabs { display:flex; gap:4px; padding:4px; border-radius:999px; background:var(--surface-2); margin-right:auto; }
   .tabs a { padding:6px 14px; border-radius:999px; color:var(--ink-2); text-decoration:none; font-weight:600; }
   .tabs a.active { background:var(--surface); color:var(--ink); box-shadow:0 1px 4px rgba(20,10,36,.12); }
@@ -523,6 +557,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <h1>Správa rezervací</h1>
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
+      <a href="admin.php?view=bank" class="<?= $view === 'bank' ? 'active' : '' ?>">Výpis z banky</a>
       <?php if ($canManage): ?>
         <a href="admin.php?view=plan" class="<?= $view === 'plan' ? 'active' : '' ?>">Plánek</a>
         <a href="admin.php?view=codes" class="<?= $view === 'codes' ? 'active' : '' ?>">Slevové kódy</a>
@@ -619,6 +654,76 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       }));
     })();
   </script>
+  <?php endif ?>
+
+  <?php elseif ($view === 'bank'):
+      $bankImport = $_SESSION['bank_import'] ?? null;
+      $bankResults = $_SESSION['bank_results'] ?? [];
+      $cents = static fn (int $c) => number_format($c / 100, $c % 100 ? 2 : 0, ',', ' ') . ' Kč';
+      $txLabel = static fn (array $tx) => ($tx['date'] ? new DateTimeImmutable($tx['date'])->format('j. n. Y') . ' · ' : '')
+          . $cents($tx['cents']) . ($tx['name'] !== '' ? ' · ' . $tx['name'] : '');
+  ?>
+  <form class="card settings" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+    <h2>Nahrát výpis z banky</h2>
+    <p class="hint">Výpis z internetového bankovnictví ve formátu CSV (KB MojeBanka: Historie transakcí → Export → CSV).
+      Příchozí platby se spárují s rezervacemi podle specifického symbolu (SS); když nesedí, hledá se číslo rezervace ve VS
+      a ve zprávě pro příjemce. Nejdřív uvidíte náhled, zapíší se jen zaškrtnuté platby. Stejnou platbu nelze zapsat dvakrát.</p>
+    <label class="wide">Soubor CSV <input type="file" name="statement" accept=".csv,text/csv" required></label>
+    <button name="action" value="bank-upload">Načíst výpis</button>
+  </form>
+
+  <?php if ($bankResults): ?>
+    <div class="card">
+      <h2>Výsledek zápisu</h2>
+      <ul class="bank-results">
+        <?php foreach ($bankResults as $res): ?>
+          <li class="<?= $res['ok'] ? '' : 'error' ?>"><strong><?= $h($txLabel($res['tx'])) ?>:</strong> <?= $h($res['message']) ?></li>
+        <?php endforeach ?>
+      </ul>
+    </div>
+  <?php endif ?>
+
+  <?php if ($bankImport):
+      $bankRows = array_map(static fn ($tx) => ['tx' => $tx] + bank_match($tx), $bankImport['rows']);
+      $bankCount = static fn (string $state) => count(array_filter($bankRows, static fn ($b) => $b['state'] === $state));
+  ?>
+  <div class="stats">
+    <div class="card">Příchozích plateb<strong><?= count($bankRows) ?></strong><?= $h($bankImport['file']) ?><?= $bankImport['outgoing'] ? ' · odchozí přeskočeny: ' . (int) $bankImport['outgoing'] : '' ?></div>
+    <div class="card">Spárováno<strong><?= $bankCount('match') ?></strong>lze zapsat</div>
+    <div class="card">Nespárováno<strong><?= $bankCount('none') ?></strong>zapište ručně</div>
+    <div class="card">Už zapsáno<strong><?= $bankCount('done') ?></strong>přeskočí se</div>
+  </div>
+  <form class="card table" method="post">
+    <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+    <table>
+      <thead><tr><th></th><th>Datum</th><th>Plátce</th><th>Částka</th><th>VS / SS</th><th>Zpráva</th><th>Rezervace</th><th>Co se stane</th></tr></thead>
+      <tbody>
+      <?php foreach ($bankRows as $i => $b): $tx = $b['tx']; $br = $b['reservation']; ?>
+        <tr class="bank-<?= $h($b['state']) ?>">
+          <td><?php if ($b['state'] === 'match'): ?><input type="checkbox" name="tx[]" value="<?= (int) $i ?>" aria-label="Zapsat platbu" <?= $b['select'] ? 'checked' : '' ?>><?php endif ?></td>
+          <td><?= $tx['date'] ? $h(new DateTimeImmutable($tx['date'])->format('j. n. Y')) : '–' ?></td>
+          <td><?= $h($tx['name']) ?><?= $tx['account'] !== '' ? '<br><small>' . $h($tx['account']) . '</small>' : '' ?></td>
+          <td class="num"><?= $h($cents($tx['cents'])) ?></td>
+          <td><small>VS</small> <?= $h($tx['vs'] ?: '–') ?><br><small>SS</small> <?= $h($tx['ss'] ?: '–') ?></td>
+          <td><small><?= $h($tx['message']) ?></small></td>
+          <td><?php if ($br): ?>
+              <a href="admin.php?q=<?= $h($br['specific_symbol']) ?>">SS <?= $h($br['specific_symbol']) ?></a>
+              <br><?= $h($br['first_name'] . ' ' . $br['last_name']) ?>
+              <br><span class="badge s-<?= $h($br['status']) ?>"><?= $h($statusLabels[$br['status']]) ?></span>
+              <small><?= $h($kc($br['amount'])) ?></small>
+            <?php else: ?>–<?php endif ?></td>
+          <td><small><?= $h($b['note']) ?></small></td>
+        </tr>
+      <?php endforeach ?>
+      <?php if (!$bankRows): ?><tr><td colspan="8">Ve výpisu nejsou žádné příchozí platby.</td></tr><?php endif ?>
+      </tbody>
+    </table>
+    <div class="actions bank-actions">
+      <?php if ($bankCount('match')): ?><button name="action" value="bank-apply">Zapsat vybrané platby</button><?php endif ?>
+      <button class="secondary" name="action" value="bank-clear">Zavřít výpis</button>
+    </div>
+  </form>
   <?php endif ?>
 
   <?php elseif ($view === 'codes'):

@@ -159,6 +159,64 @@ test('invalid amounts are rejected', function (): void {
     same(['pending', 0, null, 300], money($id), 'unchanged');
 });
 
+test('bank statement CSV (KB, Windows-1250): matched by SS, VS or message, recorded once', function (): void {
+    $full = reservation(['PH-9-1', 'PH-9-2']);
+    $part = reservation(['PH-9-3']);
+    $byMessage = reservation(['PH-9-4']);
+    $paid = reservation(['PH-9-5'], 'paid');
+    $ss = static fn (int $id) => row($id)['specific_symbol'];
+    $line = static fn (string $name, string $amount, string $vs, string $ss, string $id, string $message = '') => '"' . implode('";"', [
+        '19.10.2026', '', '19-123457/0100', $name, $amount, '', '', '', $vs, '0000', $ss, $id, 'Příchozí úhrada', '', '', $message, '', '', '',
+    ]) . "\"\r\n";
+    $csv = "\"Číslo účtu\";\"123/0100\"\r\n\"Období\";\"01.10.2026 - 31.10.2026\"\r\n\r\n"
+        . '"Datum splatnosti";"Datum odepsání z jiné banky";"Protiúčet a kód banky";"Název protiúčtu";"Částka";"Originální částka";'
+        . '"Originální měna";"Kurz";"VS";"KS";"SS";"Identifikace transakce";"Systémový popis";"Popis příkazce";"Popis pro příjemce";'
+        . "\"AV pole 1\";\"AV pole 2\";\"AV pole 3\";\"AV pole 4\"\r\n"
+        . $line('Jan Novák', '+600,00', '3211', $ss($full), 'T1')
+        . $line('Eva Částečná', '+100,00', '0000003211', '00' . $ss($part), 'T2')
+        . $line('Petr Zpráva', '+300,00', '321', '0', 'T3', 'za vstupenky ' . $ss($byMessage))
+        . $line('Dvakrát', '+300,00', '3211', $ss($paid), 'T4')
+        . $line('Neznámý', '+400,00', '321', '0', 'T5', 'Marie')
+        . $line('Haléře', '+300,50', '3211', $ss($byMessage), 'T6')
+        . $line('Odchozí', '-250,00', '', '', 'T7');
+    $parsed = parse_bank_csv((string) iconv('UTF-8', 'WINDOWS-1250', $csv));
+    if (is_string($parsed)) {
+        throw new TestFailure($parsed);
+    }
+    $rows = $parsed['rows'];
+    same([6, 1], [count($rows), $parsed['outgoing']], 'incoming rows, skipped outgoing');
+    same(['T1', '2026-10-19', 'Jan Novák', 60000, '3211', $ss($full)], [$rows[0]['id'], $rows[0]['date'], $rows[0]['name'], $rows[0]['cents'], $rows[0]['vs'], $rows[0]['ss']], 'first row');
+    same(['3211', $ss($part)], [$rows[1]['vs'], $rows[1]['ss']], 'leading zeros dropped');
+
+    $matches = array_map('bank_match', $rows);
+    same(['match', 'match', 'match', 'match', 'none', 'none'], array_column($matches, 'state'), 'states');
+    same([true, true, true, false, false, false], array_column($matches, 'select'), 'pre-checked');
+    same([$full, $part, $byMessage, $paid], array_map(static fn ($m) => (int) $m['reservation']['id'], array_slice($matches, 0, 4)), 'reservations');
+    contains('Celá částka → Zaplaceno', $matches[0]['note'], 'full');
+    contains('zbude doplatit 200 Kč', $matches[1]['note'], 'partial');
+    contains('Nalezeno podle zprávy pro příjemce. VS 321 (má být 3211).', $matches[2]['note'], 'found in the message, wrong VS');
+    contains('už je zaplacená', $matches[3]['note'], 'paid already');
+    contains('Platba nemá SS', $matches[4]['note'], 'unmatched');
+    contains('haléři', $matches[5]['note'], 'cents');
+
+    foreach ([0, 1, 2] as $i) {
+        same(true, bank_record($rows[$i], 'ucetni@example.cz')['ok'], "record row {$i}");
+    }
+    same(['paid', 600, null, 0], money($full), 'full payment');
+    same(['pending', 100, null, 200], money($part), 'partial payment');
+    same('paid', row($byMessage)['status'], 'matched by the message');
+    same(['ok' => false, 'message' => 'Už zapsáno ' . utc_time((string) db_query("SELECT imported_at FROM bank_payments WHERE transaction_id = 'T1'")->fetchColumn())
+        ->setTimezone(new DateTimeZone(PRAGUE))->format('j. n. Y H:i') . ' (ucetni@example.cz).'], bank_record($rows[0], 'jiny@example.cz'), 'second import');
+    same('done', bank_match($rows[0])['state'], 'shown as recorded');
+    same(['paid', 600, null, 0], money($full), 'not recorded twice');
+    same(false, bank_record($rows[4], 'ucetni@example.cz')['ok'], 'unmatched not recorded');
+    same(false, bank_match(['id' => 'T2b'] + $rows[1])['select'], 'another payment of a partly paid reservation is not pre-checked');
+
+    same('Soubor je prázdný.', parse_bank_csv(''), 'empty file');
+    $noHeader = parse_bank_csv("a;b\n1;2");
+    contains('záhlavím', is_string($noHeader) ? $noHeader : '', 'no header');
+});
+
 // ------------------------------------------------------------ cancellation
 
 test('admin cancellation of single seats refunds them in full and frees them', function (): void {

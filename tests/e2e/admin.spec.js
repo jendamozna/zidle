@@ -19,6 +19,38 @@ test('accountant records a partial payment and then the rest', async ({ page }) 
   await expect(row.locator('.badge')).toHaveText('Zaplaceno');
 });
 
+test('a bank statement CSV pairs a transfer by SS and records it once', async ({ page }) => {
+  const { bankSs } = seed();
+  await adminLogin(page);
+  await page.getByRole('link', { name: 'Výpis z banky' }).click();
+  const header =
+    '"Datum splatnosti";"Protiúčet a kód banky";"Název protiúčtu";"Částka";"VS";"SS";"Identifikace transakce";"AV pole 1"';
+  const csv = [
+    '"Číslo účtu";"123/0100"',
+    header,
+    `"19.10.2026";"19-123/0100";"Jan Převodem";"+600,00";"3211";"${bankSs}";"E2E-1";"vstupenky"`,
+    '"20.10.2026";"";"Neznámý";"+400,00";"321";"0";"E2E-2";"Marie"',
+  ].join('\r\n');
+  await page
+    .locator('input[name=statement]')
+    .setInputFiles({ name: 'vypis.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+  await page.getByRole('button', { name: 'Načíst výpis' }).click();
+
+  const matched = page.locator('tr', { hasText: 'Jan Převodem' });
+  await expect(matched).toContainText(`SS ${bankSs}`);
+  await expect(matched).toContainText('Celá částka → Zaplaceno');
+  await expect(matched.locator('input[type=checkbox]')).toBeChecked();
+  await expect(page.locator('tr', { hasText: 'Neznámý' })).toContainText('Platba nemá SS');
+  await page.getByRole('button', { name: 'Zapsat vybrané platby' }).click();
+  await expect(page.locator('.flash')).toContainText('Zapsáno plateb: 1 z 1.');
+  await expect(page.locator('.bank-results')).toContainText('Přijato 600 Kč – zaplaceno.');
+  await expect(matched).toContainText('Už zapsáno');
+  await expect(matched.locator('input[type=checkbox]')).toHaveCount(0);
+
+  await page.getByRole('link', { name: 'Rezervace' }).click();
+  await expect(page.locator('tr', { hasText: bankSs }).locator('.badge')).toHaveText('Zaplaceno');
+});
+
 test('reservations sort by a clicked column, a second click reverses it', async ({ page }) => {
   seed();
   await adminLogin(page);
@@ -66,7 +98,7 @@ test('admin invites an accountant, who sets a password, sees only reservations a
     'Vítejte. Heslo je nastavené, příště se přihlásíte e-mailem jana.ucetni@example.cz.',
   );
   await expect(jana.locator('.me')).toContainText('jana.ucetni@example.cz');
-  await expect(jana.locator('.tabs a')).toHaveText(['Rezervace']);
+  await expect(jana.locator('.tabs a')).toHaveText(['Rezervace', 'Výpis z banky']);
   await jana.goto('http://127.0.0.1:8000/api/admin.php?view=users');
   await expect(jana.locator('.tabs a.active')).toHaveText('Rezervace');
   await page.reload();

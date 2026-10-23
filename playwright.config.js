@@ -8,6 +8,7 @@ export const ENV = {
   BANK_IBAN: 'CZ6508000000192000145399',
   TICKET_SECRET: 'e2e-ticket-secret-0123456789-abcdefgh',
   MAIL_ENABLED: '0',
+  LOGIN_ATTEMPTS_PER_15_MIN: '100', // every test signs in from the same IP
   ...process.env,
 };
 

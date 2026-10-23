@@ -1,6 +1,6 @@
 <?php
 // Fresh test database for the Playwright tests; prints the data the tests need as JSON.
-//   run 1 "Premiéra" in a month – bookable, one pending reservation for the admin test,
+//   run 1 "Premiéra" in a month – bookable, two pending reservations for the admin tests (payment, bank statement),
 //   three unused discount codes for the customer tests
 //   run 2 "Dnes" starting in 20 minutes – inside the scan window: two paid reservations
 //   (one for the online and one for the offline scanner test)
@@ -18,6 +18,7 @@ $pdo->prepare('INSERT INTO runs (id, label, starts_at, is_test) VALUES (3, ?, ?,
 runs(true);
 
 $pending = reservation(['PH-5-1', 'PH-5-2'], 'pending', 1, 'Platící');
+$bank = reservation(['PH-6-1', 'PH-6-2'], 'pending', 1, 'Převodem');
 $paid = reservation(['BS-1-1', 'BS-1-2'], 'paid', 2, 'Vstupenka', ['BS-1-2']);
 $offline = reservation(['BS-2-1', 'BS-2-2'], 'paid', 2, 'Offline');
 create_discount_codes("zakaznik@example.com\nzakaznik@example.com\nzakaznik@example.com", 'seed');
@@ -32,6 +33,7 @@ $row = static function (int $id): array {
 };
 echo json_encode([
     'pendingVs' => $row($pending)['specific_symbol'],
+    'bankSs' => $row($bank)['specific_symbol'],
     'ticket' => ticket_code($row($paid), 'BS-1-1'),
     'offlineTicket' => ticket_code($row($offline), 'BS-2-1'),
     'codes' => array_map('format_discount_code', db_query('SELECT code FROM discount_codes ORDER BY id')->fetchAll(PDO::FETCH_COLUMN)),

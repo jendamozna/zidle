@@ -127,6 +127,20 @@ CREATE TABLE IF NOT EXISTS scan_conflicts (
   KEY idx_run (run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
+-- Bank transfers recorded from an uploaded bank statement (admin → Výpis z banky),
+-- so the same transaction is never recorded twice. No personal data.
+CREATE TABLE IF NOT EXISTS bank_payments (
+  transaction_id VARCHAR(100) NOT NULL COMMENT 'Bank transaction id ("Identifikace transakce"), or a hash of the row',
+  reservation_id INT UNSIGNED NULL,
+  amount         INT          NOT NULL COMMENT 'CZK',
+  booked_on      DATE         NULL COMMENT 'Value date in the statement',
+  imported_at    DATETIME     NOT NULL COMMENT 'UTC',
+  imported_by    VARCHAR(190) NOT NULL,
+  PRIMARY KEY (transaction_id),
+  KEY idx_reservation (reservation_id),
+  CONSTRAINT fk_bank_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
 -- User accounts with roles (admin = Správce, accountant = Účetní, scanner = Odbavovatel):
 -- the first Správce is created by api/deploy.php, everybody else is invited by e-mail
 -- and sets a password; the e-mail is the login.
