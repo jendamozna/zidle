@@ -95,7 +95,7 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
                 $pdo->rollBack();
             }
             // Duplicate key: a concurrent request took one of the seats first.
-            if ($e->getCode() === '23000') {
+            if (($e->errorInfo[1] ?? null) === 1062) {
                 return ['error' => 'Některá místa už mezitím někdo rezervoval.', 'status' => 409, 'extra' => ['conflict' => []]];
             }
             if ($e->getCode() === '40001' && $attempt < 3) {

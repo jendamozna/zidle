@@ -182,8 +182,8 @@ function run_has_reservations(int $runId): bool
 
 /**
  * Deletes the run (admin → Nastavení); returns the flash message. A real run only without
- * reservations, a test run together with its reservations (seats, items and check-ins cascade)
- * and scan conflicts; user run assignments cascade.
+ * reservations (seats, items and check-ins cascade);
+ * scan conflicts and user run assignments cascade.
  */
 function delete_run(int $id): string
 {
@@ -191,9 +191,16 @@ function delete_run(int $id): string
     if ($run !== null && !$run['is_test'] && run_has_reservations($id)) {
         return 'Termín má rezervace, nelze ho smazat.';
     }
-    db()->prepare('DELETE FROM reservations WHERE run_id = ?')->execute([$id]);
-    db()->prepare('DELETE FROM runs WHERE id = ?')->execute([$id]);
-    db()->prepare('DELETE FROM scan_conflicts WHERE run_id = ?')->execute([$id]);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('DELETE FROM reservations WHERE run_id = ?')->execute([$id]);
+        $pdo->prepare('DELETE FROM runs WHERE id = ?')->execute([$id]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
     runs(true);
     return 'Termín smazán.';
 }

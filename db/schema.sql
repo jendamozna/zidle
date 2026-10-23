@@ -41,8 +41,13 @@ CREATE TABLE IF NOT EXISTS reservations (
   PRIMARY KEY (id),
   UNIQUE KEY uq_token (token),
   UNIQUE KEY uq_ss (specific_symbol),
+  UNIQUE KEY uq_id_run (id, run_id) COMMENT 'Target of the reservation_seats FK (same run)',
   KEY idx_status_expires (status, expires_at),
-  KEY idx_run (run_id)
+  KEY idx_run (run_id),
+  CONSTRAINT fk_reservation_run FOREIGN KEY (run_id) REFERENCES runs (id),
+  CONSTRAINT chk_paid_at CHECK (status <> 'paid' OR paid_at IS NOT NULL),
+  CONSTRAINT chk_cancelled_at CHECK (status NOT IN ('cancelled', 'expired') OR cancelled_at IS NOT NULL),
+  CONSTRAINT chk_refunded CHECK (refunded_amount <= COALESCE(refund_amount, 0))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- One row per seat ever in a reservation (one QR code = one seat). A seat cancelled on its own gets
@@ -59,7 +64,8 @@ CREATE TABLE IF NOT EXISTS reservation_items (
   checked_in_by  VARCHAR(200) NULL,
   PRIMARY KEY (reservation_id, seat_id),
   KEY idx_seat (seat_id),
-  CONSTRAINT fk_item_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id) ON DELETE CASCADE
+  CONSTRAINT fk_item_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id) ON DELETE CASCADE,
+  CONSTRAINT chk_free_price CHECK (free = 0 OR price = 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- Discount codes sent by the admin to e-mail addresses. One code = one seat free
@@ -77,7 +83,8 @@ CREATE TABLE IF NOT EXISTS discount_codes (
   revoked_at     DATETIME     NULL COMMENT 'UTC; revoked codes cannot be used',
   PRIMARY KEY (id),
   UNIQUE KEY uq_code (code),
-  KEY idx_reservation (reservation_id)
+  UNIQUE KEY uq_reservation_seat (reservation_id, seat_id) COMMENT 'One code per free seat',
+  CONSTRAINT fk_code_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- One row per currently held seat of a run (a pending or paid reservation's seat).
@@ -88,9 +95,9 @@ CREATE TABLE IF NOT EXISTS reservation_seats (
   seat_id        VARCHAR(12)  NOT NULL,
   reservation_id INT UNSIGNED NOT NULL,
   PRIMARY KEY (run_id, seat_id),
-  KEY idx_reservation (reservation_id),
-  CONSTRAINT fk_seat_reservation FOREIGN KEY (reservation_id)
-    REFERENCES reservations (id) ON DELETE CASCADE
+  KEY idx_reservation (reservation_id, run_id),
+  CONSTRAINT fk_seat_reservation FOREIGN KEY (reservation_id, run_id)
+    REFERENCES reservations (id, run_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- Rate limiting for spam/bot protection (fixed time windows).
@@ -123,7 +130,8 @@ CREATE TABLE IF NOT EXISTS scan_conflicts (
   other_by       VARCHAR(200) NULL,
   created_at     DATETIME     NOT NULL COMMENT 'UTC, when the scan was synchronised',
   PRIMARY KEY (id),
-  KEY idx_run (run_id)
+  KEY idx_run (run_id),
+  CONSTRAINT fk_conflict_run FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- Bank transfers recorded from an uploaded bank statement (admin → Výpis z banky),

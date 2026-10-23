@@ -267,6 +267,29 @@ test('a seat cannot be held twice in the same run', function (): void {
     throw new TestFailure('second reservation of the same seat was accepted');
 });
 
+test('the schema refuses inconsistent rows', function (): void {
+    $id = reservation(['LK-4-5']);
+    $refused = static function (string $sql, array $params, string $label): void {
+        try {
+            db()->prepare($sql)->execute($params);
+        } catch (PDOException $e) {
+            same('23000', $e->getCode(), $label);
+            return;
+        }
+        throw new TestFailure($label . ': accepted');
+    };
+    $refused('INSERT INTO reservation_seats (run_id, seat_id, reservation_id) VALUES (2, ?, ?)', ['LK-4-6', $id], 'seat held in another run than the reservation');
+    $refused('INSERT INTO reservations (token, run_id, first_name, last_name, email, amount, status, created_at, expires_at) VALUES (?, 99, ?, ?, ?, 0, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())', [bin2hex(random_bytes(16)), 'A', 'B', 'a@example.com', 'pending'], 'unknown run');
+    $refused("UPDATE reservations SET status = 'paid' WHERE id = ?", [$id], 'paid without paid_at');
+    $refused("UPDATE reservations SET status = 'cancelled' WHERE id = ?", [$id], 'cancelled without cancelled_at');
+    $refused('UPDATE reservations SET refunded_amount = 100 WHERE id = ?', [$id], 'refunded more than due');
+    $refused('UPDATE reservation_items SET free = 1 WHERE reservation_id = ?', [$id], 'free seat with a price');
+    $code = new_code();
+    db()->prepare('UPDATE discount_codes SET used_at = UTC_TIMESTAMP(), reservation_id = ?, seat_id = ? WHERE code = ?')->execute([$id, 'LK-4-5', $code]);
+    $refused('UPDATE discount_codes SET used_at = UTC_TIMESTAMP(), reservation_id = ?, seat_id = ? WHERE code = ?', [$id, 'LK-4-5', new_code()], 'two codes for one seat');
+    $refused('DELETE FROM reservations WHERE id = ?', [$id], 'reservation with a used code');
+});
+
 // ------------------------------------------------- prices and discount codes
 
 /** A fresh unused discount code (normalized), created as the admin would. */
