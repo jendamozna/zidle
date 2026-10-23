@@ -51,6 +51,30 @@ test('a bank statement CSV pairs a transfer by SS and records it once', async ({
   await expect(page.locator('tr', { hasText: bankSs }).locator('.badge')).toHaveText('Zaplaceno');
 });
 
+test('status and run cards toggle their filters', async ({ page }) => {
+  seed();
+  await adminLogin(page);
+  const pending = page.locator('.stats a.card', { hasText: 'Čeká na platbu' });
+  const premiere = page.locator('.stats a.card', { hasText: 'Premiéra' });
+
+  await pending.click();
+  await expect(pending).toHaveClass(/selected/);
+  await expect(page.locator('select[name=status]')).toHaveValue('pending');
+  for (const badge of await page.locator('tbody .badge').allInnerTexts()) expect(badge).toBe('Čeká na platbu');
+
+  await premiere.click();
+  await expect(page).toHaveURL(/status=pending/);
+  await expect(page).toHaveURL(/run=1/);
+  await expect(premiere).toHaveClass(/selected/);
+
+  await pending.click();
+  await expect(page).not.toHaveURL(/status=/);
+  await expect(page).toHaveURL(/run=1/);
+  await premiere.click();
+  await expect(page).not.toHaveURL(/run=/);
+  await expect(premiere).not.toHaveClass(/selected/);
+});
+
 test('reservations sort by a clicked column, a second click reverses it', async ({ page }) => {
   seed();
   await adminLogin(page);

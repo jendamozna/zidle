@@ -552,6 +552,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     $prague = new DateTimeZone('Europe/Prague');
     $fmt = static fn ($t) => $t ? new DateTimeImmutable($t, new DateTimeZone('UTC'))->setTimezone($prague)->format('j. n. Y H:i') : '';
     $kc = static fn ($n) => number_format((int) $n, 0, ',', ' ') . ' Kč';
+    $reservationsCount = static fn ($n) => (int) $n . ((int) $n >= 1 && (int) $n <= 4 ? ' rezervace' : ' rezervací');
 ?>
   <header>
     <h1>Správa rezervací</h1>
@@ -999,27 +1000,34 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
 
   <?php else: ?>
 
+  <?php
+    // Cards toggle one filter and keep the others (a second click removes it).
+    $toggle = static fn (string $key, string|int $value) => $h('admin.php?' . http_build_query(array_filter(
+        ['run' => $runFilter ?: null, 'status' => $status ?: null, 'q' => $q ?: null, 'sort' => $sort ?: null, 'dir' => $sort !== '' ? $dir : null,
+         $key => ($key === 'run' ? $runFilter : $status) === $value ? null : $value]
+    )));
+  ?>
   <div class="stats">
     <?php foreach (['pending', 'paid'] as $s): $t = $totals[$s] ?? ['n' => 0, 'seats' => 0, 'amount' => 0]; ?>
-      <div class="card"><?= $h($statusLabels[$s]) ?><strong><?= (int) $t['seats'] ?> míst</strong><?= $kc($t['amount']) ?> · <?= (int) $t['n'] ?> rez.</div>
+      <a class="card <?= $status === $s ? 'selected' : '' ?>" href="<?= $toggle('status', $s) ?>"><?= $h($statusLabels[$s]) ?><strong><?= (int) $t['seats'] ?> míst</strong><?= $kc($t['amount']) ?> · <?= $reservationsCount($t['n']) ?></a>
     <?php endforeach ?>
     <?php $refunds = db_query('SELECT COUNT(*) n, COALESCE(SUM(refund_amount - refunded_amount), 0) amount FROM reservations WHERE refund_amount > refunded_amount AND ' . NOT_TEST_RUN_SQL)->fetch(); ?>
     <?php if ($refunds['n'] > 0): ?>
-      <a class="card attention" href="admin.php?status=refund">K vrácení<strong><?= $kc($refunds['amount']) ?></strong><?= (int) $refunds['n'] ?> rez.</a>
+      <a class="card attention <?= $status === 'refund' ? 'selected' : '' ?>" href="<?= $toggle('status', 'refund') ?>">K vrácení<strong><?= $kc($refunds['amount']) ?></strong><?= $reservationsCount($refunds['n']) ?></a>
     <?php endif ?>
     <?php $onsite = db_query("SELECT COUNT(*) n, COALESCE(SUM(amount), 0) amount FROM reservations WHERE sold_by IS NOT NULL AND status = 'paid' AND payment_checked_at IS NULL AND " . NOT_TEST_RUN_SQL)->fetch(); ?>
     <?php if ($onsite['n'] > 0): ?>
-      <a class="card attention" href="admin.php?status=onsite">Na místě – ověřit platbu<strong><?= $kc($onsite['amount']) ?></strong><?= ($n = (int) $onsite['n']) ?> <?= $n === 1 ? 'prodej' : ($n < 5 ? 'prodeje' : 'prodejů') ?></a>
+      <a class="card attention <?= $status === 'onsite' ? 'selected' : '' ?>" href="<?= $toggle('status', 'onsite') ?>">Na místě – ověřit platbu<strong><?= $kc($onsite['amount']) ?></strong><?= ($n = (int) $onsite['n']) ?> <?= $n === 1 ? 'prodej' : ($n < 5 ? 'prodeje' : 'prodejů') ?></a>
     <?php endif ?>
     <?php $perRun = db_query("SELECT run_id, COUNT(*) FROM reservation_seats GROUP BY run_id")->fetchAll(PDO::FETCH_KEY_PAIR); ?>
     <?php foreach (runs() as $run): $held = (int) ($perRun[$run['id']] ?? 0); ?>
-      <a class="card <?= $runFilter === $run['id'] ? 'selected' : '' ?>" href="admin.php?run=<?= (int) $run['id'] ?>"><?= $h(run_label($run)) ?><strong><?= $held ?> / <?= run_capacity($run) ?></strong><?= run_capacity($run) - $held ?> volných</a>
+      <a class="card <?= $runFilter === $run['id'] ? 'selected' : '' ?>" href="<?= $toggle('run', (int) $run['id']) ?>"><?= $h(run_label($run)) ?><strong><?= $held ?> / <?= run_capacity($run) ?></strong><?= run_capacity($run) - $held ?> volných</a>
     <?php endforeach ?>
   </div>
 
   <?php $deleteAt = data_deletion_at();
   if ($refunds['n'] > 0 && $deleteAt !== null && now_utc() > $deleteAt->modify('-14 days')): ?>
-    <div class="flash warn">Osobní údaje se mažou <?= $h(format_prague(db_time($deleteAt))) ?>. U <?= (int) $refunds['n'] ?> rez. zbývá vrátit peníze – jejich jméno a e-mail se smažou až po označení „Vráceno“.</div>
+    <div class="flash warn">Osobní údaje se mažou <?= $h(format_prague(db_time($deleteAt))) ?>. U <?= (int) $refunds['n'] ?> <?= (int) $refunds['n'] === 1 ? 'rezervace' : 'rezervací' ?> zbývá vrátit peníze – jejich jméno a e-mail se smažou až po označení „Vráceno“.</div>
   <?php endif ?>
 
   <form class="filters" method="get">

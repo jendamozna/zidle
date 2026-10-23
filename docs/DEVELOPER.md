@@ -979,9 +979,12 @@ Tabs:
   …“_).
 
 - **Rezervace** – one row of cards (`.stats`: no wrapping, cards share the
-  width): per status (pending/paid), refunds due, on-site
+  width): per status (pending/paid: seats, amount, _N rezervace_ / _N rezervací_), refunds due (amount, the same count), on-site
   sales to verify (_Na místě – ověřit platbu_) – these three without test
-  runs (`NOT_TEST_RUN_SQL`) –, per run occupancy (held / `run_capacity()`; a test run labelled _· TEST_); filters run/status (incl. `refund`, `onsite`)/ search (SS,
+  runs (`NOT_TEST_RUN_SQL`) –, per run occupancy (held / `run_capacity()`; a test run labelled _· TEST_). Every
+  card is a toggle filter: a click sets its `status` (`pending`, `paid`, `refund`, `onsite`) or `run`, keeps the
+  other filters, search and sort, and outlines the card (`.selected`); a second click removes that filter. Filters
+  run/status (incl. `refund`, `onsite`)/ search (SS,
   name, e-mail, seat). Table (max 500 rows, newest first) sorted on the
   server by clicking a column header (`?sort=ss|run|name|seats|amount|status|created|expires`
   & `dir=asc|desc`, a second click on the same column reverses it, ▲/▼ and
@@ -997,7 +1000,7 @@ Tabs:
   mentions that seats free by a code are not refunded), `refunded`, `email`
   (change), `onsite-checked` (**Platba dorazila**, §9; replaces _přišla
   platba_ for unverified on-site sales). Within 14 days of the GDPR deletion date and
-  while refunds are due, a warning: _„Osobní údaje se mažou <date>. U N rez.
+  while refunds are due, a warning: _„Osobní údaje se mažou <date>. U N rezervace/rezervací
   zbývá vrátit peníze – jejich jméno a e-mail se smažou až po označení
   „Vráceno“.“_
 - **Slevové kódy** – cards _Kódů celkem_ / _Použito_ / _Nepoužito_; form
@@ -1338,6 +1341,8 @@ Tests:
   Zaplaceno_) and one without SS (_Platba nemá SS_) → **Zapsat vybrané
   platby** → _Zapsáno plateb: 1 z 1._, _Přijato 600 Kč – zaplaceno._, the row
   shows _Už zapsáno_ without a checkbox, the reservation is _Zaplaceno_;
+  the cards _Čeká na platbu_ and _Premiéra_ filter together (only pending
+  rows), a second click on each removes its filter only;
   _Plánek_: LH-1-1 of _Premiéra_ switched
   to záložní and saved (_„V prodeji 266 míst, záložních 35.“_, in `seats.php`
   `reserveSeats`), then _Výchozí rozložení_; discount codes (invalid e-mail →
