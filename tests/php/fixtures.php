@@ -41,19 +41,18 @@ function reservation(array $seats, string $status = 'pending', int $run = 1, str
     static $n = 0;
     $n++;
     $pdo = db();
-    $prices = ['child_seats' => implode(',', $children), 'free_seats' => implode(',', $free), 'adult_price' => 300, 'child_price' => 150];
-    $amount = seats_value($prices, $seats);
+    $items = new_reservation_items($seats, $children, $free, 300, 150);
+    $amount = array_sum(array_column($items, 'price'));
     $pdo->prepare(
-        "INSERT INTO reservations (token, run_id, first_name, last_name, email, seats, child_seats, free_seats, seat_count,
-           adult_price, child_price, amount, specific_symbol, status, created_at, expires_at, paid_at, paid_amount)
-         VALUES (?, ?, 'Test', ?, ?, ?, ?, ?, ?, 300, 150, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO reservations (token, run_id, first_name, last_name, email, amount, specific_symbol, status, created_at, expires_at, paid_at, paid_amount)
+         VALUES (?, ?, 'Test', ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )->execute([
-        bin2hex(random_bytes(16)), $run, $lastName ?: "T{$n}", "test{$n}@example.com", implode(',', $seats),
-        $prices['child_seats'], $prices['free_seats'], count($seats), $amount,
+        bin2hex(random_bytes(16)), $run, $lastName ?: "T{$n}", "test{$n}@example.com", $amount,
         (string) (1000000000 + $n), $status, db_time(now_utc()), db_time(now_utc()->modify('+3 days')),
         $status === 'paid' ? db_time(now_utc()) : null, $status === 'paid' && $amount > 0 ? $amount : null,
     ]);
     $id = (int) $pdo->lastInsertId();
+    insert_reservation_items($pdo, $id, $items);
     $insert = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, reservation_id) VALUES (?, ?, ?)');
     foreach ($seats as $seat) {
         $insert->execute([$run, $seat, $id]);

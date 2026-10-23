@@ -223,7 +223,7 @@ test('admin cancellation of single seats refunds them in full and frees them', f
     $id = reservation(['LK-3-2', 'LK-3-3'], 'paid');
     cancel_seats($id, ['LK-3-3']);
     $r = row($id);
-    same(['paid', 'LK-3-2', 300, 300], [$r['status'], $r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'after one seat');
+    same(['paid', ['LK-3-2'], ['LK-3-3'], 300, 300], [$r['status'], current_seat_ids($r), cancelled_seat_ids($r), (int) $r['amount'], (int) $r['refund_amount']], 'after one seat');
     same(false, isset(held(1)['LK-3-3']), 'seat freed');
     same('Vyberte místa z této rezervace.', (function () use ($id) {
         try {
@@ -295,7 +295,7 @@ test('a reservation with a child seat and a code costs adult + child − the adu
     $code = new_code();
     $booked = book(['PH-1-1', 'PH-1-2', 'PH-1-3'], 1, [$code]);
     $r = $booked['reservation'] ?? [];
-    same(['pending', 'PH-1-3', 'PH-1-1', 450], [$r['status'], $r['child_seats'], $r['free_seats'], (int) $r['amount']], 'reservation');
+    same(['pending', 450], [$r['status'], (int) $r['amount']], 'reservation');
     $used = db()->prepare('SELECT used_at IS NOT NULL, reservation_id, seat_id FROM discount_codes WHERE code = ?');
     $used->execute([$code]);
     same([1, (int) $r['id'], 'PH-1-1'], array_map(fn ($v) => is_numeric($v) ? (int) $v : $v, $used->fetch(PDO::FETCH_NUM) ?: []), 'code used for the seat');
@@ -318,7 +318,7 @@ test('a discount code works only once and not after it was revoked', function ()
 test('a reservation paid fully by codes is confirmed at once', function (): void {
     $booked = book(['PH-3-1', 'PH-3-2'], 1, [new_code(), new_code()]);
     $r = $booked['reservation'] ?? [];
-    same(['paid', 0, 'PH-3-1,PH-3-2'], [$r['status'], (int) $r['amount'], $r['free_seats']], 'paid without money');
+    same(['paid', 0, [true, true]], [$r['status'], (int) $r['amount'], array_column(reservation_seat_items($r), 'free')], 'paid without money');
     same(0, amount_due($r), 'nothing to pay');
 });
 
@@ -343,7 +343,7 @@ test('a test run: hidden label TEST, bookings paid at once, codes refused, delet
     same('Termín má rezervace, nelze ho smazat.', delete_run(1), 'a real run with reservations stays');
     same('Termín smazán.', delete_run($runId), 'test run deleted');
     same([null, [], 0, 0], [run_by_id($runId), held($runId), (int) db_query("SELECT COUNT(*) FROM reservations WHERE run_id = {$runId}")->fetchColumn(),
-        (int) db_query('SELECT COUNT(*) FROM ticket_checkins WHERE reservation_id = ' . (int) $r['id'])->fetchColumn()], 'with its reservations, seats and check-ins');
+        (int) db_query('SELECT COUNT(*) FROM reservation_items WHERE reservation_id = ' . (int) $r['id'])->fetchColumn()], 'with its reservations, seats and check-ins');
 });
 
 test('codes are created per listed e-mail; an invalid address creates nothing', function (): void {
@@ -393,7 +393,7 @@ test('cancelling a seat paid by a code returns nothing; a child seat returns its
     same([450, 0], [(int) row($id)['amount'], (int) row($id)['refund_amount']], 'free seat: nothing back');
     cancel_seats($id, ['PH-4-3']);
     $r = row($id);
-    same(['PH-4-2', 300, 150], [$r['seats'], (int) $r['amount'], (int) $r['refund_amount']], 'child seat');
+    same([['PH-4-2'], 300, 150], [current_seat_ids($r), (int) $r['amount'], (int) $r['refund_amount']], 'child seat');
     cancel_seats($id, null);
     same(['cancelled', 450], [row($id)['status'], (int) row($id)['refund_amount']], 'the adult seat in full');
 });
@@ -455,7 +455,7 @@ test('offline: seats of one reservation are checked in separately', function ():
         ['type' => 'ticket', 'id' => $id, 'specificSymbol' => $ss, 'seat' => 'PH-7-3', 'at' => $at],
     ]);
     same(['ok', 'ok', 'conflict'], array_column($res['results'], 'status'), 'two seats in, unknown seat refused');
-    same(['PH-7-1', 'PH-7-2'], array_keys(reservation_checkins($id)), 'both seats checked in');
+    same(['PH-7-1', 'PH-7-2'], array_keys(reservation_checkins(row($id))), 'both seats checked in');
     contains('řada 7 · místo 3', conflicts()[0]['label'] ?? '', 'conflict names the seat');
 });
 
@@ -470,7 +470,7 @@ test('on-site sale: QR payment, then paid and every seat checked in; the account
     contains('2 místa odbavena', (string) onsite_sale_paid(device('Vchod A'), $run, (int) $sale['id']), 'paid');
     $r = row((int) $sale['id']);
     same(['paid', 450, 'Vchod A', null], [$r['status'], (int) $r['paid_amount'], $r['sold_by'], $r['payment_checked_at']], 'reservation');
-    same(['PK-5-1', 'PK-5-2'], array_keys(reservation_checkins((int) $r['id'])), 'checked in');
+    same(['PK-5-1', 'PK-5-2'], array_keys(reservation_checkins($r)), 'checked in');
     same(null, onsite_sale_paid(device('Vchod A'), $run, (int) $sale['id']), 'only once');
 
     $other = onsite_sale_create(device('Vchod A'), $run, ['PK-5-3'], 0)['sale'] ?? [];
@@ -484,12 +484,13 @@ test('personal data is purged after the event except while money is still to ret
     $refund = reservation(['BL-1-1'], 'paid');
     record_payment($refund, 300); // paid twice → 300 to return
     $done = reservation(['BL-1-2'], 'paid');
+    save_ticket_names(row($done), ['BL-1-2' => 'Petr Novák']);
     db()->exec('UPDATE runs SET starts_at = starts_at - INTERVAL 400 DAY');
     runs(true);
     try {
         purge_personal_data();
         same('test' . substr(row($refund)['last_name'], 1) . '@example.com', row($refund)['email'], 'kept while refund due');
-        same('', row($done)['email'], 'purged');
+        same(['', []], [row($done)['email'], ticket_names(row($done))], 'purged with the names on the tickets');
         db()->prepare('UPDATE reservations SET refunded_amount = refund_amount WHERE id = ?')->execute([$refund]);
         purge_personal_data();
         same('', row($refund)['email'], 'purged after refund');
@@ -548,7 +549,7 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
     contains('UID:zidle-' . $r['id'] . '@', $ics, 'uid');
     contains('SEQUENCE:' . $now->getTimestamp(), $ics, 'sequence');
     contains('ATTENDEE;CN="Test Nováková, Jana";', $unfolded, 'attendee');
-    contains('SUMMARY:TZG 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels($r['seats']))), $unfolded, 'summary');
+    contains('SUMMARY:TZG 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels(current_seat_ids($r)))), $unfolded, 'summary');
     contains('Specifický symbol: ' . $r['specific_symbol'], $unfolded, 'description');
     same(true, str_ends_with($ics, "END:VCALENDAR\r\n"), 'CRLF');
     foreach (explode("\r\n", $ics) as $line) {

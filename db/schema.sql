@@ -20,15 +20,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   first_name      VARCHAR(100) NOT NULL,
   last_name       VARCHAR(100) NOT NULL,
   email           VARCHAR(190) NOT NULL,
-  seats           TEXT         NOT NULL COMMENT 'Comma separated seat ids currently in the reservation (kept after cancellation for history)',
-  cancelled_seats TEXT         NOT NULL DEFAULT '' COMMENT 'Seats cancelled individually, comma separated',
-  child_seats     TEXT         NOT NULL DEFAULT '' COMMENT 'Seats with a child ticket (4–17 years), comma separated; the others are adult',
-  free_seats      TEXT         NOT NULL DEFAULT '' COMMENT 'Seats paid by a discount code (price 0), comma separated',
-  ticket_names    TEXT         NOT NULL DEFAULT '{}' COMMENT 'JSON {seat: name on the ticket} set by the customer; others show the reservation name',
-  seat_count      SMALLINT UNSIGNED NOT NULL,
-  adult_price     INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK per adult seat when the reservation was made',
-  child_price     INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'CZK per child seat when the reservation was made',
-  amount          INT UNSIGNED NOT NULL COMMENT 'CZK, price of the seats currently in the reservation',
+  amount          INT UNSIGNED NOT NULL COMMENT 'CZK, price of the seats currently in the reservation (sum of reservation_items.price)',
   paid_amount     INT UNSIGNED NULL COMMENT 'CZK received',
   specific_symbol VARCHAR(10)  NULL COMMENT 'SS of the payment (unique, 10 digits); the VS is PAYMENT_VARIABLE_SYMBOL for all',
   status          ENUM('pending', 'paid', 'expired', 'cancelled') NOT NULL DEFAULT 'pending',
@@ -42,7 +34,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   ticket_sent_at  DATETIME     NULL COMMENT 'When the e-mail with the ticket QR code was sent',
   reminder_sent_at      DATETIME NULL,
   expiry_notice_sent_at DATETIME NULL,
-  checked_in_at   DATETIME     NULL COMMENT 'First check-in of any seat of the reservation (ticket_checkins)',
+  checked_in_at   DATETIME     NULL COMMENT 'First check-in of any seat of the reservation (reservation_items)',
   checked_in_by   VARCHAR(200) NULL COMMENT 'E-mail of the account that made the first check-in',
   sold_by         VARCHAR(200) NULL COMMENT 'Sold at the entrance by this account (e-mail, scanner); NULL = booked on the website',
   payment_checked_at DATETIME  NULL COMMENT 'UTC; accountant confirmed that the payment of an on-site sale arrived',
@@ -53,14 +45,21 @@ CREATE TABLE IF NOT EXISTS reservations (
   KEY idx_run (run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
--- One row per checked-in seat ticket (one QR code = one seat).
-CREATE TABLE IF NOT EXISTS ticket_checkins (
+-- One row per seat ever in a reservation (one QR code = one seat). A seat cancelled on its own gets
+-- cancelled_at; a whole cancelled or expired reservation keeps its items as they were (history, restore).
+CREATE TABLE IF NOT EXISTS reservation_items (
   reservation_id INT UNSIGNED NOT NULL,
   seat_id        VARCHAR(12)  NOT NULL,
-  checked_in_at  DATETIME     NOT NULL COMMENT 'UTC',
-  checked_in_by  VARCHAR(200) NOT NULL,
+  kind           ENUM('adult', 'child') NOT NULL DEFAULT 'adult' COMMENT 'child = ticket for 4–17 years',
+  price          INT UNSIGNED NOT NULL COMMENT 'CZK of the seat when booked (0 = paid by a discount code)',
+  free           TINYINT(1)   NOT NULL DEFAULT 0 COMMENT 'Paid by a discount code',
+  holder_name    VARCHAR(100) NULL COMMENT 'Name on the ticket set by the customer; NULL = the reservation name',
+  cancelled_at   DATETIME     NULL COMMENT 'UTC; the seat was cancelled from the reservation',
+  checked_in_at  DATETIME     NULL COMMENT 'UTC',
+  checked_in_by  VARCHAR(200) NULL,
   PRIMARY KEY (reservation_id, seat_id),
-  CONSTRAINT fk_checkin_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id) ON DELETE CASCADE
+  KEY idx_seat (seat_id),
+  CONSTRAINT fk_item_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
 -- Discount codes sent by the admin to e-mail addresses. One code = one seat free

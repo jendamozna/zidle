@@ -76,7 +76,7 @@ function record_payment(int $id, int $received, ?int $paidBefore = null): string
         } elseif ($status === 'expired') {
             $reason = late_payment_problem($pdo, $r);
             if ($reason === null) {
-                $seats = explode(',', $r['seats']);
+                $seats = current_seat_ids($r);
                 $insert = $pdo->prepare('INSERT INTO reservation_seats (run_id, seat_id, reservation_id) VALUES (?, ?, ?)');
                 foreach ($seats as $seat) {
                     $insert->execute([$r['run_id'], $seat, $id]);
@@ -144,7 +144,7 @@ function late_payment_problem(PDO $pdo, array $r): ?string
     if ((int) $r['paid_amount'] - (int) $r['refunded_amount'] < (int) $r['amount']) {
         return 'short';
     }
-    $seats = explode(',', $r['seats']);
+    $seats = current_seat_ids($r);
     $placeholders = implode(',', array_fill(0, count($seats), '?'));
     $taken = $pdo->prepare("SELECT seat_id FROM reservation_seats WHERE run_id = ? AND seat_id IN ($placeholders) FOR UPDATE");
     $taken->execute([$r['run_id'], ...$seats]);

@@ -182,7 +182,7 @@ function run_has_reservations(int $runId): bool
 
 /**
  * Deletes the run (admin → Nastavení); returns the flash message. A real run only without
- * reservations, a test run together with its reservations (seats and check-ins cascade)
+ * reservations, a test run together with its reservations (seats, items and check-ins cascade)
  * and scan conflicts; user run assignments cascade.
  */
 function delete_run(int $id): string

@@ -19,30 +19,25 @@ const OFFLINE_MAX_AGE_HOURS = 48;
 function scanner_snapshot(array $run): array
 {
     $stmt = db()->prepare(
-        'SELECT id, specific_symbol, first_name, last_name, seats, child_seats, ticket_names, status
-         FROM reservations WHERE run_id = ? ORDER BY id'
+        'SELECT id, specific_symbol, first_name, last_name, status FROM reservations WHERE run_id = ? ORDER BY id'
     );
     $stmt->execute([$run['id']]);
     $rows = $stmt->fetchAll();
-    $checkins = db()->prepare(
-        'SELECT c.reservation_id, c.seat_id, c.checked_in_at, c.checked_in_by FROM ticket_checkins c
-         JOIN reservations r ON r.id = c.reservation_id WHERE r.run_id = ?'
-    );
-    $checkins->execute([$run['id']]);
-    $byReservation = [];
-    foreach ($checkins->fetchAll() as $c) {
-        $byReservation[(int) $c['reservation_id']][$c['seat_id']] = ['at' => iso_time($c['checked_in_at']), 'by' => $c['checked_in_by']];
-    }
-    $tickets = array_map(static fn ($r) => [
-        'id' => (int) $r['id'],
-        'specificSymbol' => (string) $r['specific_symbol'],
-        'name' => trim($r['first_name'] . ' ' . $r['last_name']),
-        'seats' => seat_list((string) $r['seats']),
-        'childSeats' => seat_list((string) $r['child_seats']),
-        'ticketNames' => (object) ticket_names($r),
-        'status' => $r['status'],
-        'checkedIn' => (object) ($byReservation[(int) $r['id']] ?? []),
-    ], $rows);
+    $items = load_reservation_items(array_column($rows, 'id'));
+    $tickets = array_map(static function ($r) use ($items) {
+        $r['items'] = $items[(int) $r['id']] ?? [];
+        $current = current_items($r);
+        return [
+            'id' => (int) $r['id'],
+            'specificSymbol' => (string) $r['specific_symbol'],
+            'name' => trim($r['first_name'] . ' ' . $r['last_name']),
+            'seats' => current_seat_ids($r),
+            'childSeats' => array_map('strval', array_keys(array_filter($current, static fn ($i) => $i['kind'] === 'child'))),
+            'ticketNames' => (object) ticket_names($r),
+            'status' => $r['status'],
+            'checkedIn' => (object) reservation_checkins($r),
+        ];
+    }, $rows);
 
     return [
         'runId' => $run['id'],
@@ -101,27 +96,25 @@ function offline_ticket(array $run, array $event, string $by): array
         $stmt = $pdo->prepare('SELECT * FROM reservations WHERE id = ? AND specific_symbol = ? AND run_id = ? FOR UPDATE');
         $stmt->execute([(int) ($event['id'] ?? 0), $ss, $run['id']]);
         $r = $stmt->fetch();
+        $item = $r ? (reservation_items($r)[$seat] ?? null) : null;
         if (!$r) {
             $result = record_conflict($run, null, 'SS ' . $ss . ($seat !== '' ? ' · ' . $seat : ''), 'unknown', $at, $by);
-        } elseif ($r['status'] !== 'paid' || !in_array($seat, seat_list((string) $r['seats']), true)) {
+        } elseif ($r['status'] !== 'paid' || $item === null || $item['cancelled']) {
             $result = record_conflict($run, (int) $r['id'], reservation_label($r, $seat), 'not_paid', $at, $by);
         } else {
-            $current = $pdo->prepare('SELECT checked_in_at, checked_in_by FROM ticket_checkins WHERE reservation_id = ? AND seat_id = ?');
-            $current->execute([$r['id'], $seat]);
-            $c = $current->fetch();
-            if (!$c) {
-                $pdo->prepare('INSERT INTO ticket_checkins (reservation_id, seat_id, checked_in_at, checked_in_by) VALUES (?, ?, ?, ?)')
-                    ->execute([$r['id'], $seat, db_time($at), $by]);
+            if ($item['checkedInAt'] === null) {
+                $pdo->prepare('UPDATE reservation_items SET checked_in_at = ?, checked_in_by = ? WHERE reservation_id = ? AND seat_id = ?')
+                    ->execute([db_time($at), $by, $r['id'], $seat]);
                 // The reservation keeps its earliest check-in.
                 $pdo->prepare('UPDATE reservations SET checked_in_by = IF(checked_in_at IS NULL OR checked_in_at > ?, ?, checked_in_by),
                      checked_in_at = IF(checked_in_at IS NULL OR checked_in_at > ?, ?, checked_in_at) WHERE id = ?')
                     ->execute([db_time($at), $by, db_time($at), db_time($at), $r['id']]);
                 $result = ['status' => 'ok'];
-            } elseif ($c['checked_in_at'] === db_time($at) && $c['checked_in_by'] === $by) {
+            } elseif ($item['checkedInAt'] === db_time($at) && $item['checkedInBy'] === $by) {
                 $result = ['status' => 'ok']; // the same event sent again
             } else {
                 $result = record_conflict($run, (int) $r['id'], reservation_label($r, $seat), 'already_checked_in', $at, $by,
-                    $c['checked_in_at'], $c['checked_in_by']);
+                    $item['checkedInAt'], $item['checkedInBy']);
             }
         }
         $pdo->commit();

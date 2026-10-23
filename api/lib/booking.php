@@ -29,10 +29,8 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
     }
     $childSeats = assign_child_seats($seats, $children);
     $freeSeats = assign_free_seats($seats, $childSeats, count($codes), adult_price(), child_price());
-    $amount = seats_value([
-        'child_seats' => implode(',', $childSeats), 'free_seats' => implode(',', $freeSeats),
-        'adult_price' => adult_price(), 'child_price' => child_price(),
-    ], $seats);
+    $items = new_reservation_items($seats, $childSeats, $freeSeats, adult_price(), child_price());
+    $amount = array_sum(array_column($items, 'price'));
     $free = $amount === 0; // everything paid by discount codes: confirmed at once
     $test = !empty($run['is_test']) && $soldBy === null; // test run: paid at once
     $paid = $free || $test;
@@ -71,17 +69,16 @@ function book_reservation(array $run, string $firstName, string $lastName, strin
 
             $pdo->prepare(
                 'INSERT INTO reservations
-                   (token, run_id, first_name, last_name, email, seats, child_seats, free_seats, seat_count,
-                    adult_price, child_price, amount, paid_amount, status, created_at, expires_at, paid_at, sold_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                   (token, run_id, first_name, last_name, email, amount, paid_amount, status, created_at, expires_at, paid_at, sold_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
-                $token, $run['id'], $firstName, $lastName, $email, implode(',', $seats), implode(',', $childSeats),
-                implode(',', $freeSeats), count($seats), adult_price(), child_price(), $amount, $test ? $amount : 0,
+                $token, $run['id'], $firstName, $lastName, $email, $amount, $test ? $amount : 0,
                 $paid ? 'paid' : 'pending', db_time($now), db_time($expires), $paid ? db_time($now) : null, $soldBy,
             ]);
             $id = (int) $pdo->lastInsertId();
             $pdo->prepare('UPDATE reservations SET specific_symbol = ? WHERE id = ?')
                 ->execute([generate_specific_symbol($pdo), $id]);
+            insert_reservation_items($pdo, $id, $items);
             $useCode = $pdo->prepare('UPDATE discount_codes SET used_at = ?, reservation_id = ?, seat_id = ? WHERE id = ?');
             foreach ($codeIds as $i => $codeId) {
                 $useCode->execute([db_time($now), $id, $freeSeats[$i], $codeId]);

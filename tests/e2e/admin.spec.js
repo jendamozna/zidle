@@ -75,6 +75,20 @@ test('status and run cards toggle their filters', async ({ page }) => {
   await expect(premiere).not.toHaveClass(/selected/);
 });
 
+test('search by a seat finds exactly that seat, a row prefix the whole row', async ({ page }) => {
+  const { pendingVs } = seed();
+  await adminLogin(page);
+  await page.goto('http://127.0.0.1:8000/api/admin.php?q=PH-5-1&sort=seats');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('tbody tr')).toContainText(pendingVs);
+  await page.goto('http://127.0.0.1:8000/api/admin.php?q=PH-5-2');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await page.goto('http://127.0.0.1:8000/api/admin.php?q=PH-5');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await page.goto('http://127.0.0.1:8000/api/admin.php?q=PH-5-3');
+  await expect(page.locator('tbody')).toContainText('Žádné rezervace.');
+});
+
 test('reservations sort by a clicked column, a second click reverses it', async ({ page }) => {
   seed();
   await adminLogin(page);

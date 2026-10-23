@@ -530,12 +530,16 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
         $params[] = $runFilter;
     }
     if ($q !== '') {
-        $where[] = '(specific_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ? OR seats LIKE ?)';
-        array_push($params, ...array_fill(0, 5, '%' . $q . '%'));
+        // A seat id matches exactly (LH-1-1 not LH-1-10); a prefix like "LH-1" lists the whole row.
+        $where[] = '(specific_symbol LIKE ? OR email LIKE ? OR last_name LIKE ? OR first_name LIKE ?
+            OR EXISTS (SELECT 1 FROM reservation_items i WHERE i.reservation_id = reservations.id AND (i.seat_id = ? OR i.seat_id LIKE ?)))';
+        array_push($params, ...array_fill(0, 4, '%' . $q . '%'));
+        array_push($params, $q, $q . '-%');
     }
+    $seatCountSql = '(SELECT COUNT(*) FROM reservation_items i WHERE i.reservation_id = reservations.id AND i.cancelled_at IS NULL)';
     $sortColumns = [
         'ss' => 'specific_symbol', 'run' => '(SELECT starts_at FROM runs WHERE runs.id = reservations.run_id)',
-        'name' => 'last_name, first_name', 'seats' => 'seat_count', 'amount' => 'amount', 'status' => 'status',
+        'name' => 'last_name, first_name', 'seats' => $seatCountSql, 'amount' => 'amount', 'status' => 'status',
         'created' => 'created_at', 'expires' => 'expires_at',
     ];
     $sort = isset($sortColumns[$_GET['sort'] ?? '']) ? (string) $_GET['sort'] : '';
@@ -547,8 +551,12 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
-    $totals = db_query('SELECT status, COUNT(*) n, SUM(seat_count) seats, SUM(amount) amount FROM reservations WHERE ' . NOT_TEST_RUN_SQL . ' GROUP BY status')
-        ->fetchAll(PDO::FETCH_UNIQUE);
+    $rowItems = load_reservation_items(array_column($rows, 'id'));
+    $rows = array_map(static fn ($r) => $r + ['items' => $rowItems[(int) $r['id']] ?? []], $rows);
+    $totals = db_query(
+        'SELECT status, COUNT(*) n, SUM(seats) seats, SUM(amount) amount
+         FROM (SELECT status, amount, ' . $seatCountSql . ' seats FROM reservations WHERE ' . NOT_TEST_RUN_SQL . ') t GROUP BY status'
+    )->fetchAll(PDO::FETCH_UNIQUE);
     $prague = new DateTimeZone('Europe/Prague');
     $fmt = static fn ($t) => $t ? new DateTimeImmutable($t, new DateTimeZone('UTC'))->setTimezone($prague)->format('j. n. Y H:i') : '';
     $kc = static fn ($n) => number_format((int) $n, 0, ',', ' ') . ' Kč';
@@ -1072,18 +1080,18 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
                 <button name="action" value="email">Uložit</button>
               </form>
             </details></td>
-          <td class="seats"><?php $checkedIn = reservation_checkins((int) $r['id']);
-              $holders = ticket_names($r);
-              foreach (seat_list($r['seats']) as $seat): ?>
-              <?= $h($seat) ?><?= seat_kind($r, $seat) === 'child' ? ' <span class="kind child">dítě</span>' : '' ?><?= seat_is_free($r, $seat) ? ' <span class="kind free">kód</span>' : '' ?><?= isset($checkedIn[$seat]) ? ' ✓' : '' ?><?= isset($holders[$seat]) ? ' <small>' . $h($holders[$seat]) . '</small>' : '' ?><br>
+          <td class="seats"><?php $checkedIn = reservation_checkins($r);
+              $seatCount = count(current_items($r));
+              foreach (current_items($r) as $seat => $item): ?>
+              <?= $h($seat) ?><?= $item['kind'] === 'child' ? ' <span class="kind child">dítě</span>' : '' ?><?= $item['free'] ? ' <span class="kind free">kód</span>' : '' ?><?= isset($checkedIn[$seat]) ? ' ✓' : '' ?><?= $item['holder'] !== null ? ' <small>' . $h($item['holder']) . '</small>' : '' ?><br>
             <?php endforeach ?>
-            <?php if ($r['cancelled_seats'] !== ''): ?><br><small>zrušená místa: <?= $h(str_replace(',', ', ', $r['cancelled_seats'])) ?></small><?php endif ?>
-            <?php /*if (in_array($r['status'], ['pending', 'paid'], true) && (int) $r['seat_count'] > 1): ?>
+            <?php if ($cancelledSeats = cancelled_seat_ids($r)): ?><br><small>zrušená místa: <?= $h(implode(', ', $cancelledSeats)) ?></small><?php endif ?>
+            <?php /*if (in_array($r['status'], ['pending', 'paid'], true) && $seatCount > 1): ?>
               <details class="edit-email"><summary>zrušit jednotlivá místa</summary>
                 <form method="post" class="seat-cancel" onsubmit="return confirm('Zrušit vybraná místa?<?= $r['status'] === 'paid' ? ' Zákazníkovi bude vrácena jejich plná cena (místa zdarma se slevovým kódem se nevracejí) a přijde mu e-mail s novými vstupenkami.' : '' ?>')">
                   <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
                   <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
-                  <?php foreach (explode(',', $r['seats']) as $seat): ?>
+                  <?php foreach (current_seat_ids($r) as $seat): ?>
                     <label><input type="checkbox" name="seats[]" value="<?= $h($seat) ?>"> <?= $h($seat) ?></label>
                   <?php endforeach ?>
  
@@ -1099,7 +1107,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
             <?php if ($r['paid_at']): ?><br><small>zaplaceno <?= $h($fmt($r['paid_at'])) ?></small><?php endif ?>
             <?php if ($r['sold_by'] !== null && $r['status'] === 'paid'): ?><br><small class="<?= $r['payment_checked_at'] ? '' : 'overdue' ?>"><?= $r['payment_checked_at'] ? 'platba ověřena ' . $h($fmt($r['payment_checked_at'])) : 'na místě – ověřte, že platba dorazila' ?></small><?php endif ?>
             <?php if ($r['ticket_sent_at']): ?><br><small>vstupenka <?= $h($fmt($r['ticket_sent_at'])) ?></small><?php endif ?>
-            <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= count($checkedIn) ?> z <?= (int) $r['seat_count'] ?> míst, poprvé <?= $h($fmt($r['checked_in_at'])) ?><?= $r['checked_in_by'] ? ' (' . $h($r['checked_in_by']) . ')' : '' ?></small><?php endif ?>
+            <?php if ($r['checked_in_at']): ?><br><small>odbaveno <?= count($checkedIn) ?> z <?= $seatCount ?> míst, poprvé <?= $h($fmt($r['checked_in_at'])) ?><?= $r['checked_in_by'] ? ' (' . $h($r['checked_in_by']) . ')' : '' ?></small><?php endif ?>
             <?php if ($r['status'] === 'cancelled'): ?><br><small>zrušeno <?= $h($fmt($r['cancelled_at'])) ?></small><?php endif ?>
             <?php if ($r['refunded_amount'] > 0): ?><br><small>vráceno <?= $kc($r['refunded_amount']) ?> (<?= $h($fmt($r['refunded_at'])) ?>)</small><?php endif ?>
             <?php if ($r['refund_amount'] > $r['refunded_amount']): ?>

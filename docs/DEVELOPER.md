@@ -74,7 +74,7 @@ api/
                        is_valid_seat_id(), compare_seat_ids()
   lib/settings.php     runs: loading, times, open sections (run_capacity()), check-in window,
                        run_public(); payment deadline rules
-  lib/pricing.php      adult / child seats, discount-free seats, seat_value(), reservation_seat_items()
+  lib/pricing.php      reservation_items (load, current/cancelled seats), adult / child seats, discount-free seats, reservation_seat_items()
   lib/discounts.php    discount codes: create + e-mail, revoke, lock for a reservation
   lib/booking.php      book_reservation() (prices, codes, seats, SS, first e-mail), generate_specific_symbol()
   lib/checkin.php      verify_ticket() – online check-in of one seat ticket
@@ -332,16 +332,23 @@ x2, y2}]}]}]}`
   `run['reserve_seats']`, `seat_closed_in_run(run, seat)`, `run_capacity(run)`
   = all seats − „Záložní“ (267 by default). „Záložní“ seats cannot be booked
   or sold on site (§8).
-- **Reservation** – one run, customer data, current seats, price, SS, status,
-  history (cancelled seats, fees, refunds, check-in). Each seat is an
-  **adult** (from 18, `adult_price`) or **child** seat (4–17, `child_price`;
-  listed in `child_seats`); the prices are stored on the reservation when it
-  is made. Children up to 3 years may sit on an adult's lap for free; they
-  are not recorded (the form only says so). Seats paid by a discount code are in `free_seats` (value 0).
-  `seat_value()` = 0 for a free seat, else the kind's price; `amount` = sum
-  over the current seats.
+- **Reservation** – one run, customer data, price (`amount`), SS, status,
+  money history (refunds, check-in). Its seats are **items**
+  (`reservation_items`, one row per seat ever in it): each seat is an
+  **adult** (from 18, `SEAT_PRICE`) or **child** seat (4–17,
+  `CHILD_SEAT_PRICE`); the item stores the price when booked (`price`; 0 and
+  `free` = 1 for a seat paid by a discount code), the name on the ticket
+  (`holder_name`), `cancelled_at` when the seat was cancelled on its own and
+  its check-in. Children up to 3 years may sit on an adult's lap for free; they
+  are not recorded (the form only says so). Current seats = items without
+  `cancelled_at` (`current_items()`, `current_seat_ids()`); `amount` = sum of
+  their prices. A whole cancelled or expired reservation keeps its items
+  unchanged (history, e-mails, restore by a late payment). PHP reads them with
+  `reservation_items(r)` (`[seat => {seat, kind, price, free, holder, cancelled,
+checkedInAt, checkedInBy}]` in seat order; one query, or `r['items']` when
+  preloaded – `with_items()`, `load_reservation_items(ids)` for lists).
 - **Ticket** – one per seat (1 QR code = 1 chair, §11); checked in per seat
-  (`ticket_checkins`).
+  (`reservation_items.checked_in_at` / `checked_in_by`).
 - **Discount code** – sent by the admin to an e-mail; any run, used once,
   makes the most expensive seat of the reservation free (§8).
 - **On-site sale** – reservation sold at the entrance by an organizer
@@ -359,19 +366,19 @@ x2, y2}]}]}]}`
 
 All `DATETIME` columns and JSON dates are UTC.
 
-| Table               | Purpose / key columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runs`              | `id`, `label`, `starts_at`, `booking_closes_at` (NULL = start), `reserve_seats` JSON `["BL-2-1", …]` (seats „Záložní“ in the run; NULL = default reserve rows), `is_test` (1 = test run, §5)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `reservations`      | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `seats` (CSV of current seats), `cancelled_seats` (CSV), `child_seats` (CSV, child tickets incl. cancelled ones), `free_seats` (CSV, paid by discount codes), `ticket_names` (JSON `{seat: name}` the customer put on the tickets), `seat_count`, `adult_price`, `child_price` (CZK per seat when booked), `amount` (price of current seats), `paid_amount` (sum of all received transfers), `specific_symbol` (SS of the payment, unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at` / `checked_in_by` (first seat checked in), `sold_by` (e-mail of the account that sold it at the entrance, NULL = website), `payment_checked_at` (accountant verified an on-site payment) |
-| `ticket_checkins`   | PK (`reservation_id`, `seat_id`), `checked_in_at`, `checked_in_by`; FK cascade. One row per checked-in seat ticket.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `discount_codes`    | `code` (8 chars, unique, shown `XXXX-XXXX`), `email`, `created_at`, `created_by`, `emailed_at`, `used_at`, `reservation_id`, `seat_id` (the seat made free), `revoked_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `reservation_seats` | PK (`run_id`, `seat_id`), `reservation_id` (FK cascade). Prevents double booking per run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `scan_conflicts`    | offline check-ins that could not be applied (§11): `run_id`, `reservation_id` (NULL when unknown), `label` (SS + name + seat), `reason` (`already_checked_in` / `not_paid` / `unknown`), `scanned_at` (device time), `scanned_by`, `other_at` / `other_by` (the check-in that won), `created_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `bank_payments`     | transfers recorded from a bank statement (§9), so none is recorded twice: `transaction_id` (PK, the bank's _Identifikace transakce_ or `h:` + sha1 of the row), `reservation_id` (FK, SET NULL), `amount` (CZK), `booked_on` (DATE from the statement), `imported_at`, `imported_by` (e-mail); no personal data                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `rate_limits`       | `bucket` (sha256 of key), `hits`, `window_start`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `settings`          | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `admin_users`       | accounts (§12): `email` (unique, lower case, login – the account has no other name), `roles` (CSV of `admin` / `accountant` / `scanner`), `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open invitation token, unique), `invite_expires_at`, `reset_hash` (sha256 of the open forgotten-password token, unique), `reset_expires_at`, `invited_by` (e-mail of the inviting Správce, `deploy` for the first one), `created_at`, `accepted_at`, `last_login_at`, `disabled_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `user_runs`         | PK (`user_id`, `run_id`), FKs to `admin_users` and `runs` (cascade): runs an Odbavovatel checks in (§12)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Table               | Purpose / key columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runs`              | `id`, `label`, `starts_at`, `booking_closes_at` (NULL = start), `reserve_seats` JSON `["BL-2-1", …]` (seats „Záložní“ in the run; NULL = default reserve rows), `is_test` (1 = test run, §5)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `reservations`      | `id`, `token` (32 hex, unique), `run_id`, `first_name`, `last_name`, `email`, `amount` (price of current seats = sum of their items), `paid_amount` (sum of all received transfers), `specific_symbol` (SS of the payment, unique), `status` (`pending`/`paid`/`expired`/`cancelled`), `created_at`, `expires_at` (= due date shown to the customer), `paid_at`, `cancelled_at`, `refund_amount`, `refunded_amount`, `refunded_at`, `ticket_sent_at`, `reminder_sent_at`, `expiry_notice_sent_at`, `checked_in_at` / `checked_in_by` (first seat checked in), `sold_by` (e-mail of the account that sold it at the entrance, NULL = website), `payment_checked_at` (accountant verified an on-site payment) |
+| `reservation_items` | PK (`reservation_id`, `seat_id`), `kind` (`adult`/`child`), `price` (CZK when booked, 0 = discount code), `free` (1 = paid by a discount code), `holder_name` (name on the ticket, NULL = reservation name), `cancelled_at` (seat cancelled on its own), `checked_in_at` / `checked_in_by`; key `seat_id`; FK cascade. One row per seat ever in the reservation.                                                                                                                                                                                                                                                                                                                                            |
+| `discount_codes`    | `code` (8 chars, unique, shown `XXXX-XXXX`), `email`, `created_at`, `created_by`, `emailed_at`, `used_at`, `reservation_id`, `seat_id` (the seat made free), `revoked_at`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `reservation_seats` | PK (`run_id`, `seat_id`), `reservation_id` (FK cascade). Prevents double booking per run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `scan_conflicts`    | offline check-ins that could not be applied (§11): `run_id`, `reservation_id` (NULL when unknown), `label` (SS + name + seat), `reason` (`already_checked_in` / `not_paid` / `unknown`), `scanned_at` (device time), `scanned_by`, `other_at` / `other_by` (the check-in that won), `created_at`                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `bank_payments`     | transfers recorded from a bank statement (§9), so none is recorded twice: `transaction_id` (PK, the bank's _Identifikace transakce_ or `h:` + sha1 of the row), `reservation_id` (FK, SET NULL), `amount` (CZK), `booked_on` (DATE from the statement), `imported_at`, `imported_by` (e-mail); no personal data                                                                                                                                                                                                                                                                                                                                                                                             |
+| `rate_limits`       | `bucket` (sha256 of key), `hits`, `window_start`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `settings`          | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `admin_users`       | accounts (§12): `email` (unique, lower case, login – the account has no other name), `roles` (CSV of `admin` / `accountant` / `scanner`), `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open invitation token, unique), `invite_expires_at`, `reset_hash` (sha256 of the open forgotten-password token, unique), `reset_expires_at`, `invited_by` (e-mail of the inviting Správce, `deploy` for the first one), `created_at`, `accepted_at`, `last_login_at`, `disabled_at`                                                                                                                                                                      |
+| `user_runs`         | PK (`user_id`, `run_id`), FKs to `admin_users` and `runs` (cascade): runs an Odbavovatel checks in (§12)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Schema changes: update `db/schema.sql` (no migrations, §3).
 
@@ -517,13 +524,14 @@ The last three checks and the rest are `book_reservation()`
 (`lib/booking.php`). Prices: seats sorted, the last `children` seats are
 child seats (`assign_child_seats()`); each code frees one seat, the most
 expensive first – adult seats, then child seats, in seat order
-(`assign_free_seats()`); `amount` = sum of `seat_value()`. In one
-transaction: insert reservation (`adult_price`/`child_price` from config,
-`expires_at = min(now + payment_deadline_hours(now), run start)`; amount 0 →
+(`assign_free_seats()`); per seat kind, price and `free`
+(`new_reservation_items()`), `amount` = sum of the prices. In one
+transaction: insert reservation (`expires_at = min(now + payment_deadline_hours(now), run start)`; amount 0 →
 status `paid`, `paid_at` now; online booking on a test run → status `paid`,
 `paid_amount` = amount, `paid_at` now), random unique 10-digit SS
 (`generate_specific_symbol()`), mark the codes used (`used_at`,
-`reservation_id`, `seat_id` = the freed seat), insert seats. Then test run →
+`reservation_id`, `seat_id` = the freed seat), insert items
+(`insert_reservation_items()`) and held seats. Then test run →
 ticket e-mail (intro _„děkujeme za rezervaci. Jde o testovací termín –
 rezervace je automaticky zaplacená.“_), amount 0 →
 ticket e-mail _Vstupenky_ (intro _„děkujeme za rezervaci. Všechna místa jsou
@@ -646,12 +654,13 @@ nelze zrušit.“_):
 
 - seats must belong to the reservation (`Vyberte místa z této rezervace.`);
 - refund `cancellation_refund()`: paid → the value of the cancelled seats
-  (`seat_value()`; a seat paid by a discount code is worth 0, so nothing comes
+  (the item `price`; a seat paid by a discount code is worth 0, so nothing comes
   back for it and the code stays used); pending, all seats → the part of the
   price that already arrived; pending, part → 0;
-- all remaining seats → status `cancelled`, `cancelled_at`, seats deleted;
-- part → `seats`, `seat_count`, `amount` (= value of the remaining seats)
-  reduced, `cancelled_seats` appended;
+- all remaining seats → status `cancelled`, `cancelled_at`, held seats deleted
+  (the items stay as they were);
+- part → the items get `cancelled_at`, `amount` (= value of the remaining
+  seats) reduced, their held seats deleted;
 - `refund_amount` accumulates; refunds go to the paying account (no account
   is collected);
 - pending, part: when what already arrived covers the lower price the
@@ -719,15 +728,15 @@ id>@<host of PUBLIC_URL, else of the sender, else koncert-tzg>` (stable, so a
 tento termín nemáte přístup.`); load reservation by id + SS `FOR UPDATE`;
   result for the seat of the code:
 
-  | result                 | when                                                        | check-in recorded                                                                      |
-  | ---------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-  | `invalid`              | bad signature/format or not found                           | no                                                                                     |
-  | `wrong_run`            | pending/paid of another run                                 | no                                                                                     |
-  | `seat_cancelled`       | paid, the seat was cancelled from the reservation           | no                                                                                     |
-  | `used`                 | paid, this seat already checked in                          | no                                                                                     |
-  | `outside_window`       | paid, first scan of the seat, outside window, not confirmed | no                                                                                     |
-  | `valid`                | paid, first scan of the seat                                | yes (`ticket_checkins` row; the reservation's `checked_in_at`/`by` keep the first one) |
-  | `unpaid` / `cancelled` | status pending / expired or cancelled                       | no                                                                                     |
+  | result                 | when                                                        | check-in recorded                                                                                |
+  | ---------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+  | `invalid`              | bad signature/format or not found                           | no                                                                                               |
+  | `wrong_run`            | pending/paid of another run                                 | no                                                                                               |
+  | `seat_cancelled`       | paid, the seat was cancelled from the reservation           | no                                                                                               |
+  | `used`                 | paid, this seat already checked in                          | no                                                                                               |
+  | `outside_window`       | paid, first scan of the seat, outside window, not confirmed | no                                                                                               |
+  | `valid`                | paid, first scan of the seat                                | yes (the item's `checked_in_at`/`by`; the reservation's `checked_in_at`/`by` keep the first one) |
+  | `unpaid` / `cancelled` | status pending / expired or cancelled                       | no                                                                                               |
 
   Response: `ticket {id, specificSymbol, seat, kind, name (on the ticket:
 `ticket_holder()`), reservedBy (reservation name), seats (current),
@@ -778,7 +787,7 @@ seznamu termínu` (offline, see below), `Neověřeno – bez spojení` (no
   load; a stored session without `layout` is ignored); without one _„Bez
   spojení. Poprvé se scanner musí přihlásit s internetem.“_
 - **Snapshot** (`organizer.php` `snapshot {runId}` → `scanner_snapshot()`):
-  `{runId, at, tickets: [{id, specificSymbol, name, seats, childSeats,
+  `{runId, at, tickets: [{id, specificSymbol, name, seats (current), childSeats (current child seats),
 ticketNames, status, checkedIn: {seat: {at, by}}}]}` – all reservations of the
   run (any status), no e-mails or money. `useOffline(runId)` loads it for the
   selected run on start, every 60 s and on the browser `online` event, and
@@ -799,7 +808,7 @@ ticketNames, status, checkedIn: {seat: {at, by}}}]}` – all reservations of the
   403 for a run drops its events. Server, in order, each in a transaction:
   `ticket` – reservation by id + SS + run `FOR UPDATE`: not found → conflict
   `unknown`; not paid or the seat not in the reservation → `not_paid`; seat
-  not checked in → `ticket_checkins` row with the device time and
+  not checked in → the item's `checked_in_at`/`by` = the device time and
   `<device name> (offline)` (the reservation keeps its earliest check-in); the
   same time and device again → ok (resend); otherwise → `already_checked_in`
   (the first check-in stays). Conflict labels name the seat
@@ -985,13 +994,16 @@ Tabs:
   card is a toggle filter: a click sets its `status` (`pending`, `paid`, `refund`, `onsite`) or `run`, keeps the
   other filters, search and sort, and outlines the card (`.selected`); a second click removes that filter. Filters
   run/status (incl. `refund`, `onsite`)/ search (SS,
-  name, e-mail, seat). Table (max 500 rows, newest first) sorted on the
+  name, e-mail contain the text; a seat id matches exactly – `LH-1-1` not
+  `LH-1-10` – and a prefix like `LH-1` lists the row; cancelled seats count
+  too). Table (max 500 rows, newest first, items loaded in one query) sorted on the
   server by clicking a column header (`?sort=ss|run|name|seats|amount|status|created|expires`
   & `dir=asc|desc`, a second click on the same column reverses it, ▲/▼ and
-  `aria-sort` on the active one; run sorts by its start, name by surname;
+  `aria-sort` on the active one; run sorts by its start, name by surname,
+  seats by the number of current seats;
   filters keep the sort). Name column: _prodal(a) <organizer>_ for on-site sales.
-  Seats column: one seat per line with _dítě_ / _kód_ chips, ✓ when
-  checked in and the name on the ticket. Status column: _odbaveno K z N
+  Seats column: one current seat per line in seat order with _dítě_ / _kód_ chips, ✓ when
+  checked in and the name on the ticket; then _zrušená místa: …_. Status column: _odbaveno K z N
   míst, poprvé <time> (<by>)_; on-site paid _na místě – ověřte, že platba
   dorazila_ / _platba ověřena <time>_. Amount column: _přijato X_ when it
   differs from the price, _zbývá doplatit Y_ for partly paid pending.
@@ -1129,10 +1141,10 @@ on a test run get _„[TEST] TZG 2026: <subject>“_.
 `php api/cron.php`: `expire_reservations()`, `send_due_notifications()`,
 `purge_personal_data()`, `cleanup_rate_limits()`; prints a summary line.
 Purge after `last_run_start()` (the last run that is not a test run) `+ DATA_RETENTION_DAYS`: empties first/last
-name and e-mail of all reservations except those with money still to return
+name and e-mail of all reservations and the names on their tickets (`reservation_items.holder_name`) except those with money still to return
 (`refund_amount > refunded_amount`; they are emptied by the first cron run
 after **Vráceno**), deletes all `scan_conflicts` and empties the e-mails of `discount_codes`; SS,
-amounts, seats and statuses stay.
+amounts, seats (items) and statuses stay.
 
 ## 17. Spam and abuse protection
 
@@ -1242,7 +1254,7 @@ payment for cancelled and already paid reservations; invalid amount;
 admin cancellation of single seats (full refund, seat freed, foreign seat
 refused) and of a whole paid reservation; cancelling a partly paid pending
 reservation; partial cancellation completing a covered reservation; double
-booking rejected by the primary key; GDPR purge keeping contacts while a refund is due; ticket code
+booking rejected by the primary key; GDPR purge keeping contacts while a refund is due and removing the names on the tickets; ticket code
 round trip per seat with its kind, tamper detection and one ticket per seat
 in the payload; printable PDF (four tickets per page); ticket names (saved per
 seat, too long / foreign seat refused, '' back to the reservation name, carried
@@ -1343,6 +1355,8 @@ Tests:
   shows _Už zapsáno_ without a checkbox, the reservation is _Zaplaceno_;
   the cards _Čeká na platbu_ and _Premiéra_ filter together (only pending
   rows), a second click on each removes its filter only;
+  search by seat: `PH-5-1` and `PH-5-2` find only their reservation (also
+  sorted by seats), the row prefix `PH-5` too, `PH-5-3` _Žádné rezervace._;
   _Plánek_: LH-1-1 of _Premiéra_ switched
   to záložní and saved (_„V prodeji 266 míst, záložních 35.“_, in `seats.php`
   `reserveSeats`), then _Výchozí rozložení_; discount codes (invalid e-mail →

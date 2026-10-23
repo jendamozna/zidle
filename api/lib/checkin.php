@@ -34,21 +34,24 @@ function verify_ticket(string $code, array $run, array $access, bool $confirmOut
         return ['result' => 'invalid', 'ticket' => $ticket];
     }
     $seat = $ticket['seat'];
-    $active = in_array($seat, seat_list((string) $r['seats']), true);
+    $r['items'] = reservation_items($r);
+    $item = $r['items'][$seat] ?? null;
+    $active = $item !== null && !$item['cancelled'];
     $wrongRun = (int) $r['run_id'] !== $run['id'];
-    $checkins = reservation_checkins((int) $r['id']);
-    $firstScan = !isset($checkins[$seat]);
+    $firstScan = $item === null || $item['checkedInAt'] === null;
     $outside = !run_in_scan_window($run) && !$confirmOutside;
     if ($r['status'] === 'paid' && $active && $firstScan && !$wrongRun && !$outside) {
-        $now = now_utc();
-        $pdo->prepare('INSERT INTO ticket_checkins (reservation_id, seat_id, checked_in_at, checked_in_by) VALUES (?, ?, ?, ?)')
-            ->execute([$r['id'], $seat, db_time($now), $access['name']]);
+        $now = db_time(now_utc());
+        $pdo->prepare('UPDATE reservation_items SET checked_in_at = ?, checked_in_by = ? WHERE reservation_id = ? AND seat_id = ?')
+            ->execute([$now, $access['name'], $r['id'], $seat]);
         // The reservation remembers its first check-in (it can no longer be cancelled by the customer).
         $pdo->prepare('UPDATE reservations SET checked_in_at = COALESCE(checked_in_at, ?), checked_in_by = COALESCE(checked_in_by, ?) WHERE id = ?')
-            ->execute([db_time($now), $access['name'], $r['id']]);
-        $checkins[$seat] = ['at' => iso_utc($now), 'by' => $access['name']];
+            ->execute([$now, $access['name'], $r['id']]);
+        $r['items'][$seat]['checkedInAt'] = $now;
+        $r['items'][$seat]['checkedInBy'] = $access['name'];
     }
     $pdo->commit();
+    $checkins = reservation_checkins($r);
 
     $result = match (true) {
         $wrongRun && in_array($r['status'], ['pending', 'paid'], true) => 'wrong_run',
@@ -60,15 +63,14 @@ function verify_ticket(string $code, array $run, array $access, bool $confirmOut
         default => 'cancelled',
     };
     $ticketRun = run_by_id((int) $r['run_id']);
-    $seats = seat_list((string) $r['seats']);
+    $seats = current_seat_ids($r);
     return [
         'result' => $result,
         'ticket' => [
             'id' => (int) $r['id'],
             'specificSymbol' => $r['specific_symbol'],
             'seat' => $seat,
-            'kind' => in_array($seat, $seats, true) || in_array($seat, seat_list((string) $r['cancelled_seats']), true)
-                ? seat_kind($r, $seat) : $ticket['kind'],
+            'kind' => $item !== null ? $item['kind'] : $ticket['kind'],
             'name' => ticket_holder($r, $seat) ?: $ticket['name'],
             'reservedBy' => trim($r['first_name'] . ' ' . $r['last_name']),
             'seats' => $seats,

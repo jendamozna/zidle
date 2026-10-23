@@ -20,6 +20,7 @@ function ticket_pdf(array $r): string
 {
     require_once __DIR__ . '/../vendor/autoload.php';
     $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    $r = with_items($r);
     $items = reservation_seat_items($r);
     $count = count($items);
     $run = run_by_id((int) $r['run_id']);

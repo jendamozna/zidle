@@ -19,18 +19,25 @@ const check = (ok, message) => {
   if (!ok) failed++;
 };
 
+const item = (seat, kind, price, holder) => ({
+  seat,
+  kind,
+  price,
+  free: false,
+  holder,
+  cancelled: false,
+  checkedInAt: null,
+  checkedInBy: null,
+});
 const reservation = {
   id: 42,
   specific_symbol: '1234567890',
-  seat_count: 2,
   first_name: 'Jana',
   last_name: 'Nováková',
-  seats: 'LH-1-1,LH-1-2',
-  child_seats: 'LH-1-2',
-  free_seats: '',
-  adult_price: 300,
-  child_price: 150,
-  ticket_names: JSON.stringify({ 'LH-1-2': 'Petr Novák' }),
+  items: {
+    'LH-1-1': item('LH-1-1', 'adult', 300, null),
+    'LH-1-2': item('LH-1-2', 'child', 150, 'Petr Novák'),
+  },
 };
 const codes = php(
   `require 'api/lib/bootstrap.php'; $r = json_decode(${JSON.stringify(JSON.stringify(reservation))}, true);` +

@@ -45,13 +45,14 @@ function onsite_sale_create(array $access, array $run, mixed $seats, mixed $chil
 
 function onsite_sale_payload(array $r): array
 {
+    $r = with_items($r);
     return [
         'id' => (int) $r['id'],
         'status' => $r['status'],
         'variableSymbol' => payment_variable_symbol(),
         'specificSymbol' => $r['specific_symbol'],
         'amount' => (int) $r['amount'],
-        'seats' => seat_list((string) $r['seats']),
+        'seats' => current_seat_ids($r),
         'tickets' => reservation_seat_items($r),
         'spd' => spd_string($r),
         'account' => (string) config('BANK_ACCOUNT_DISPLAY'),
@@ -85,16 +86,15 @@ function onsite_sale_paid(array $access, array $run, int $id): ?string
         $now = db_time(now_utc());
         $pdo->prepare("UPDATE reservations SET status = 'paid', paid_at = ?, paid_amount = amount, checked_in_at = ?, checked_in_by = ? WHERE id = ?")
             ->execute([$now, $now, $access['name'], $id]);
-        $checkin = $pdo->prepare('INSERT IGNORE INTO ticket_checkins (reservation_id, seat_id, checked_in_at, checked_in_by) VALUES (?, ?, ?, ?)');
-        foreach (seat_list((string) $r['seats']) as $seat) {
-            $checkin->execute([$id, $seat, $now, $access['name']]);
-        }
+        $checkin = $pdo->prepare('UPDATE reservation_items SET checked_in_at = ?, checked_in_by = ?
+            WHERE reservation_id = ? AND cancelled_at IS NULL AND checked_in_at IS NULL');
+        $checkin->execute([$now, $access['name'], $id]);
+        $n = $checkin->rowCount();
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
-    $n = (int) $r['seat_count'];
     return 'Zaplaceno ' . format_czk((int) $r['amount']) . ' – ' . $n . ' ' . ($n === 1 ? 'místo odbaveno' : ($n < 5 ? 'místa odbavena' : 'míst odbaveno')) . '.';
 }
 

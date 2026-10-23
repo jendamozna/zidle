@@ -254,7 +254,7 @@ function send_reminder_email(array $r): bool
         ? 'zatím nám chybí část platby za Vaši rezervaci ('
         : 'zatím jsme neobdrželi platbu za Vaši rezervaci (';
     return send_customer_email($r, 'Připomínka platby', array_merge(
-        [$missing . implode('; ', seat_labels($r['seats'])) . ').', run_line($r), '', 'Platební údaje:'],
+        [$missing . implode('; ', seat_labels(current_seat_ids($r))) . ').', run_line($r), '', 'Platební údaje:'],
         payment_lines($r),
         ['', 'Pokud platba nedorazí, rezervace bude zrušena a místa uvolněna.',
          'Pokud jste již zaplatili, považujte tuto zprávu za bezpředmětnou.'],
@@ -294,7 +294,7 @@ function send_expiry_email(array $r): bool
     $base = rtrim((string) config('PUBLIC_URL'), '/');
     return send_customer_email($r, 'Rezervace zrušena', array_merge(
         ['platba za Vaši rezervaci (SS ' . $r['specific_symbol'] . ') nedorazila včas, proto byla rezervace zrušena a místa uvolněna:',
-         implode('; ', seat_labels($r['seats'])) . '.',
+         implode('; ', seat_labels(current_seat_ids($r))) . '.',
          run_line($r)],
         (int) $r['refund_amount'] > (int) $r['refunded_amount']
             ? ['', 'Částku ' . format_czk((int) $r['refund_amount'] - (int) $r['refunded_amount']) . ', která už dorazila, Vám do '

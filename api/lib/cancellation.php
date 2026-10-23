@@ -14,7 +14,7 @@ function cancellation_refund(array $r, array $seats): int
         return seats_value($r, $seats);
     }
     $kept = (int) $r['paid_amount'] - (int) $r['refund_amount'];
-    return count($seats) >= (int) $r['seat_count'] ? max(0, $kept) : 0;
+    return count($seats) >= count(current_seat_ids($r)) ? max(0, $kept) : 0;
 }
 
 /**
@@ -36,7 +36,7 @@ function cancel_seats(int $id, ?array $seatIds): array
             throw new InvalidArgumentException('Rezervaci už nelze zrušit.');
         }
 
-        $current = explode(',', $r['seats']);
+        $current = current_seat_ids($r);
         $cancel = $seatIds === null ? $current : array_values(array_unique(array_map('strval', $seatIds)));
         if (!$cancel || array_diff($cancel, $current)) {
             throw new InvalidArgumentException('Vyberte místa z této rezervace.');
@@ -55,11 +55,11 @@ function cancel_seats(int $id, ?array $seatIds): array
             )->execute([db_time(now_utc()), $totalRefund, $id]);
             $pdo->prepare('DELETE FROM reservation_seats WHERE reservation_id = ?')->execute([$id]);
         } else {
-            $cancelledSeats = implode(',', array_filter([$r['cancelled_seats'], implode(',', $cancel)]));
-            $pdo->prepare(
-                'UPDATE reservations SET seats = ?, seat_count = ?, amount = ?, cancelled_seats = ?, refund_amount = ? WHERE id = ?'
-            )->execute([implode(',', $remaining), count($remaining), $remainingAmount, $cancelledSeats, $totalRefund, $id]);
             $placeholders = implode(',', array_fill(0, count($cancel), '?'));
+            $pdo->prepare("UPDATE reservation_items SET cancelled_at = ? WHERE reservation_id = ? AND seat_id IN ($placeholders)")
+                ->execute([db_time(now_utc()), $id, ...$cancel]);
+            $pdo->prepare('UPDATE reservations SET amount = ?, refund_amount = ? WHERE id = ?')
+                ->execute([$remainingAmount, $totalRefund, $id]);
             $pdo->prepare("DELETE FROM reservation_seats WHERE reservation_id = ? AND seat_id IN ($placeholders)")
                 ->execute([$id, ...$cancel]);
             if (!$paid) {
@@ -98,7 +98,7 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
     if ($paid && !$whole) {
         try {
             send_ticket_email($r, array_merge(
-                ['Zrušená místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.'],
+                ['Zrušená místa: ' . implode('; ', seat_labels($cancelled)) . '.'],
                 $refundLines,
                 ['Posíláme novou vstupenku na zbývající místa. Původní vstupenka už neplatí.']
             ));
@@ -111,7 +111,7 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
         $surplus = (int) $r['paid_amount'] - (int) $r['amount'];
         try {
             send_ticket_email($r, array_merge(
-                ['Zrušená místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.',
+                ['Zrušená místa: ' . implode('; ', seat_labels($cancelled)) . '.',
                  'Platba za zbývající místa je kompletní, rezervace je potvrzena.'],
                 $surplus > 0 ? refund_lines($surplus) : []
             ), 'Platba přijata – Vaše vstupenky');
@@ -123,15 +123,15 @@ function send_cancellation_notice(array $r, array $cancelled, bool $whole, int $
     }
     if (!$paid && !$whole) {
         send_customer_email($r, 'Změna rezervace', array_merge(
-            ['zrušili jsme místa: ' . implode('; ', seat_labels(implode(',', $cancelled))) . '.', run_line($r),
-             'Zbývající místa: ' . implode('; ', seat_labels($r['seats'])) . '.', '', 'Nové platební údaje:'],
+            ['zrušili jsme místa: ' . implode('; ', seat_labels($cancelled)) . '.', run_line($r),
+             'Zbývající místa: ' . implode('; ', seat_labels(current_seat_ids($r))) . '.', '', 'Nové platební údaje:'],
             payment_lines($r)
         ));
         return;
     }
     send_customer_email($r, 'Rezervace zrušena', array_merge(
         ['Vaše rezervace (SS ' . $r['specific_symbol'] . ') byla zrušena a místa uvolněna:',
-         implode('; ', seat_labels($r['seats'])) . '.',
+         implode('; ', seat_labels(current_seat_ids($r))) . '.',
          run_line($r)],
         $refundLines,
         !$paid
@@ -199,7 +199,7 @@ function data_deletion_at(): ?DateTimeImmutable
 }
 
 /**
- * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails
+ * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails, names on the tickets included
  * (payment records – SS, amount, seats – stay for accounting), delete the
  * offline scan conflicts and empty the e-mails of discount codes. Reservations with money still to return keep their
  * contact until the refund is marked as done (the next run then removes it).
@@ -211,6 +211,10 @@ function purge_personal_data(): int
     if ($deleteAt === null || now_utc() < $deleteAt) {
         return 0;
     }
+    db()->exec(
+        'UPDATE reservation_items i JOIN reservations r ON r.id = i.reservation_id SET i.holder_name = NULL
+         WHERE i.holder_name IS NOT NULL AND COALESCE(r.refund_amount, 0) <= r.refunded_amount'
+    );
     $stmt = db()->prepare(
         "UPDATE reservations SET first_name = '', last_name = '', email = ''
          WHERE (email <> '' OR first_name <> '') AND COALESCE(refund_amount, 0) <= refunded_amount"

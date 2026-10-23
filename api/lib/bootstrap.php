@@ -296,21 +296,22 @@ function spd_string(array $r): string
 }
 
 /** Checked-in seats of a reservation: [seat => ['at' => ISO, 'by' => name]]. */
-function reservation_checkins(int $id): array
+function reservation_checkins(array $r): array
 {
-    $stmt = db()->prepare('SELECT seat_id, checked_in_at, checked_in_by FROM ticket_checkins WHERE reservation_id = ?');
-    $stmt->execute([$id]);
     $out = [];
-    foreach ($stmt->fetchAll() as $c) {
-        $out[$c['seat_id']] = ['at' => iso_time($c['checked_in_at']), 'by' => $c['checked_in_by']];
+    foreach (reservation_items($r) as $seat => $i) {
+        if ($i['checkedInAt'] !== null) {
+            $out[$seat] = ['at' => iso_time($i['checkedInAt']), 'by' => $i['checkedInBy']];
+        }
     }
     return $out;
 }
 
 function reservation_payload(array $r): array
 {
+    $r = with_items($r);
     $withCodes = $r['status'] === 'paid' && strlen((string) config('TICKET_SECRET')) >= 16;
-    $checkins = reservation_checkins((int) $r['id']);
+    $checkins = reservation_checkins($r);
     $tickets = array_map(static fn ($item) => $item + [
         'code' => $withCodes ? ticket_code($r, $item['seat']) : null,
         'checkedInAt' => $checkins[$item['seat']]['at'] ?? null,
@@ -321,7 +322,7 @@ function reservation_payload(array $r): array
         'firstName' => $r['first_name'],
         'lastName' => $r['last_name'],
         'email' => $r['email'],
-        'seats' => $r['seats'] === '' ? [] : explode(',', $r['seats']),
+        'seats' => current_seat_ids($r),
         'tickets' => $tickets,
         'ticketNamesEditable' => in_array($r['status'], ['pending', 'paid'], true)
             && ($run = run_by_id((int) $r['run_id'])) !== null && !run_started($run),
@@ -332,7 +333,7 @@ function reservation_payload(array $r): array
         'checkedInAt' => iso_time($r['checked_in_at']),
         'refundAmount' => $r['refund_amount'] === null ? null : (int) $r['refund_amount'],
         'refundedAmount' => (int) $r['refunded_amount'],
-        'cancelledSeats' => $r['cancelled_seats'] === '' ? [] : explode(',', $r['cancelled_seats']),
+        'cancelledSeats' => cancelled_seat_ids($r),
         'refundedAt' => iso_time($r['refunded_at']),
         'run' => ($run = run_by_id((int) $r['run_id'])) ? run_public($run) : null,
         'payment' => [

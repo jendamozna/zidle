@@ -108,6 +108,7 @@ function send_ticket_email(array $r, array $intro = [], ?string $subject = null)
         return false;
     }
     $h = static fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+    $r = with_items($r);
     $items = reservation_seat_items($r);
     $count = count($items);
     $printNote = 'V příloze je soubor ' . ticket_pdf_name($r) . ' k vytištění – vstupenky rozstříhejte, každá platí pro jedno místo.'
@@ -186,7 +187,7 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
     $end = $start->modify('+' . max(1, (int) config('EVENT_DURATION_MINUTES')) . ' minutes');
     $host = parse_url((string) config('PUBLIC_URL'), PHP_URL_HOST) ?: (explode('@', mail_sender())[1] ?? '') ?: 'koncert-tzg';
     $name = trim($r['first_name'] . ' ' . $r['last_name']);
-    $seats = seat_labels($r['seats']);
+    $seats = seat_labels(current_seat_ids($r));
     $link = reservation_link($r);
     $description = implode("\n", [
         'Místa: ' . implode('; ', $seats),
@@ -255,12 +256,12 @@ function seat_label(string $seat): string
     return section_name($section) . " · řada {$row} · místo {$number}";
 }
 
-/** "LH-1-1,LH-1-2,BS-2-5" → ["Levá hlavní: ř. 1 m. 1, 2", "Balkon střed: ř. 2 m. 5"] */
-function seat_labels(string $seats): array
+/** ["LH-1-1", "LH-1-2", "BS-2-5"] → ["Levá hlavní: ř. 1 m. 1, 2", "Balkon střed: ř. 2 m. 5"] */
+function seat_labels(array $seats): array
 {
     $byRow = [];
-    foreach (array_filter(explode(',', $seats)) as $id) {
-        [$section, $row, $seat] = explode('-', $id);
+    foreach ($seats as $id) {
+        [$section, $row, $seat] = explode('-', (string) $id);
         $byRow[$section][(int) $row][] = (int) $seat;
     }
     $lines = [];
