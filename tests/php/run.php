@@ -586,7 +586,7 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
     contains('UID:zidle-' . $r['id'] . '@', $ics, 'uid');
     contains('SEQUENCE:' . $now->getTimestamp(), $ics, 'sequence');
     contains('ATTENDEE;CN="Test Nováková, Jana";', $unfolded, 'attendee');
-    contains('SUMMARY:TZG 2026 · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels(current_seat_ids($r)))), $unfolded, 'summary');
+    contains('SUMMARY:Těšín zpívá gospel · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels(current_seat_ids($r)))), $unfolded, 'summary');
     contains('QR kódy vstupenek z PDF v e-mailu', $unfolded, 'description');
     same(false, str_contains($unfolded, $r['specific_symbol']), 'no SS');
     contains('ORGANIZER;CN="' . config('MAIL_FROM_NAME') . '":mailto:', $unfolded, 'organizer = MAIL_FROM_NAME');
