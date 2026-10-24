@@ -112,6 +112,8 @@ src/                   customer app
 src/scanner/           organizer scanner (ScannerApp, SaleView, useQrCamera, ticket.js, api.js,
                        offline.js + useOffline.js = offline mode)
 public/sw.js           service worker: keeps the scanner on the device for offline start
+public/.htaccess       Cache-Control: no-cache for *.html and sw.js (copied to dist/)
+public/assets/.htaccess  Cache-Control: 1 year, immutable for the hashed build files (copied to dist/assets/)
 docs/DEVELOPER.md      this file
 docs/prehled/          stakeholder overview (Czech, index.html + screenshots), published as an Artifact
 tests/php/run.php      PHP integration tests (needs a *_test database); fixtures.php = shared helpers
@@ -174,7 +176,10 @@ Deployment: upload `dist/` and `api/` (including `api/vendor/`) side by side
 (`./prepare.sh` prepares both in `build/`, §21; add `api/config.local.php` on the server),
 so the apps reach the API at `./api/`. HTTPS is required (camera access).
 `.htaccess` files deny `config*.php`, `cron*.php`, `composer.*`, `api/lib/`,
-`api/vendor/`, `api/logs/`. Behind a proxy/CDN the real client IP must reach
+`api/vendor/`, `api/logs/`. Caching (Apache `mod_headers`; Vite copies both files from
+`public/`): `index.html`, `scanner.html` and `sw.js` get `Cache-Control: no-cache` (revalidated on
+every visit, so a new deployment is seen at once), `assets/*` (names with a content hash)
+`public, max-age=31536000, immutable`. Behind a proxy/CDN the real client IP must reach
 `REMOTE_ADDR` (e.g. Apache `mod_remoteip`), otherwise rate limits are shared.
 
 First Správce (once, while no account has the Správce role; §12):

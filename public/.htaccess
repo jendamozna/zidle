@@ -1,0 +1,7 @@
+# Pages and the service worker are revalidated on every visit, so a new deployment shows up at once;
+# the hashed files in assets/ are cached for a year (assets/.htaccess).
+<IfModule mod_headers.c>
+  <FilesMatch "(\.html|^sw\.js)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
