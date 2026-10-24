@@ -653,14 +653,15 @@ amount)` (all outcomes and e-mails as above); a refused payment or an
 
 - **Bank notification e-mails** (`lib/payment_mail.php`, `lib/imap.php`): the
   bank (Komerční banka) e-mails a notification of every movement on the account
-  to the mailbox `PAYMENT_IMAP_*` (§4). `payment_sync(by)` runs from `cron.php`
+  to the mailbox `PAYMENT_IMAP_*` (§4). `payment_sync(by, mailbox = null)` (`mailbox` replaces the settings from
+  `payment_mailbox()` – host, port, user, password, folder; used by the tests) runs from `cron.php`
   every 5 minutes (`by` = `cron`) and from the admin button **Synchronizovat
   nyní** (`by` = the admin's e-mail); off (returns the error _„Automatické
   načítání plateb není nastavené (PAYMENT_IMAP_HOST).“_) while
   `PAYMENT_IMAP_HOST` is `''`. One sync at a time (MariaDB `GET_LOCK
 ('zidle_payment_sync')`, else _„Synchronizace právě běží, zkuste to za
   chvíli.“_). `ImapClient` (own socket client, TLS verified; port 993 implicit
-  TLS, others STARTTLS when offered; 20 s timeout): `LOGIN`, `EXAMINE` of
+  TLS, others STARTTLS when offered; 20 s timeout): `CAPABILITY`, `LOGIN`, `EXAMINE` of
   `PAYMENT_IMAP_FOLDER` (read-only – flags are never changed, the mailbox may be
   read by people too), `UID SEARCH SINCE` today − 7 days (`PAYMENT_MAIL_DAYS`),
   every UID not yet in `payment_mails` (key `imap:<folder>:<UIDVALIDITY>:<UID>`),
@@ -668,7 +669,16 @@ amount)` (all outcomes and e-mails as above); a refused payment or an
   `UID FETCH <uid> (BODY.PEEK[])` and processed by `process_payment_mail(key,
 raw)`. Server refusals become _„Schránka odmítla příkaz <COMMAND>: <answer>“_
   (never the password), connection problems _„Nelze se připojit ke schránce
-  host:port (…)“_ / _„Spojení se schránkou bylo přerušeno…“_; the error is logged.
+  host:port (…)“_ / _„Spojení se schránkou bylo přerušeno…“_. A failure is logged
+  as `Payment sync failed (<by>): ` + `payment_imap_diagnostics()` (host, port,
+  folder, user with its length, password length and the first 8 hex digits of
+  its SHA-256 – to compare two machines without the password –, `WITH
+WHITESPACE AROUND` / `NON-ASCII` warnings, PHP and OpenSSL versions, host
+  name), then `IMAP conversation:` = `ImapClient::transcript()` (last 40
+  lines, `C:` sent / `S:` received, ≤ 300 chars each, `LOGIN "<user>" ***`,
+  literals only as `(N bytes)`, `(no answer – timeout / connection closed)`),
+  then the exception. Password parameters are `#[\SensitiveParameter]`, so
+  stack traces never show them.
   The result `{at, by, ok, error, mails, recorded, review}` is stored in
   `settings.payment_sync` as `last` (and as `auto` when `by` = `cron`);
   `payment_sync_summary()`: _„žádné nové e-maily“_, _„nových e-mailů N, zapsáno
@@ -1048,8 +1058,8 @@ used; the code also stays used when the reservation expires or is cancelled.
 
 `api/admin.php` (CSRF token on every POST). Sign-in, invitations and the
 forgotten password: §12. The header shows the signed-in e-mail (shortened with … when long; tooltip _Přihlášen: <e-mail> · <roles>_)
-and the menu by role: Správce _Rezervace_, _Výpis z banky_, _Plánek_, _Slevové kódy_,
-_Uživatelé_, _Nastavení_, _Odbavení_; Účetní only _Rezervace_ and _Výpis z banky_ (other `view=`
+and the menu by role: Správce _Rezervace_, _Platby_, _Plánek_, _Slevové kódy_,
+_Uživatelé_, _Nastavení_, _Odbavení_; Účetní only _Rezervace_ and _Platby_ (other `view=`
 values show Rezervace, other actions are ignored); _Odbavení_ (link to
 `app_base_url()/scanner.html`) for accounts with `scan`. Actions are checked
 by role: reservation actions need `reservations`, everything else `manage`.
@@ -1456,7 +1466,9 @@ accountant, a spoofed sender with a forged second header rejected, another
 sender skipped without text, unreadable and unknown SS waiting, resolved once;
 IMAP sync against `tests/php/fake_imap.php` in a child process (two new e-mails:
 one recorded, one to review; nothing new the second time; state `auto`; wrong
-password reported, not stored), off without `PAYMENT_IMAP_HOST`; the GDPR purge
+password reported, not stored; the log has the diagnostics and the IMAP
+conversation but not the password; transcript with masked LOGIN; diagnostics
+show the length and hash prefix only), off without `PAYMENT_IMAP_HOST`; the GDPR purge
 empties them). Locally:
 `DB_NAME=zidle_test MAIL_ENABLED=0 BANK_ACCOUNT=19-2000145399/0800 php tests/php/run.php` (values in
 `config.local.php` take precedence over the environment).

@@ -8,6 +8,8 @@ final class ImapClient
     /** @var resource */
     private $stream;
     private int $tag = 0;
+    /** @var list<string> Last lines of the conversation for the error log ("C:" sent, "S:" received). */
+    private array $transcript = [];
 
     /** Port 993 = implicit TLS; other ports switch to TLS by STARTTLS when the server offers it. */
     public function __construct(string $host, int $port, int $timeout = 20)
@@ -30,7 +32,8 @@ final class ImapClient
         if (!str_starts_with($this->line(), '* OK')) {
             throw new RuntimeException('Server schránky neodpověděl jako IMAP.');
         }
-        if (!$implicit && str_contains(implode(' ', $this->command('CAPABILITY')['lines']), 'STARTTLS')) {
+        // Capabilities (e.g. AUTH methods) end up in the transcript for the error log.
+        if (str_contains(implode(' ', $this->command('CAPABILITY')['lines']), 'STARTTLS') && !$implicit) {
             $this->command('STARTTLS');
             if (!stream_socket_enable_crypto($stream, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
                 throw new RuntimeException('Nepodařilo se zapnout šifrování (STARTTLS).');
@@ -38,7 +41,7 @@ final class ImapClient
         }
     }
 
-    public function login(string $user, string $password): void
+    public function login(string $user, #[\SensitiveParameter] string $password): void
     {
         $this->command('LOGIN ' . self::quote($user) . ' ' . self::quote($password));
     }
@@ -88,13 +91,26 @@ final class ImapClient
         fclose($this->stream);
     }
 
+    /** The conversation so far (at most the last 40 lines, password masked, no message contents). */
+    public function transcript(): string
+    {
+        return implode("\n", $this->transcript);
+    }
+
+    private function note(string $line): void
+    {
+        $this->transcript[] = mb_strimwidth($line, 0, 300, '…');
+        $this->transcript = array_slice($this->transcript, -40);
+    }
+
     /**
      * Sends a command and reads up to its tagged answer: untagged lines (a literal {n} is
      * replaced by "{}" and its content kept in 'literals'). Throws when the answer is not OK.
      */
-    private function command(string $command): array
+    private function command(#[\SensitiveParameter] string $command): array
     {
         $tag = 'A' . ++$this->tag;
+        $this->note('C: ' . $tag . ' ' . (str_starts_with($command, 'LOGIN ') ? (string) preg_replace('/ "(?:[^"\\\\]|\\\\.)*"$/', ' ***', $command) : $command));
         $this->write("{$tag} {$command}\r\n");
         $lines = [];
         $literals = [];
@@ -102,6 +118,7 @@ final class ImapClient
             $line = $this->line();
             while (preg_match('/\{(\d+)\}$/', $line, $m)) {
                 $literals[] = $this->read((int) $m[1]);
+                $this->note('S: (' . $m[1] . ' bytes)');
                 $line = substr($line, 0, -strlen($m[0])) . '{}' . $this->line();
             }
             if (str_starts_with($line, $tag . ' ')) {
@@ -128,9 +145,12 @@ final class ImapClient
     {
         $line = fgets($this->stream);
         if ($line === false) {
+            $this->note('S: (no answer – ' . (stream_get_meta_data($this->stream)['timed_out'] ? 'timeout' : 'connection closed') . ')');
             throw new RuntimeException('Spojení se schránkou bylo přerušeno nebo vypršel čas.');
         }
-        return rtrim($line, "\r\n");
+        $line = rtrim($line, "\r\n");
+        $this->note('S: ' . $line);
+        return $line;
     }
 
     private function read(int $bytes): string
@@ -149,7 +169,7 @@ final class ImapClient
         return $data;
     }
 
-    private static function quote(string $value): string
+    private static function quote(#[\SensitiveParameter] string $value): string
     {
         if (preg_match('/[\r\n\0]/', $value)) {
             throw new InvalidArgumentException('Neplatný znak v přihlašovacích údajích schránky.');

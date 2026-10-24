@@ -368,18 +368,10 @@ test('payment mailbox sync over IMAP: new e-mails once, state remembered, errors
     }
     try {
         $port = (int) fgets($pipes[1]);
-        $sync = static function (string $password) use ($port): array {
-            // A separate process: config comes from the environment, like cron.php.
-            $env = ['PAYMENT_IMAP_HOST' => '127.0.0.1', 'PAYMENT_IMAP_PORT' => (string) $port, 'PAYMENT_IMAP_USER' => 'platby@example.cz',
-                'PAYMENT_IMAP_PASSWORD' => $password] + getenv();
-            $code = 'require ' . var_export(__DIR__ . '/../../api/lib/bootstrap.php', true) . '; echo json_encode(payment_sync("cron"));';
-            $child = proc_open([PHP_BINARY, '-r', $code], [1 => ['pipe', 'w']], $out, null, $env);
-            $json = is_resource($child) ? (string) stream_get_contents($out[1]) : '';
-            if (is_resource($child)) {
-                proc_close($child);
-            }
-            return (array) json_decode($json, true);
-        };
+        // Mailbox settings passed in, so a PAYMENT_IMAP_* in config.local.php does not matter.
+        $sync = static fn (#[\SensitiveParameter] string $password): array => payment_sync('cron', [
+            'host' => '127.0.0.1', 'port' => $port, 'user' => 'platby@example.cz', 'password' => $password, 'folder' => 'INBOX',
+        ]);
         $first = $sync('tajne "heslo"');
         same([true, 2, 1, 1], [$first['ok'] ?? null, $first['mails'] ?? null, $first['recorded'] ?? null, $first['review'] ?? null], 'first sync: ' . json_encode($first, JSON_UNESCAPED_UNICODE));
         same('paid', row($id)['status'], 'payment recorded');
@@ -389,17 +381,38 @@ test('payment mailbox sync over IMAP: new e-mails once, state remembered, errors
         same('žádné nové e-maily', payment_sync_summary($second), 'summary');
         $state = payment_sync_state();
         same(['cron', true], [$state['auto']['by'] ?? null, $state['auto']['ok'] ?? null], 'automatic sync remembered');
+        $logFile = (string) log_file();
+        clearstatcache();
+        $logStart = is_file($logFile) ? (int) filesize($logFile) : 0;
         $failed = $sync('spatne');
         same(false, $failed['ok'] ?? null, 'wrong password');
         contains('Invalid credentials', (string) ($failed['error'] ?? ''), 'error from the server');
+        $logged = (string) file_get_contents($logFile, false, null, $logStart);
+        contains("password 6 chars, sha256 " . substr(hash('sha256', 'spatne'), 0, 8), $logged, 'mailbox settings logged');
+        contains('C: A2 LOGIN "platby@example.cz" ***', $logged, 'IMAP conversation logged');
+        same(false, str_contains($logged, "'spatne'") || str_contains($logged, '"spatne"'), 'password not in the log (stack trace arguments hidden)');
         contains('chyba: Schránka odmítla příkaz LOGIN', payment_sync_summary(payment_sync_state()['auto']), 'error remembered');
         same(false, str_contains((string) json_encode(payment_sync_state()), 'spatne'), 'password not in the state');
+        $imap = new ImapClient('127.0.0.1', $port);
+        try {
+            $imap->login('platby@example.cz', 'spatne "x"');
+        } catch (RuntimeException) {
+        }
+        $imap->logout();
+        $log = $imap->transcript();
+        contains('C: A2 LOGIN "platby@example.cz" ***', $log, 'login in the transcript');
+        contains('S: A2 NO [AUTHENTICATIONFAILED] Invalid credentials', $log, 'answer in the transcript');
+        contains('S: * CAPABILITY IMAP4rev1', $log, 'capabilities in the transcript');
+        same(false, str_contains($log, 'spatne'), 'password not in the transcript');
+        $diagnostics = payment_imap_diagnostics(['host' => 'imap.example.cz', 'port' => 993, 'user' => 'u ', 'password' => 'heslo', 'folder' => 'INBOX']);
+        contains("host 'imap.example.cz', port 993, folder 'INBOX', user 'u ' (2 chars WITH WHITESPACE AROUND), password 5 chars, sha256 " . substr(hash('sha256', 'heslo'), 0, 8), $diagnostics, 'diagnostics');
+        same(false, str_contains($diagnostics, 'heslo'), 'diagnostics without the password');
     } finally {
         proc_terminate($server);
         proc_close($server);
         unlink($file);
     }
-    $off = payment_sync('ucetni@example.cz');
+    $off = payment_sync('ucetni@example.cz', ['host' => ''] + payment_mailbox());
     same([false, 'Automatické načítání plateb není nastavené (PAYMENT_IMAP_HOST).'], [$off['ok'], $off['error']], 'off without a mailbox');
 });
 

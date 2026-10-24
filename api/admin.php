@@ -635,7 +635,7 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
       <?php $mailAttention = payment_mails_attention(); ?>
-      <a href="admin.php?view=bank" class="<?= $view === 'bank' ? 'active' : '' ?>">Výpis z banky<?= $mailAttention ? ' <span class="tab-alert" title="E-maily z banky ke kontrole">' . $mailAttention . '</span>' : '' ?></a>
+      <a href="admin.php?view=bank" class="<?= $view === 'bank' ? 'active' : '' ?>">Platby<?= $mailAttention ? ' <span class="tab-alert" title="E-maily z banky ke kontrole">' . $mailAttention . '</span>' : '' ?></a>
       <?php if ($canManage): ?>
         <a href="admin.php?view=plan" class="<?= $view === 'plan' ? 'active' : '' ?>">Plánek</a>
         <a href="admin.php?view=codes" class="<?= $view === 'codes' ? 'active' : '' ?>">Slevové kódy</a>

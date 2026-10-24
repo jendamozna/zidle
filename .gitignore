@@ -2,6 +2,7 @@ node_modules
 dist
 build
 api/config.local.php
+docker/config.local.php
 api/vendor
 test-results
 playwright-report

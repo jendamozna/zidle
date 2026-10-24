@@ -37,21 +37,24 @@ function payment_sync_enabled(): bool
  * Reads new e-mails from the payment mailbox and processes them. $by = 'cron' for the
  * automatic run, else the e-mail of the admin who started it. Returns (and remembers in
  * settings.payment_sync) ['at', 'by', 'ok', 'error', 'mails', 'recorded', 'review'].
+ * $mailbox replaces the PAYMENT_IMAP_* settings (tests).
  */
-function payment_sync(string $by): array
+function payment_sync(string $by, #[\SensitiveParameter] ?array $mailbox = null): array
 {
     $result = ['at' => iso_utc(now_utc()), 'by' => $by, 'ok' => false, 'error' => null, 'mails' => 0, 'recorded' => 0, 'review' => 0];
-    if (!payment_sync_enabled()) {
+    $mailbox ??= payment_mailbox();
+    if (trim($mailbox['host']) === '') {
         return ['error' => 'Automatické načítání plateb není nastavené (PAYMENT_IMAP_HOST).'] + $result;
     }
     if ((int) db_query("SELECT GET_LOCK('zidle_payment_sync', 0)")->fetchColumn() !== 1) {
         return ['error' => 'Synchronizace právě běží, zkuste to za chvíli.'] + $result;
     }
+    $imap = null;
     try {
-        $imap = new ImapClient((string) config('PAYMENT_IMAP_HOST'), (int) config('PAYMENT_IMAP_PORT'));
+        $imap = new ImapClient($mailbox['host'], $mailbox['port']);
         try {
-            $imap->login((string) config('PAYMENT_IMAP_USER'), (string) config('PAYMENT_IMAP_PASSWORD'));
-            $folder = (string) config('PAYMENT_IMAP_FOLDER');
+            $imap->login($mailbox['user'], $mailbox['password']);
+            $folder = $mailbox['folder'];
             $prefix = 'imap:' . $folder . ':' . $imap->examine($folder) . ':';
             $stmt = db()->prepare('SELECT mail_key FROM payment_mails WHERE LEFT(mail_key, ?) = ?');
             $stmt->execute([mb_strlen($prefix), $prefix]);
@@ -76,7 +79,8 @@ function payment_sync(string $by): array
         $result['ok'] = true;
     } catch (Throwable $e) {
         $result['error'] = $e->getMessage();
-        app_log('Payment sync failed: ' . $e);
+        app_log("Payment sync failed ({$by}): " . payment_imap_diagnostics($mailbox)
+            . ($imap !== null ? "\nIMAP conversation:\n" . $imap->transcript() : '') . "\n" . $e);
     } finally {
         db_query("SELECT RELEASE_LOCK('zidle_payment_sync')");
     }
@@ -88,6 +92,43 @@ function payment_sync(string $by): array
     db()->prepare('INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)')
         ->execute(['payment_sync', json_encode($state, JSON_UNESCAPED_UNICODE)]);
     return $result;
+}
+
+/** The PAYMENT_IMAP_* settings: host, port, user, password, folder. */
+function payment_mailbox(): array
+{
+    return [
+        'host' => (string) config('PAYMENT_IMAP_HOST'),
+        'port' => (int) config('PAYMENT_IMAP_PORT'),
+        'user' => (string) config('PAYMENT_IMAP_USER'),
+        'password' => (string) config('PAYMENT_IMAP_PASSWORD'),
+        'folder' => (string) config('PAYMENT_IMAP_FOLDER'),
+    ];
+}
+
+/**
+ * Mailbox settings for the error log, without the password itself: its length and the start
+ * of its SHA-256 (to compare with another machine), whitespace around values, versions.
+ */
+function payment_imap_diagnostics(#[\SensitiveParameter] array $mailbox): string
+{
+    ['user' => $user, 'password' => $password] = $mailbox;
+    $padded = static fn (string $v) => $v !== trim($v) ? ' WITH WHITESPACE AROUND' : '';
+    return sprintf(
+        'host %s, port %d, folder %s, user %s (%d chars%s), password %d chars%s sha256 %s…, PHP %s, %s, server %s',
+        var_export($mailbox['host'], true),
+        $mailbox['port'],
+        var_export($mailbox['folder'], true),
+        var_export($user, true),
+        strlen($user),
+        $padded($user),
+        strlen($password),
+        $padded($password) . ($password !== '' && preg_match('/[^\x20-\x7e]/', $password) ? ' NON-ASCII,' : ','),
+        substr(hash('sha256', $password), 0, 8),
+        PHP_VERSION,
+        defined('OPENSSL_VERSION_TEXT') ? OPENSSL_VERSION_TEXT : 'no OpenSSL',
+        gethostname() ?: '?'
+    );
 }
 
 /** ['last' => last sync result or null, 'auto' => last automatic (cron) one or null]. */

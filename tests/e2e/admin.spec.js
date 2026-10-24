@@ -22,7 +22,7 @@ test('accountant records a partial payment and then the rest', async ({ page }) 
 test('a bank statement CSV pairs a transfer by SS and records it once', async ({ page }) => {
   const { bankSs } = seed();
   await adminLogin(page);
-  await page.getByRole('link', { name: 'Výpis z banky' }).click();
+  await page.getByRole('link', { name: 'Platby' }).click();
   const header =
     '"Datum splatnosti";"Protiúčet a kód banky";"Název protiúčtu";"Částka";"VS";"SS";"Identifikace transakce";"AV pole 1"';
   const csv = [
@@ -55,7 +55,7 @@ test('bank e-mails waiting for review are recorded or marked resolved', async ({
   seed();
   const ss = paymentMails();
   await adminLogin(page);
-  const tab = page.getByRole('link', { name: /Výpis z banky/ });
+  const tab = page.getByRole('link', { name: /Platby/ });
   await expect(tab.locator('.tab-alert')).toHaveText('2');
   await tab.click();
   await expect(page.locator('.sync')).toContainText('Automatické načítání plateb je vypnuté');
@@ -166,7 +166,7 @@ test('admin invites an accountant, who sets a password, sees only reservations a
     'Vítejte. Heslo je nastavené, příště se přihlásíte e-mailem jana.ucetni@example.cz.',
   );
   await expect(jana.locator('.me')).toContainText('jana.ucetni@example.cz');
-  await expect(jana.locator('.tabs a')).toHaveText(['Rezervace', 'Výpis z banky']);
+  await expect(jana.locator('.tabs a')).toHaveText(['Rezervace', 'Platby']);
   await jana.goto('http://127.0.0.1:8000/api/admin.php?view=users');
   await expect(jana.locator('.tabs a.active')).toHaveText('Rezervace');
   await page.reload();
