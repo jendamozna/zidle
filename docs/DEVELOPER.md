@@ -731,8 +731,7 @@ id>@<host of PUBLIC_URL, else of the sender, else koncert-tzg>` (stable, so a
   new ticket after a partial cancellation updates the same event),
   `SEQUENCE` = current Unix time, `DTSTART` = run start, `DTEND` = start +
   `EVENT_DURATION_MINUTES` (both UTC `…Z`), `SUMMARY` _„Těšín zpívá gospel[ · <run
-  label>] – <seat labels>“_, `DESCRIPTION` _„Místa: …“_, _„Při vstupu prosím ukažte QR kódy vstupenek z PDF v e-mailu (1 QR kód = 1
-  místo).“_,
+  label>] – <seat labels>“_, `DESCRIPTION` _„Místa: …“_,
   _„Rezervace: <link>“_ (with `PUBLIC_URL`) and the contact line,
   `LOCATION` = `EVENT_LOCATION` (omitted when empty), `ORGANIZER;CN="<MAIL_FROM_NAME>":mailto:<sender>`, `ATTENDEE;CN="<name>";ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:<customer>`,
   `STATUS:CONFIRMED`. No attachment when the run no longer exists.

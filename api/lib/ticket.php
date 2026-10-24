@@ -168,7 +168,6 @@ function ticket_ics(array $r, ?DateTimeImmutable $now = null): ?string
     $link = reservation_link($r);
     $description = implode("\n", [
         'Místa: ' . implode('; ', $seats),
-        'Při vstupu prosím ukažte QR kódy vstupenek z PDF v e-mailu (1 QR kód = 1 místo).',
         ...($link ? ['Rezervace: ' . $link] : []),
         ...(contact_line() !== '' ? [contact_line()] : []),
     ]);
