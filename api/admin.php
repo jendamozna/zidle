@@ -321,6 +321,21 @@ if ($canReservations && $csrfOk && in_array($action, ['bank-upload', 'bank-apply
     header('Location: admin.php?view=bank');
     exit;
 }
+
+// Platby z e-mailu: sync the payment mailbox now, record / resolve an e-mail waiting for a person.
+if ($canReservations && $csrfOk && in_array($action, ['payment-sync', 'payment-mail-record', 'payment-mail-resolve'], true)) {
+    $mailId = (int) ($_POST['id'] ?? 0);
+    if ($action === 'payment-sync') {
+        $sync = payment_sync($me['email']);
+        $_SESSION['flash'] = $sync['ok'] ? 'Synchronizace hotová: ' . payment_sync_summary($sync) . '.' : 'Synchronizace selhala: ' . $sync['error'];
+    } elseif ($action === 'payment-mail-record') {
+        $_SESSION['flash'] = payment_mail_record($mailId, $me['email'])['message'];
+    } else {
+        $_SESSION['flash'] = payment_mail_resolve($mailId, $me['email']) ? 'E-mail označen jako vyřízený.' : 'E-mail už je vyřízený.';
+    }
+    header('Location: admin.php?view=bank');
+    exit;
+}
 $flash = $_SESSION['flash'] ?? null;
 
 unset($_SESSION['flash']);
@@ -383,6 +398,13 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
   .bank-none td, .bank-done td { color:var(--ink-2); } .bank-done { opacity:.6; }
   .bank-results { margin:0; padding-left:20px; } .bank-results li { margin:4px 0; }
   .bank-actions { margin-top:12px; } td.num { white-space:nowrap; text-align:right; }
+  .sync-status { margin:0; } .sync-status.warn { padding:8px 12px; border-radius:10px; background:#f9e4b7; color:#6d4a04; }
+  .card.mails { margin-bottom:16px; } .mails h2 { margin:0 0 8px; font:700 1.15rem var(--font-display); }
+  .mails tr:not(.mail-open) td { color:var(--ink-2); }
+  .m-recorded { background:#dcefd9; color:#1f5a2c; } .m-review, .m-unrecognized { background:#f9e4b7; color:#6d4a04; }
+  .m-rejected { background:#f6d5d1; color:#8f2a20; } .m-ignored { background:var(--surface-2); color:var(--ink-2); }
+  .nowrap { white-space:nowrap; }
+  pre.excerpt { white-space:pre-wrap; max-height:240px; overflow:auto; font-size:.78rem; background:var(--surface-2); padding:8px; border-radius:8px; }
   .tabs { display:flex; flex-wrap:wrap; gap:4px; padding:4px; border-radius:22px; background:var(--surface-2); margin-right:auto; }
   .tabs a { padding:6px 14px; border-radius:999px; color:var(--ink-2); text-decoration:none; font-weight:600; }
   .tabs a.active { background:var(--surface); color:var(--magenta-dark); box-shadow:0 1px 4px rgba(20,10,36,.12); }
@@ -612,7 +634,8 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
     <h1>Správa TZG</h1>
     <nav class="tabs">
       <a href="admin.php" class="<?= $view === 'reservations' ? 'active' : '' ?>">Rezervace</a>
-      <a href="admin.php?view=bank" class="<?= $view === 'bank' ? 'active' : '' ?>">Výpis z banky</a>
+      <?php $mailAttention = payment_mails_attention(); ?>
+      <a href="admin.php?view=bank" class="<?= $view === 'bank' ? 'active' : '' ?>">Výpis z banky<?= $mailAttention ? ' <span class="tab-alert" title="E-maily z banky ke kontrole">' . $mailAttention . '</span>' : '' ?></a>
       <?php if ($canManage): ?>
         <a href="admin.php?view=plan" class="<?= $view === 'plan' ? 'active' : '' ?>">Plánek</a>
         <a href="admin.php?view=codes" class="<?= $view === 'codes' ? 'active' : '' ?>">Slevové kódy</a>
@@ -718,6 +741,86 @@ $statusLabels = ['pending' => 'Čeká na platbu', 'paid' => 'Zaplaceno', 'expire
       $txLabel = static fn (array $tx) => ($tx['date'] ? new DateTimeImmutable($tx['date'])->format('j. n. Y') . ' · ' : '')
           . $cents($tx['cents']) . ($tx['name'] !== '' ? ' · ' . $tx['name'] : '');
   ?>
+  <?php
+      $sync = payment_sync_state();
+      $syncAt = static fn (array $r) => format_prague(db_time(new DateTimeImmutable($r['at'])));
+      $syncStale = $sync['auto'] === null || new DateTimeImmutable($sync['auto']['at']) < now_utc()->modify('-' . PAYMENT_SYNC_STALE_MINUTES . ' minutes');
+      $mails = db_query(
+          "SELECT m.*, r.specific_symbol, r.first_name, r.last_name, r.status AS reservation_status FROM payment_mails m
+           LEFT JOIN reservations r ON r.id = m.reservation_id
+           ORDER BY (m.status IN ('" . implode("','", PAYMENT_MAIL_ATTENTION) . "') AND m.resolved_at IS NULL) DESC, m.received_at DESC, m.id DESC LIMIT 30"
+      )->fetchAll();
+  ?>
+  <div class="card settings sync">
+    <h2>Platby z e-mailu banky</h2>
+    <?php if (!payment_sync_enabled()): ?>
+      <p class="hint">Automatické načítání plateb je vypnuté – v konfiguraci chybí schránka s oznámeními banky (PAYMENT_IMAP_HOST).</p>
+    <?php else: ?>
+      <p class="hint">Banka posílá e-mail o každém pohybu na účtu. Každých 5 minut se nové e-maily načtou a příchozí platby se zapíší
+        k rezervacím podle SS (jako u výpisu). Co nejde zapsat automaticky, čeká níže na kontrolu.</p>
+      <?php if ($sync['auto'] === null): ?>
+        <p class="sync-status warn">Automatická synchronizace ještě neproběhla – zkontrolujte, že cron spouští api/cron.php.</p>
+      <?php else: ?>
+        <p class="sync-status<?= !$sync['auto']['ok'] || $syncStale ? ' warn' : '' ?>">Poslední automatická synchronizace:
+          <strong><?= $h($syncAt($sync['auto'])) ?></strong> – <?= $h(payment_sync_summary($sync['auto'])) ?>
+          <?php if ($syncStale): ?><br>Proběhla před více než <?= PAYMENT_SYNC_STALE_MINUTES ?> minutami – zkontrolujte, že cron běží.<?php endif ?></p>
+      <?php endif ?>
+      <?php if ($sync['last'] !== null && $sync['last']['by'] !== 'cron'): ?>
+        <p class="hint">Naposledy spuštěno ručně: <?= $h($syncAt($sync['last'])) ?> (<?= $h($sync['last']['by']) ?>) – <?= $h(payment_sync_summary($sync['last'])) ?></p>
+      <?php endif ?>
+      <form method="post">
+        <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+        <button name="action" value="payment-sync">Synchronizovat nyní</button>
+      </form>
+    <?php endif ?>
+  </div>
+
+  <?php if ($mails): ?>
+  <div class="card table mails">
+    <h2>E-maily z banky</h2>
+    <table class="cards">
+      <thead><tr><th>Přijato</th><th>Platba</th><th>Rezervace</th><th>Stav</th><th>Co se stalo</th><th></th></tr></thead>
+      <tbody>
+      <?php foreach ($mails as $m):
+          $tx = $m['tx'] !== null ? (array) json_decode($m['tx'], true) : null;
+          $open = in_array($m['status'], PAYMENT_MAIL_ATTENTION, true) && $m['resolved_at'] === null; ?>
+        <tr class="mail-<?= $h($m['status']) ?><?= $open ? ' mail-open' : '' ?>">
+          <td data-label="Přijato"><?= $h(format_prague($m['received_at'])) ?><br><small><?= $h($m['subject']) ?></small></td>
+          <td data-label="Platba"><?php if ($tx): ?>
+              <strong><?= $h($cents((int) $tx['cents'])) ?></strong>
+              <br><span class="nowrap"><small>VS</small> <?= $h($tx['vs'] ?: '–') ?> · <small>SS</small> <?= $h($tx['ss'] ?: '–') ?></span>
+              <?php if ($tx['name'] !== ''): ?><br><small><?= $h($tx['name']) ?></small><?php endif ?>
+              <?php if ($tx['account'] !== ''): ?><br><small class="nowrap"><?= $h($tx['account']) ?></small><?php endif ?>
+              <?php if ($tx['message'] !== ''): ?><br><small><?= $h($tx['message']) ?></small><?php endif ?>
+            <?php else: ?><small><?= $h($m['sender']) ?></small><?php endif ?></td>
+          <td data-label="Rezervace"><?php if ($m['specific_symbol'] !== null): ?>
+              <a href="admin.php?q=<?= $h($m['specific_symbol']) ?>">SS <?= $h($m['specific_symbol']) ?></a>
+              <br><?= $h($m['first_name'] . ' ' . $m['last_name']) ?>
+              <br><span class="badge s-<?= $h($m['reservation_status']) ?>"><?= $h($statusLabels[$m['reservation_status']]) ?></span>
+            <?php else: ?>–<?php endif ?></td>
+          <td data-label="Stav"><span class="badge m-<?= $h($m['status']) ?>"><?= $h(PAYMENT_MAIL_STATUSES[$m['status']]) ?></span>
+            <?php if ($m['resolved_at'] !== null && $m['status'] !== 'recorded'): ?><br><small>vyřízeno (<?= $h($m['resolved_by']) ?>)</small><?php endif ?></td>
+          <td data-label="Co se stalo"><small><?= $h($m['note']) ?></small>
+            <?php if ($m['excerpt'] !== null && $tx === null): ?>
+              <details><summary>Text e-mailu</summary><pre class="excerpt"><?= $h($m['excerpt']) ?></pre></details>
+            <?php endif ?></td>
+          <td data-label=""><?php if ($open): ?>
+            <form method="post" class="actions">
+              <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
+              <input type="hidden" name="id" value="<?= (int) $m['id'] ?>">
+              <?php if ($m['status'] === 'review' && $m['reservation_id'] !== null): ?>
+                <button name="action" value="payment-mail-record" onclick="return confirm('Zapsat tuto platbu k rezervaci? Pokud jste ji už zapsali ručně, nezapisujte ji znovu.')">Zapsat platbu</button>
+              <?php endif ?>
+              <button class="secondary" name="action" value="payment-mail-resolve">Vyřízeno</button>
+            </form>
+          <?php endif ?></td>
+        </tr>
+      <?php endforeach ?>
+      </tbody>
+    </table>
+  </div>
+  <?php endif ?>
+
   <form class="card settings" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf" value="<?= $h($_SESSION['csrf']) ?>">
     <h2>Nahrát výpis z banky</h2>

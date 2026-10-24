@@ -201,7 +201,8 @@ function data_deletion_at(): ?DateTimeImmutable
 /**
  * GDPR: DATA_RETENTION_DAYS after the last run remove names and e-mails
  * (payment records – SS, amount, seats – stay for accounting), delete the
- * offline scan conflicts and empty the e-mails of discount codes. Reservations with money still to return keep their
+ * offline scan conflicts, empty the e-mails of discount codes and the details of bank
+ * notification e-mails (payer, text, note; they count as dealt with). Reservations with money still to return keep their
  * contact until the refund is marked as done (the next run then removes it).
  * Returns the number of anonymized reservations.
  */
@@ -218,5 +219,7 @@ function purge_personal_data(): int
     $stmt->execute();
     db()->exec('DELETE FROM scan_conflicts');
     db()->exec("UPDATE discount_codes SET email = '' WHERE email <> ''");
+    db()->prepare("UPDATE payment_mails SET tx = NULL, excerpt = NULL, note = '', resolved_at = COALESCE(resolved_at, ?), resolved_by = COALESCE(resolved_by, 'GDPR') WHERE tx IS NOT NULL OR excerpt IS NOT NULL OR note <> ''")
+        ->execute([db_time(now_utc())]);
     return $stmt->rowCount();
 }

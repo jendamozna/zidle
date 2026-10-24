@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { adminLogin, inviteLink, seed } from './helpers.js';
+import { adminLogin, inviteLink, paymentMails, seed } from './helpers.js';
 
 test.use({ viewport: { width: 1360, height: 900 }, isMobile: false, hasTouch: false });
 
@@ -49,6 +49,36 @@ test('a bank statement CSV pairs a transfer by SS and records it once', async ({
 
   await page.getByRole('link', { name: 'Rezervace' }).click();
   await expect(page.locator('tr', { hasText: bankSs }).locator('.badge')).toHaveText('Zaplaceno');
+});
+
+test('bank e-mails waiting for review are recorded or marked resolved', async ({ page }) => {
+  seed();
+  const ss = paymentMails();
+  await adminLogin(page);
+  const tab = page.getByRole('link', { name: /Výpis z banky/ });
+  await expect(tab.locator('.tab-alert')).toHaveText('2');
+  await tab.click();
+  await expect(page.locator('.sync')).toContainText('Automatické načítání plateb je vypnuté');
+
+  const payment = page.locator('.mails tr', { hasText: `SS ${ss}` });
+  await expect(payment).toContainText('Ke kontrole');
+  await expect(payment).toContainText('Emil Emailový');
+  await expect(payment).toContainText('Rezervace už je zaplacená');
+  page.once('dialog', (d) => d.accept());
+  await payment.getByRole('button', { name: 'Zapsat platbu' }).click();
+  await expect(page.locator('.flash')).toContainText(
+    'Přijato 300 Kč – rezervace už byla zaplacená, jde o platbu navíc.',
+  );
+  await expect(payment).toContainText('Zapsáno');
+  await expect(payment.getByRole('button')).toHaveCount(0);
+
+  const unread = page.locator('.mails tr', { hasText: 'Nerozpoznáno' });
+  await unread.getByText('Text e-mailu').click();
+  await expect(unread.locator('pre')).toContainText('Výpis z účtu za říjen');
+  await unread.getByRole('button', { name: 'Vyřízeno' }).click();
+  await expect(page.locator('.flash')).toContainText('E-mail označen jako vyřízený.');
+  await expect(unread).toContainText('vyřízeno (spravce@example.cz)');
+  await expect(tab.locator('.tab-alert')).toHaveCount(0);
 });
 
 test('status and run cards toggle their filters', async ({ page }) => {

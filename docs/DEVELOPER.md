@@ -41,7 +41,7 @@ https://claude.ai/artifact/GXKiRvKYkzGQMnceZaTthV.
 | Scanner          | `scanner.html` → `src/scanner/main.jsx`       | Odbavovatel, Správce | mobile only   | React, `jsqr`       |
 | Admin            | `api/admin.php`                               | Správce, Účetní      | desktop-first | server-rendered PHP |
 | API              | `api/*.php`                                   | apps above           | –             | PHP 8.4+, PDO MySQL |
-| Jobs             | `api/cron.php` (CLI)                          | cron, every 10 min   | –             | PHP                 |
+| Jobs             | `api/cron.php` (CLI)                          | cron, every 5 min    | –             | PHP                 |
 | Database         | `db/schema.sql`                               | –                    | –             | MariaDB 10.5+       |
 
 UI and e-mail texts are Czech. All times are stored in **UTC**; Europe/Prague
@@ -87,6 +87,9 @@ api/
   lib/cancellation.php cancel_seats() (admin), notices, reminders, GDPR purge
   lib/payments.php     record_payment() (received transfers), amount_due(), send_ticket_for()
   lib/bank.php         bank statement CSV import: parse_bank_csv(), bank_match(), bank_record()
+  lib/payment_mail.php automatic payments from the bank's notification e-mails: payment_sync(), process_payment_mail(),
+                       parse_mime_message(), parse_payment_notification(), sender checks, admin record / resolve
+  lib/imap.php         ImapClient – minimal read-only IMAP client (no ext-imap)
   lib/offline.php      scanning without a connection: scanner_snapshot(), apply_offline_scans(), conflicts
   lib/admin_users.php  accounts and roles: user_can(), admin_login(), create_first_admin(), admin_invite(), admin_accept_invite(), request_password_reset(), reset_password()
   lib/ticket.php       seat ticket QR code (sign/parse), qr_png(), ticket e-mail + calendar event (ticket_ics()), seat_label(s)()
@@ -116,8 +119,8 @@ public/.htaccess       Cache-Control: no-cache for *.html and sw.js (copied to d
 public/assets/.htaccess  Cache-Control: 1 year, immutable for the hashed build files (copied to dist/assets/)
 docs/DEVELOPER.md      this file
 docs/prehled/          stakeholder overview (Czech, index.html + screenshots), published as an Artifact
-tests/php/run.php      PHP integration tests (needs a *_test database); fixtures.php = shared helpers
-tests/e2e/             Playwright tests (customer, admin, scanner), seed.php, invite-link.php, global-setup.js
+tests/php/run.php      PHP integration tests (needs a *_test database); fixtures.php = shared helpers, fake_imap.php = fake IMAP server
+tests/e2e/             Playwright tests (customer, admin, scanner), seed.php, invite-link.php, payment-mails.php, global-setup.js
 tests/consistency.mjs  layout and ticket format identical in PHP and JS
 phpstan.neon           PHPStan config (level 8)
 eslint.config.js       ESLint config (src/ + tests)
@@ -192,7 +195,7 @@ curl -X POST https://example.com/zidle/api/deploy.php -H 'Content-Type: applicat
 Then sign in at `api/admin.php` and invite everybody else (tab _Uživatelé_).
 `DEPLOY_TOKEN` may be removed from the configuration afterwards.
 
-Cron: `*/10 * * * * php /path/to/api/cron.php`.
+Cron: `*/5 * * * * php /path/to/api/cron.php` (the payment mailbox is read on every run, §9).
 
 Checks before a commit (the same as CI, §21): `./prepare.sh` – or one by one `npx prettier --check .`, `npm run lint`, `npm run build`,
 `npm run test:consistency`, `api/vendor/bin/phpstan analyse -c phpstan.neon`,
@@ -207,55 +210,61 @@ origin; then set `CORS_ORIGIN`.
 ## 4. Configuration
 
 `api/config.php` holds defaults; `api/config.local.php` (array, template
-`config.local.example.php` – database, bank, passwords, secrets, SMTP,
-contact e-mail and phone, `PUBLIC_URL`) and environment variables of the same
+`config.local.example.php` – database, bank, passwords, secrets, SMTP, payment
+mailbox, contact e-mail and phone, `PUBLIC_URL`) and environment variables of the same
 name override them (local file wins).
 
-| Key                                                        | Default                                     | Meaning                                                                                                                                                                                    |
-| ---------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS`      | `127.0.0.1`, `3306`, `zidle`, `zidle`, `''` | PDO connection; session `time_zone = '+00:00'`                                                                                                                                             |
-| `SEAT_PRICE`                                               | 300                                         | CZK per adult seat (from 18 years) for new reservations                                                                                                                                    |
-| `CHILD_SEAT_PRICE`                                         | 150                                         | CZK per child seat (4–17 years); children up to 3 years sit on a lap for free (no seat, no ticket)                                                                                         |
-| `PAYMENT_DEADLINE_HOURS`                                   | 72                                          | hours to pay before the first payment deadline rule (§8); due date capped at the run start                                                                                                 |
-| `PAYMENT_GRACE_HOURS`                                      | 48                                          | unpaid reservations expire this long after the due date                                                                                                                                    |
-| `REFUND_DAYS`                                              | 14                                          | refund promise in e-mails                                                                                                                                                                  |
-| `DATA_RETENTION_DAYS`                                      | 30                                          | personal data purged this long after the last run start                                                                                                                                    |
-| `MAX_SEATS_PER_RESERVATION`                                | 20                                          | also enforced in the UI                                                                                                                                                                    |
-| `EVENT_LOCATION`                                           | `''`                                        | `LOCATION` of the calendar event in the ticket e-mail (`udalost.ics`); `''` = omitted                                                                                                      |
-| `EVENT_DURATION_MINUTES`                                   | 120                                         | calendar event end = run start + this (min. 1)                                                                                                                                             |
-| `SEATS_PER_IP_PER_HOUR`                                    | 40                                          | seats one IP may reserve per hour (`seat_quota_take()`; a quarter of it when ALTCHA is disabled); generous for families booking from one shared network                                    |
-| `SEATS_PER_IP_PER_DAY`                                     | 80                                          | the same per 24 hours                                                                                                                                                                      |
-| `ALTCHA_CHALLENGES_PER_IP_PER_HOUR`                        | 300                                         | challenges issued by `altcha.php` per IP                                                                                                                                                   |
-| `CODE_CHECKS_PER_IP_PER_HOUR`                              | 30                                          | discount code checks (`GET reservations.php?code=`) per IP                                                                                                                                 |
-| `PENDING_RESERVATIONS_PER_EMAIL`                           | 2                                           | unpaid reservations per e-mail **in one run**                                                                                                                                              |
-| `LOGIN_ATTEMPTS_PER_15_MIN`                                | 10                                          | admin login, invitation (password set), forgotten password (request and new password), scanner login, per IP and area                                                                      |
-| `FORM_MIN_SECONDS`                                         | 3                                           | minimal age of the form token                                                                                                                                                              |
-| `ALTCHA_ENABLED`                                           | `true`                                      | invisible ALTCHA on the reservation form                                                                                                                                                   |
-| `ALTCHA_COST`                                              | 1000                                        | PBKDF2 iterations per attempt                                                                                                                                                              |
-| `ALTCHA_COUNTER_MAX`                                       | 6000                                        | attempts needed: random `max/3 … max` (≈ 1–2 s on a computer, ≈ 4–5 s on a slow phone)                                                                                                     |
-| `BANK_ACCOUNT`                                             | **required**                                | Czech account `[prefix-]number/bank` shown to customers; the IBAN for SPD `ACC` is derived from it (`czech_iban()`); reservations and on-site sales are refused (503) without a valid one  |
-| `BANK_BIC`                                                 | `''`                                        | appended to SPD `ACC`                                                                                                                                                                      |
-| `PAYMENT_RECIPIENT`                                        | `Farnost`                                   | SPD `RN`                                                                                                                                                                                   |
-| `PAYMENT_MESSAGE`                                          | `Těšín zpívá gospel`                        | SPD `MSG` prefix (+ last name)                                                                                                                                                             |
-| `PAYMENT_VARIABLE_SYMBOL`                                  | `3211`                                      | variable symbol (VS) of every payment (SPD `X-VS`, e-mails, payment page), digits only, max 10; reservations differ by their own specific symbol (SS)                                      |
-| `DEBUG`                                                    | `false`                                     | the 500 page also shows the uncaught exception and the log file; only briefly for diagnosis                                                                                                |
-| `LOG_DIR`                                                  | `api/logs`                                  | folder of the PHP error log (see below); best outside the web root; `''` = the server's own log                                                                                            |
-| `DEPLOY_TOKEN`                                             | `''`                                        | token for `POST api/deploy.php` that creates the first Správce (§12); ≥ 32 characters, `''` = disabled; may be removed afterwards                                                          |
-| `SCAN_WINDOW_BEFORE_MINUTES` / `SCAN_WINDOW_AFTER_MINUTES` | 60 / 60                                     | check-in window around the run start                                                                                                                                                       |
-| `TICKET_SECRET`                                            | **required**                                | ≥ 32 chars without spaces (`ticket_secret()` throws otherwise, so the placeholder can't be left in); HMAC key for tickets, form tokens, master cookie; never change after tickets are sent |
-| `MAIL_ENABLED`                                             | `false`                                     | all e-mails off when false                                                                                                                                                                 |
-| `MAIL_FROM`                                                | `rezervace@example.com`                     | sender for PHP `mail()` (SMTP uses `SMTP_SENDER`)                                                                                                                                          |
-| `MAIL_FROM_NAME`                                           | `Těšín zpívá gospel`                        | sender name (`From`, `Reply-To`, calendar `ORGANIZER`; `mail_from_name()`)                                                                                                                 |
-| `SMTP_HOST`                                                | `''`                                        | SMTP server; `''` = send with PHP `mail()`                                                                                                                                                 |
-| `SMTP_PORT`                                                | 587                                         | 465 = implicit TLS (SMTPS); other ports use STARTTLS when the server offers it                                                                                                             |
-| `SMTP_AUTH`                                                | `true`                                      | log in with `SMTP_USER` (or `SMTP_SENDER`) / `SMTP_PASSWORD`                                                                                                                               |
-| `SMTP_SENDER`                                              | `''`                                        | sender address (`From`, name `MAIL_FROM_NAME`)                                                                                                                                             |
-| `SMTP_USER`                                                | `''`                                        | SMTP login when it differs from the sender (e.g. `apikey`); `''` = `SMTP_SENDER`                                                                                                           |
-| `SMTP_PASSWORD`                                            | `''`                                        | SMTP password                                                                                                                                                                              |
-| `CONTACT_EMAIL`                                            | `''`                                        | organizers' contact: website footer, last line of every e-mail, `Reply-To` of e-mails                                                                                                      |
-| `CONTACT_PHONE`                                            | `''`                                        | organizers' phone: website footer and e-mails                                                                                                                                              |
-| `PUBLIC_URL`                                               | `''`                                        | base URL for links in e-mails, invitations and the admin's _Odbavení_ link (else derived from the request)                                                                                 |
-| `CORS_ORIGIN`                                              | `''`                                        | allowed origin when the apps run elsewhere                                                                                                                                                 |
+| Key                                                        | Default                                     | Meaning                                                                                                                                                                                                                           |
+| ---------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS`      | `127.0.0.1`, `3306`, `zidle`, `zidle`, `''` | PDO connection; session `time_zone = '+00:00'`                                                                                                                                                                                    |
+| `SEAT_PRICE`                                               | 300                                         | CZK per adult seat (from 18 years) for new reservations                                                                                                                                                                           |
+| `CHILD_SEAT_PRICE`                                         | 150                                         | CZK per child seat (4–17 years); children up to 3 years sit on a lap for free (no seat, no ticket)                                                                                                                                |
+| `PAYMENT_DEADLINE_HOURS`                                   | 72                                          | hours to pay before the first payment deadline rule (§8); due date capped at the run start                                                                                                                                        |
+| `PAYMENT_GRACE_HOURS`                                      | 48                                          | unpaid reservations expire this long after the due date                                                                                                                                                                           |
+| `REFUND_DAYS`                                              | 14                                          | refund promise in e-mails                                                                                                                                                                                                         |
+| `DATA_RETENTION_DAYS`                                      | 30                                          | personal data purged this long after the last run start                                                                                                                                                                           |
+| `MAX_SEATS_PER_RESERVATION`                                | 20                                          | also enforced in the UI                                                                                                                                                                                                           |
+| `EVENT_LOCATION`                                           | `''`                                        | `LOCATION` of the calendar event in the ticket e-mail (`udalost.ics`); `''` = omitted                                                                                                                                             |
+| `EVENT_DURATION_MINUTES`                                   | 120                                         | calendar event end = run start + this (min. 1)                                                                                                                                                                                    |
+| `SEATS_PER_IP_PER_HOUR`                                    | 40                                          | seats one IP may reserve per hour (`seat_quota_take()`; a quarter of it when ALTCHA is disabled); generous for families booking from one shared network                                                                           |
+| `SEATS_PER_IP_PER_DAY`                                     | 80                                          | the same per 24 hours                                                                                                                                                                                                             |
+| `ALTCHA_CHALLENGES_PER_IP_PER_HOUR`                        | 300                                         | challenges issued by `altcha.php` per IP                                                                                                                                                                                          |
+| `CODE_CHECKS_PER_IP_PER_HOUR`                              | 30                                          | discount code checks (`GET reservations.php?code=`) per IP                                                                                                                                                                        |
+| `PENDING_RESERVATIONS_PER_EMAIL`                           | 2                                           | unpaid reservations per e-mail **in one run**                                                                                                                                                                                     |
+| `LOGIN_ATTEMPTS_PER_15_MIN`                                | 10                                          | admin login, invitation (password set), forgotten password (request and new password), scanner login, per IP and area                                                                                                             |
+| `FORM_MIN_SECONDS`                                         | 3                                           | minimal age of the form token                                                                                                                                                                                                     |
+| `ALTCHA_ENABLED`                                           | `true`                                      | invisible ALTCHA on the reservation form                                                                                                                                                                                          |
+| `ALTCHA_COST`                                              | 1000                                        | PBKDF2 iterations per attempt                                                                                                                                                                                                     |
+| `ALTCHA_COUNTER_MAX`                                       | 6000                                        | attempts needed: random `max/3 … max` (≈ 1–2 s on a computer, ≈ 4–5 s on a slow phone)                                                                                                                                            |
+| `BANK_ACCOUNT`                                             | **required**                                | Czech account `[prefix-]number/bank` shown to customers; the IBAN for SPD `ACC` is derived from it (`czech_iban()`); reservations and on-site sales are refused (503) without a valid one                                         |
+| `BANK_BIC`                                                 | `''`                                        | appended to SPD `ACC`                                                                                                                                                                                                             |
+| `PAYMENT_RECIPIENT`                                        | `Farnost`                                   | SPD `RN`                                                                                                                                                                                                                          |
+| `PAYMENT_MESSAGE`                                          | `Těšín zpívá gospel`                        | SPD `MSG` prefix (+ last name)                                                                                                                                                                                                    |
+| `PAYMENT_VARIABLE_SYMBOL`                                  | `3211`                                      | variable symbol (VS) of every payment (SPD `X-VS`, e-mails, payment page), digits only, max 10; reservations differ by their own specific symbol (SS)                                                                             |
+| `DEBUG`                                                    | `false`                                     | the 500 page also shows the uncaught exception and the log file; only briefly for diagnosis                                                                                                                                       |
+| `LOG_DIR`                                                  | `api/logs`                                  | folder of the PHP error log (see below); best outside the web root; `''` = the server's own log                                                                                                                                   |
+| `DEPLOY_TOKEN`                                             | `''`                                        | token for `POST api/deploy.php` that creates the first Správce (§12); ≥ 32 characters, `''` = disabled; may be removed afterwards                                                                                                 |
+| `SCAN_WINDOW_BEFORE_MINUTES` / `SCAN_WINDOW_AFTER_MINUTES` | 60 / 60                                     | check-in window around the run start                                                                                                                                                                                              |
+| `TICKET_SECRET`                                            | **required**                                | ≥ 32 chars without spaces (`ticket_secret()` throws otherwise, so the placeholder can't be left in); HMAC key for tickets, form tokens, master cookie; never change after tickets are sent                                        |
+| `MAIL_ENABLED`                                             | `false`                                     | all e-mails off when false                                                                                                                                                                                                        |
+| `MAIL_FROM`                                                | `rezervace@example.com`                     | sender for PHP `mail()` (SMTP uses `SMTP_SENDER`)                                                                                                                                                                                 |
+| `MAIL_FROM_NAME`                                           | `Těšín zpívá gospel`                        | sender name (`From`, `Reply-To`, calendar `ORGANIZER`; `mail_from_name()`)                                                                                                                                                        |
+| `SMTP_HOST`                                                | `''`                                        | SMTP server; `''` = send with PHP `mail()`                                                                                                                                                                                        |
+| `SMTP_PORT`                                                | 587                                         | 465 = implicit TLS (SMTPS); other ports use STARTTLS when the server offers it                                                                                                                                                    |
+| `SMTP_AUTH`                                                | `true`                                      | log in with `SMTP_USER` (or `SMTP_SENDER`) / `SMTP_PASSWORD`                                                                                                                                                                      |
+| `SMTP_SENDER`                                              | `''`                                        | sender address (`From`, name `MAIL_FROM_NAME`)                                                                                                                                                                                    |
+| `SMTP_USER`                                                | `''`                                        | SMTP login when it differs from the sender (e.g. `apikey`); `''` = `SMTP_SENDER`                                                                                                                                                  |
+| `SMTP_PASSWORD`                                            | `''`                                        | SMTP password                                                                                                                                                                                                                     |
+| `PAYMENT_IMAP_HOST`                                        | `''`                                        | IMAP server of the mailbox with the bank's payment notifications (e.g. `imap.gmail.com`); `''` = automatic payments off (§9)                                                                                                      |
+| `PAYMENT_IMAP_PORT`                                        | 993                                         | 993 = implicit TLS; other ports use STARTTLS when the server offers it                                                                                                                                                            |
+| `PAYMENT_IMAP_USER`, `PAYMENT_IMAP_PASSWORD`               | `''`, `''`                                  | mailbox login (Gmail / Google Workspace: an app password, IMAP enabled)                                                                                                                                                           |
+| `PAYMENT_IMAP_FOLDER`                                      | `INBOX`                                     | folder with the notifications (opened read-only)                                                                                                                                                                                  |
+| `PAYMENT_MAIL_SENDERS`                                     | `kb.cz`                                     | accepted senders of notifications: comma-separated domains (also their subdomains) or exact addresses; other e-mails are skipped                                                                                                  |
+| `PAYMENT_MAIL_VERIFY`                                      | `true`                                      | only e-mails whose first `Authentication-Results` header (added by the mailbox's server) has `dmarc=pass` for the sender's domain or `dkim=pass` for it (or a subdomain); turn off only for a server that does not add the header |
+| `CONTACT_EMAIL`                                            | `''`                                        | organizers' contact: website footer, last line of every e-mail, `Reply-To` of e-mails                                                                                                                                             |
+| `CONTACT_PHONE`                                            | `''`                                        | organizers' phone: website footer and e-mails                                                                                                                                                                                     |
+| `PUBLIC_URL`                                               | `''`                                        | base URL for links in e-mails, invitations and the admin's _Odbavení_ link (else derived from the request)                                                                                                                        |
+| `CORS_ORIGIN`                                              | `''`                                        | allowed origin when the apps run elsewhere                                                                                                                                                                                        |
 
 **Error log.** `setup_error_log()` (first thing `lib/bootstrap.php` runs, so
 every entry point and `cron.php`) sets `log_errors`, turns `display_errors` off
@@ -387,7 +396,8 @@ All `DATETIME` columns and JSON dates are UTC.
 | `scan_conflicts`    | offline check-ins that could not be applied (§11): `run_id`, `reservation_id` (NULL when unknown), `label` (SS + name + seat), `reason` (`already_checked_in` / `not_paid` / `unknown`), `scanned_at` (device time), `scanned_by`, `other_at` / `other_by` (the check-in that won), `created_at`; FK `run_id` → `runs` (cascade)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `bank_payments`     | transfers recorded from a bank statement (§9), so none is recorded twice: `transaction_id` (PK, the bank's _Identifikace transakce_ or `h:` + sha1 of the row), `reservation_id` (FK, SET NULL), `amount` (CZK), `booked_on` (DATE from the statement), `imported_at`, `imported_by` (e-mail); no personal data                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `rate_limits`       | `bucket` (sha256 of key), `hits`, `window_start`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `settings`          | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `payment_mails`     | bank notification e-mails read from the payment mailbox (§9), one row per e-mail: `id`, `mail_key` (unique, `imap:<folder>:<UIDVALIDITY>:<UID>`), `received_at` (`Date` header), `sender`, `subject`, `status` (`recorded`/`review`/`unrecognized`/`rejected`/`ignored`), `note`, `tx` (JSON of the recognised transfer = a bank statement row), `excerpt` (text of the e-mail, ≤ 3000 chars), `reservation_id` (FK, SET NULL), `processed_at`, `resolved_at` / `resolved_by` (dealt with in the admin)                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `settings`          | `name`, `value` (JSON): `payment_deadlines` = `[{"from":"YYYY-MM-DDTHH:MM:SSZ","hours":24}]` (§8); `payment_sync` = `{"last": <result>, "auto": <result>}` (last sync and last automatic one, §9)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `admin_users`       | accounts (§12): `email` (unique, lower case, login – the account has no other name), `roles` (CSV of `admin` / `accountant` / `scanner`), `password_hash` (`password_hash()`, NULL until the invitation is accepted), `invite_hash` (sha256 of the open invitation token, unique), `invite_expires_at`, `reset_hash` (sha256 of the open forgotten-password token, unique), `reset_expires_at`, `invited_by` (e-mail of the inviting Správce, `deploy` for the first one), `created_at`, `accepted_at`, `last_login_at`, `disabled_at`                                                                                                                                                                                                                                                                                                                                                                  |
 | `user_runs`         | PK (`user_id`, `run_id`), FKs to `admin_users` and `runs` (cascade): runs an Odbavovatel checks in (§12)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
@@ -568,8 +578,8 @@ made from then on (existing ones keep their due date); `seats.php`
   (prefix ≤ 6, number 2–10, bank 4 digits), prefix and number each pass the Czech mod-11 check
   (weights 6,3,7,9,10,5,8,4,2,1 from the right), BBAN = bank + prefix (6) + number (10), check digits
   by ISO 7064 mod 97; anything else gives `''`.
-- Payments are matched by SS – manually or from an uploaded bank statement
-  (below). The accountant records every received
+- Payments are matched by SS – manually, from an uploaded bank statement or
+  automatically from the bank's notification e-mails (below). The accountant records every received
   transfer with its real amount (admin action `payment`, field `received`
   1–1 000 000 Kč; pending rows: input prefilled with `amount_due()` + button
   **Zaplaceno**; other statuses: _přišla platba_ → input + **Zapsat platbu**
@@ -640,6 +650,83 @@ made from then on (existing ones keep their due date); `seats.php`
 IGNORE`; already there → _„Už zapsáno.“_) and calls `record_payment(id,
 amount)` (all outcomes and e-mails as above); a refused payment or an
   exception removes the row again. Returns `{ok, message}`.
+
+- **Bank notification e-mails** (`lib/payment_mail.php`, `lib/imap.php`): the
+  bank (Komerční banka) e-mails a notification of every movement on the account
+  to the mailbox `PAYMENT_IMAP_*` (§4). `payment_sync(by)` runs from `cron.php`
+  every 5 minutes (`by` = `cron`) and from the admin button **Synchronizovat
+  nyní** (`by` = the admin's e-mail); off (returns the error _„Automatické
+  načítání plateb není nastavené (PAYMENT_IMAP_HOST).“_) while
+  `PAYMENT_IMAP_HOST` is `''`. One sync at a time (MariaDB `GET_LOCK
+('zidle_payment_sync')`, else _„Synchronizace právě běží, zkuste to za
+  chvíli.“_). `ImapClient` (own socket client, TLS verified; port 993 implicit
+  TLS, others STARTTLS when offered; 20 s timeout): `LOGIN`, `EXAMINE` of
+  `PAYMENT_IMAP_FOLDER` (read-only – flags are never changed, the mailbox may be
+  read by people too), `UID SEARCH SINCE` today − 7 days (`PAYMENT_MAIL_DAYS`),
+  every UID not yet in `payment_mails` (key `imap:<folder>:<UIDVALIDITY>:<UID>`),
+  oldest first, at most 50 per sync (`PAYMENT_MAIL_MAX_PER_SYNC`), fetched by
+  `UID FETCH <uid> (BODY.PEEK[])` and processed by `process_payment_mail(key,
+raw)`. Server refusals become _„Schránka odmítla příkaz <COMMAND>: <answer>“_
+  (never the password), connection problems _„Nelze se připojit ke schránce
+  host:port (…)“_ / _„Spojení se schránkou bylo přerušeno…“_; the error is logged.
+  The result `{at, by, ok, error, mails, recorded, review}` is stored in
+  `settings.payment_sync` as `last` (and as `auto` when `by` = `cron`);
+  `payment_sync_summary()`: _„žádné nové e-maily“_, _„nových e-mailů N, zapsáno
+  plateb X, ke kontrole Y“_ or _„chyba: <error>“_.
+
+  `parse_mime_message()`: headers (unfolded, RFC 2047 decoded, lower-case
+  names), text of the `text/plain` parts, else of the `text/html` ones
+  (`html_to_text()`: no style/script/head, table cells → tab, rows/blocks → new
+  line, entities decoded); multipart (nested up to 5 levels), base64,
+  quoted-printable, any charset `iconv` knows (invalid UTF-8 read as
+  Windows-1250); attachments ignored.
+
+  `process_payment_mail()` – outcome (`PAYMENT_MAIL_STATUSES`):
+  - sender (`From` address) not in `PAYMENT_MAIL_SENDERS` → `ignored` _„Odesílatel
+    X není banka (PAYMENT_MAIL_SENDERS).“_, text not kept;
+  - not verified (`PAYMENT_MAIL_VERIFY`, §4) → `rejected` (_Neověřený odesílatel_)
+    _„E-mail neprošel ověřením odesílatele (DKIM/DMARC) a mohl být podvržený – nic
+    se nezapsalo. Platbu ověřte v internetovém bankovnictví a případně zapište
+    ručně.“_;
+  - `parse_payment_notification(text)` fails → `unrecognized` (_Nerozpoznáno_)
+    with the reason + _„Platbu ověřte v internetovém bankovnictví a případně
+    zapište ručně.“_: _„V e-mailu není částka platby.“_, _„E-mail obsahuje více
+    částek (více pohybů?) – nelze zapsat automaticky.“_, _„Platba není v korunách
+    (EUR).“_, _„Částka platby je nulová.“_, _„Z e-mailu nejde poznat, jestli jde o
+    příchozí platbu.“_;
+  - an outgoing movement → `ignored` _„Odchozí platba.“_;
+  - an incoming transfer: the transaction id is the one in the e-mail, else
+    `mail:` + sha1 of the `Message-ID` (else of the key), so the same e-mail in
+    another folder is not recorded twice; then `bank_match()` (§ above): `done` →
+    `ignored` with its note (_„Už zapsáno …“_); `match` pre-checked (`select`:
+    pending without earlier payments, expired) → `bank_record(tx, 'e-mail z
+banky')` (`PAYMENT_MAIL_BY`, shown in _Už zapsáno … (e-mail z banky)_) →
+    `recorded` (_Zapsáno_) with the `record_payment()` message (ticket e-mail
+    etc.), a refusal or exception → `review` (_„Zápis selhal – zapište ručně.“_);
+    other `match` (paid, cancelled, pending with a payment already) and `none` →
+    `review` (_Ke kontrole_) with the match note.
+
+  The parser does not rely on one fixed layout (no sample of the KB e-mail
+  yet): labels match with or without diacritics (`cz_pattern()`), the value
+  follows after `:`, a table cell or inline. Amount: label _Částka_/_Objem_ and
+  the number (`+1 500,50`, `1.500`, `600.00`, optional `CZK`/`Kč`); without a
+  label the amounts with a currency on lines without _Zůstatek_/_Disponibilní_;
+  different amounts → more movements (refused). Direction: the sign, else words
+  (_příchozí, připsán, kredit, přijatá platba_ vs. _odchozí, odepsán, debet_; both
+  or none → refused). VS (_VS_/_Variabilní symbol_), SS (_SS_/_Specifický
+  symbol_) – digits without leading zeros; date = the first `d.m.yyyy`;
+  counter-account (_Protiúčet_, _z účtu_, _účet plátce_, _účet protistrany_,
+  _odesílatel_ + `[prefix-]number/bank`); name (_Název protiúčtu_, _Název (účtu)
+  protistrany_, _Jméno protistrany_, _Plátce_; ≤ 100); message (_Zpráva pro
+  příjemce_, _Popis pro příjemce_, _Zpráva_, _Poznámka_; ≤ 140); transaction id
+  (_Identifikace/ID/Číslo/Reference transakce_). Once a real notification is
+  available, check it against this parser (test in `tests/php/run.php`).
+
+  Admin (`view=bank`, §14): `payment_mail_record(id, by)` records a `review`
+  e-mail with a transfer (else _„Platbu z tohoto e-mailu nelze zapsat.“_) via
+  `bank_record()` → `recorded`, resolved by the admin; `payment_mail_resolve(id,
+by)` marks a waiting e-mail as dealt with. `payment_mails_attention()` counts
+  `review`/`unrecognized`/`rejected` not resolved (badge of the tab).
 
 - Reminder 24 h before the due date, expiry notice after expiry (§16).
 - **On-site sale** (`lib/onsite.php`, scanner tab _Prodej_, §11): while seats
@@ -978,7 +1065,29 @@ the header is too narrow); the seat plan keeps its width (720 px) and scrolls si
 
 Tabs:
 
-- **Výpis z banky** (`view=bank`, Správce and Účetní, §9) – form _Nahrát výpis
+- **Výpis z banky** (`view=bank`, Správce and Účetní, §9; the tab shows a red
+  badge with `payment_mails_attention()`, tooltip _E-maily z banky ke kontrole_) –
+  first the card _Platby z e-mailu banky_: without `PAYMENT_IMAP_HOST` only
+  _„Automatické načítání plateb je vypnuté – v konfiguraci chybí schránka s
+  oznámeními banky (PAYMENT_IMAP_HOST).“_; otherwise a hint how it works,
+  _„Poslední automatická synchronizace: <time> – <summary>“_ (yellow when it
+  failed or is older than 15 minutes, `PAYMENT_SYNC_STALE_MINUTES`, with
+  _„Proběhla před více než 15 minutami – zkontrolujte, že cron běží.“_; never →
+  _„Automatická synchronizace ještě neproběhla – zkontrolujte, že cron spouští
+  api/cron.php.“_), when the last sync was started by hand _„Naposledy spuštěno
+  ručně: <time> (<e-mail>) – <summary>“_, and **Synchronizovat nyní**
+  (`payment-sync` → `payment_sync(<e-mail>)`, flash _„Synchronizace hotová:
+  <summary>.“_ or _„Synchronizace selhala: <error>“_). Then the card _E-maily z
+  banky_ (only when there are any): the last 30, waiting ones first, columns
+  _Přijato_ (time + subject), _Platba_ (amount, VS, SS, payer, account, message;
+  without a transfer the sender), _Rezervace_ (SS link, name, status), _Stav_
+  (badge; _vyřízeno (<e-mail>)_), _Co se stalo_ (note; for e-mails without a
+  transfer the text in _Text e-mailu_), and for waiting ones **Zapsat platbu**
+  (`review` with a reservation; `confirm()` _„Zapsat tuto platbu k rezervaci?
+  Pokud jste ji už zapsali ručně, nezapisujte ji znovu.“_ →
+  `payment-mail-record`, flash = the record message) and **Vyřízeno**
+  (`payment-mail-resolve`: _„E-mail označen jako vyřízený.“_ / _„E-mail už je
+  vyřízený.“_). Then the form _Nahrát výpis
   z banky_ (hint how to export it from KB MojeBanka and how matching works,
   file input `statement`, **Načíst výpis** → `bank-upload`: parse errors as
   flash, no file _„Vyberte soubor CSV s výpisem.“_; the parsed rows, file name
@@ -1164,12 +1273,17 @@ _„[TEST] “_ in front. The table lists the subtitle in the message.
 
 ## 16. Scheduled jobs and GDPR
 
-`php api/cron.php`: `expire_reservations()`, `send_due_notifications()`,
-`purge_personal_data()`, `cleanup_rate_limits()`; prints a summary line.
+`php api/cron.php` (every 5 minutes): `payment_sync('cron')` when
+`PAYMENT_IMAP_HOST` is set (first, so a payment that just arrived counts
+before expiry; §9), `expire_reservations()`, `send_due_notifications()`,
+`purge_personal_data()`, `cleanup_rate_limits()`; prints a summary line
+(`payments: off` / `mails N, recorded X, to review Y` / `error …`).
 Purge after `last_run_start()` (the last run that is not a test run) `+ DATA_RETENTION_DAYS`: empties first/last
 name and e-mail of all reservations except those with money still to return
 (`refund_amount > refunded_amount`; they are emptied by the first cron run
-after **Vráceno**), deletes all `scan_conflicts` and empties the e-mails of `discount_codes`; SS,
+after **Vráceno**), deletes all `scan_conflicts`, empties the e-mails of `discount_codes` and in
+`payment_mails` `tx`, `excerpt` and `note` (unresolved ones become resolved by
+`GDPR`); SS,
 amounts, seats (items) and statuses stay.
 
 ## 17. Spam and abuse protection
@@ -1330,7 +1444,20 @@ symbols dropped, matched by SS, by a number in the message with a wrong VS
 noted, a paid reservation not pre-checked, unknown SS and an amount with
 haléře not matched; full and partial payments recorded, the same transaction
 refused the second time, a second payment of a partly paid reservation not
-pre-checked, empty file and missing header). Locally:
+pre-checked, empty file and missing header); bank notification e-mails
+(plain text ISO-8859-2 quoted-printable with an RFC 2047 subject, HTML-only
+Windows-1250 base64 table in multipart with an attachment, a short form without
+diacritics, outgoing by sign and by text, no amount, two amounts, EUR, no
+direction, an unlabelled amount next to a balance; allowed senders and
+subdomains, `Authentication-Results` dmarc/dkim pass, a look-alike DKIM domain
+and fail refused; an e-mail recorded (paid, `e-mail z banky`) and the same
+e-mail again skipped, a paid reservation waits for review and is recorded by the
+accountant, a spoofed sender with a forged second header rejected, another
+sender skipped without text, unreadable and unknown SS waiting, resolved once;
+IMAP sync against `tests/php/fake_imap.php` in a child process (two new e-mails:
+one recorded, one to review; nothing new the second time; state `auto`; wrong
+password reported, not stored), off without `PAYMENT_IMAP_HOST`; the GDPR purge
+empties them). Locally:
 `DB_NAME=zidle_test MAIL_ENABLED=0 BANK_ACCOUNT=19-2000145399/0800 php tests/php/run.php` (values in
 `config.local.php` take precedence over the environment).
 
@@ -1355,7 +1482,10 @@ for *zakaznik@example.com*, the Správce *spravce@example.cz* created by
 `offlineTicket` = seat ticket codes, `codes`) in `tests/e2e/.seed.json`.
 `inviteLink(email)` in `helpers.js` runs `tests/e2e/invite-link.php`, which
 issues a fresh invitation token for the account and prints its link (e-mails
-are off in the tests).
+are off in the tests); `paymentMails()` runs `tests/e2e/payment-mails.php`, which
+adds a paid reservation (run 2, BP-1-1) and processes two bank notification
+e-mails with `process_payment_mail()` (a second payment for it, an unreadable
+one) and prints its SS.
 Tests:
 
 - `customer.spec.js` – choose _Premiéra_, the map has as many section areas
@@ -1371,7 +1501,12 @@ Tests:
   download (`TZG_vstupenky.pdf`), no name inputs on the ticket cards; the test run _Zkouška_ is not in the
   picker, opened by `/?termin=3` the form shows _· TEST_, no code field,
   **Rezervovat (test)** → _Zaplaceno_ with one ticket QR code.
-- `admin.spec.js` – record 200 Kč (_zbývá doplatit 400 Kč_, input prefilled
+- `admin.spec.js` – bank e-mails (`payment-mails.php`: a second payment for a
+  paid reservation and an unreadable e-mail): badge _2_ on _Výpis z banky_, _Automatické
+  načítání plateb je vypnuté_, the payment _Ke kontrole_ with the payer and the
+  note → **Zapsat platbu** → _„Přijato 300 Kč – rezervace už byla zaplacená, jde
+  o platbu navíc.“_, _Zapsáno_ without buttons; the unreadable one shows its text,
+  **Vyřízeno** → _vyřízeno (spravce@example.cz)_, no badge; record 200 Kč (_zbývá doplatit 400 Kč_, input prefilled
   400), then the rest → _Zaplaceno_; _Výpis z banky_: an uploaded CSV with a
   transfer of 600 Kč with the seeded SS (pre-checked, _Celá částka →
   Zaplaceno_) and one without SS (_Platba nemá SS_) → **Zapsat vybrané

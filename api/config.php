@@ -65,6 +65,16 @@ return (static function (): array {
         'SMTP_USER' => '',               // SMTP login when it differs from SMTP_SENDER (e.g. 'apikey'); '' = SMTP_SENDER
         'SMTP_PASSWORD' => '',
 
+        // Automatic payments: the bank e-mails a notification of every account movement to this
+        // mailbox; cron.php reads it over IMAP every 5 minutes (read-only) and records the payments.
+        'PAYMENT_IMAP_HOST' => '',       // e.g. imap.gmail.com; '' = automatic payments off
+        'PAYMENT_IMAP_PORT' => 993,      // 993 = implicit TLS; others use STARTTLS when offered
+        'PAYMENT_IMAP_USER' => '',
+        'PAYMENT_IMAP_PASSWORD' => '',   // Gmail / Google Workspace: an app password
+        'PAYMENT_IMAP_FOLDER' => 'INBOX',
+        'PAYMENT_MAIL_SENDERS' => 'kb.cz', // accepted senders: comma-separated domains (with subdomains) or exact addresses
+        'PAYMENT_MAIL_VERIFY' => true,   // only e-mails the mailbox server verified (DKIM/DMARC pass in Authentication-Results)
+
         // Contact of the organizers: shown in the website footer and in every e-mail;
         // CONTACT_EMAIL is also the Reply-To address of e-mails.
         'CONTACT_EMAIL' => '',

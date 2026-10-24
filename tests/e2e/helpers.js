@@ -9,6 +9,10 @@ export { ENV };
 export const inviteLink = (email) =>
   execFileSync('php', ['tests/e2e/invite-link.php', email], { env: ENV, encoding: 'utf8' }).trim();
 
+/** Processes two bank notification e-mails (tests/e2e/payment-mails.php); returns the SS of their reservation. */
+export const paymentMails = () =>
+  execFileSync('php', ['tests/e2e/payment-mails.php'], { env: ENV, encoding: 'utf8' }).trim();
+
 /** Seeded accounts (tests/e2e/seed.php). */
 export const ADMIN = { email: 'spravce@example.cz', password: 'e2e-spravce-heslo' };
 export const SCANNER = { email: 'vchod@example.cz', password: 'e2e-vchod-heslo' };

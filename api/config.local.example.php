@@ -25,6 +25,12 @@ return [
     'SMTP_USER' => '',                 // only when the login differs from SMTP_SENDER
     'SMTP_PASSWORD' => 'change-me',
 
+    // Automatic payments: mailbox with the bank's notifications of account movements (IMAP, read-only)
+    'PAYMENT_IMAP_HOST' => 'imap.example.com',  // '' = off
+    'PAYMENT_IMAP_PORT' => 993,
+    'PAYMENT_IMAP_USER' => 'platby@example.com',
+    'PAYMENT_IMAP_PASSWORD' => 'change-me',
+
     // Contact of the organizers: website footer and every e-mail (Reply-To = CONTACT_EMAIL)
     'CONTACT_EMAIL' => 'farnost@example.com',
     'CONTACT_PHONE' => '+420 123 456 789',

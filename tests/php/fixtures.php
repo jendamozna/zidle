@@ -38,7 +38,8 @@ function reset_database(): void
  */
 function reservation(array $seats, string $status = 'pending', int $run = 1, string $lastName = '', array $children = [], array $free = []): int
 {
-    static $n = 0;
+    static $n = null; // continues after existing rows, so a helper run on a seeded database gets new SS
+    $n ??= (int) db_query('SELECT COALESCE(MAX(id), 0) FROM reservations')->fetchColumn();
     $n++;
     $pdo = db();
     $items = new_reservation_items($seats, $children, $free, 300, 150);

@@ -417,8 +417,9 @@
       <li>
         <strong>Vstupenky</strong
         ><span
-          >Účetní platbu potvrdí a návštěvníkovi přijdou e-mailem vstupenky – pro každé místo vlastní QR kód, v příloze
-          i PDF k vytištění a rozstříhání.</span
+          >Systém do pár minut najde platbu v e-mailu od banky a zapíše ji (sporné případy potvrdí účetní).
+          Návštěvníkovi přijdou e-mailem vstupenky – pro každé místo vlastní QR kód, v příloze i PDF k vytištění a
+          rozstříhání.</span
         >
       </li>
       <li>
@@ -461,9 +462,10 @@
         <span class="where">správa · počítač · vidí jen rezervace a platby</span>
         <ul>
           <li>
-            kontroluje platby ve výpisu a zapisuje, kolik skutečně přišlo – nebo nahraje výpis z banky (CSV) a platby se
-            spárují samy
+            platby se zapisují samy z e-mailů banky – účetní řeší jen ty, které systém nechal ke kontrole, a vidí, kdy
+            proběhla poslední synchronizace (může ji spustit i ručně)
           </li>
+          <li>zapisuje platby i ručně u rezervace, nebo nahraje výpis z banky (CSV) a platby se spárují samy</li>
           <li>vrací peníze a ověřuje platby za vstupenky prodané u vchodu</li>
           <li>posílá vstupenky znovu, opravuje e-mail zákazníka</li>
         </ul>
@@ -486,6 +488,7 @@
         <h3>Systém</h3>
         <span class="where">automaticky</span>
         <ul>
+          <li>každých 5 minut načte z e-mailů banky nové platby a zapíše je k rezervacím</li>
           <li>posílá e-maily a připomínky platby</li>
           <li>ruší nezaplacené rezervace a uvolňuje místa</li>
           <li>po akci maže osobní údaje</li>
@@ -568,11 +571,12 @@
           />
         </div>
         <figcaption>
-          <strong>7. E-mail: platba přijata, vstupenky</strong>Přijde, jakmile účetní potvrdí platbu. Odesílatel „Těšín
-          zpívá gospel“, předmět „Vstupenky - Těšín zpívá gospel“ (ostatní e-maily k rezervaci „Rezervace míst - Těšín
-          zpívá gospel“), odpovědi jdou na kontakt pořadatelů. Potvrzení platby, představení, jméno a seznam míst;
-          vstupenky s QR kódy (1 QR kód = 1 místo) jsou jen v přiloženém PDF. Specifický symbol se v e-mailu, v PDF ani
-          v kalendáři neukazuje. Přílohy: TZG_vstupenky.pdf a událost do kalendáře (udalost.ics).
+          <strong>7. E-mail: platba přijata, vstupenky</strong>Přijde, jakmile je platba zapsaná (automaticky z e-mailu
+          banky, nebo účetní). Odesílatel „Těšín zpívá gospel“, předmět „Vstupenky - Těšín zpívá gospel“ (ostatní
+          e-maily k rezervaci „Rezervace míst - Těšín zpívá gospel“), odpovědi jdou na kontakt pořadatelů. Potvrzení
+          platby, představení, jméno a seznam míst; vstupenky s QR kódy (1 QR kód = 1 místo) jsou jen v přiloženém PDF.
+          Specifický symbol se v e-mailu, v PDF ani v kalendáři neukazuje. Přílohy: TZG_vstupenky.pdf a událost do
+          kalendáře (udalost.ics).
         </figcaption>
       </figure>
       <figure>
@@ -681,6 +685,17 @@
           <strong>Rezervace</strong>Obsazenost představení, vyhledávání podle SS nebo jména, zápis přijaté částky,
           zrušení, vracení peněz, PDF vstupenky. U každého místa je vidět dětská vstupenka, slevový kód a zda už prošlo.
           Červená karta upozorní na prodeje u vchodu, u kterých je třeba ověřit, že platba dorazila.
+        </figcaption>
+      </figure>
+      <figure>
+        <div class="desktop">
+          <img src="29-admin-platby.jpg" alt="Platby z e-mailu banky" width="1360" height="943" loading="lazy" />
+        </div>
+        <figcaption>
+          <strong>Platby z banky</strong>Kdy proběhla poslední automatická synchronizace a tlačítko „Synchronizovat
+          nyní“. Pod tím e-maily z banky: co se zapsalo samo a co čeká na kontrolu (platba bez SS, druhá platba za už
+          zaplacenou rezervaci, nerozpoznaný e-mail). Počet čekajících ukazuje červené číslo v menu. Níže lze dál nahrát
+          výpis z banky (CSV).
         </figcaption>
       </figure>
       <figure>
@@ -822,14 +837,15 @@
         </p>
       </div>
       <div class="rule">
-        <strong>Platby potvrzuje člověk</strong>
+        <strong>Platby se párují samy z e-mailů banky</strong>
         <p>
-          Aplikace není napojená na banku. Všechny platby mají stejný variabilní symbol 3211, rezervace se liší
-          specifickým symbolem (SS), který systém každé rezervaci vygeneruje. Účetní páruje platby podle specifického
-          symbolu a zapíše, kolik skutečně přišlo – buď ručně u rezervace, nebo nahraje výpis z banky (CSV z KB
-          MojeBanky): systém platby spáruje podle SS (případně čísla ve zprávě), ukáže náhled, co se stane, a zapíše
-          zaškrtnuté. Nespárované platby vypíše k ručnímu zápisu, stejnou platbu nezapíše dvakrát. Vstupenka proto
-          přijde až po potvrzení.
+          Všechny platby mají stejný variabilní symbol 3211, rezervace se liší specifickým symbolem (SS), který systém
+          každé rezervaci vygeneruje. Komerční banka posílá o každém pohybu na účtu e-mail do schránky pro platby;
+          systém ji každých 5 minut přečte (jen čte, nic v ní nemaže) a příchozí platbu zapíše k rezervaci podle SS
+          (případně čísla ve zprávě) – vstupenka pak odejde sama. Bere jen e-maily, které opravdu poslala banka (ověřený
+          odesílatel), podvržený e-mail nic nezapíše. Co nejde zapsat jistě – platba bez SS, druhá platba za zaplacenou
+          rezervaci, nerozpoznaný e-mail – čeká na účetní. Stejnou platbu systém nezapíše dvakrát. Platby lze dál zapsat
+          ručně u rezervace nebo nahráním výpisu z banky (CSV z KB MojeBanky).
         </p>
       </div>
       <div class="rule">
@@ -958,6 +974,11 @@
         Ověřit plánek v kostele: počet míst v každé řadě (celkem 301 – dole 195, na balkoně 106, z toho 34 záložních);
         lavice na balkoně jsou rozdělené vlevo na místa 1–5 a 6–12, vpravo 1–6 a 7–11; záložní řady vlevo za lavicí na
         1–5 a 6–11.
+      </li>
+      <li>
+        Schránka pro platby (tzgplatby@cbtesin.cz): v KB nastavit e-mailová oznámení o pohybech na účtu do této
+        schránky, ve schránce povolit IMAP a vytvořit heslo aplikace, na serveru spouštět automatické úlohy každých 5
+        minut. Poslat si jedno skutečné oznámení z KB a ověřit, že ho systém rozpozná (formát e-mailu zatím neznáme).
       </li>
       <li>Od kdy zkrátit splatnost plateb (např. poslední týden před představením 24 hodin).</li>
       <li>

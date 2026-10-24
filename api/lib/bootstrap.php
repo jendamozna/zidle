@@ -17,6 +17,8 @@ require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/cancellation.php';
 require_once __DIR__ . '/payments.php';
 require_once __DIR__ . '/bank.php';
+require_once __DIR__ . '/imap.php';
+require_once __DIR__ . '/payment_mail.php';
 require_once __DIR__ . '/offline.php';
 require_once __DIR__ . '/admin_users.php';
 require_once __DIR__ . '/scanner_access.php';

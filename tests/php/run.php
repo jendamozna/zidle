@@ -235,6 +235,174 @@ test('bank statement CSV (KB, Windows-1250): matched by SS, VS or message, recor
     contains('záhlavím', is_string($noHeader) ? $noHeader : '', 'no header');
 });
 
+/** A bank notification e-mail (KB-like text; the real format is not known yet). */
+function kb_mail(string $body, array $headers = [], string $from = 'Komerční banka <info@kb.cz>'): string
+{
+    $headers += [
+        'Authentication-Results' => 'mx.google.com; dkim=pass header.i=@kb.cz header.s=s1; spf=pass smtp.mailfrom=kb.cz; dmarc=pass (p=REJECT) header.from=kb.cz',
+        'From' => $from,
+        'Subject' => '=?UTF-8?B?' . base64_encode('Pohyb na účtu') . '?=',
+        'Date' => 'Fri, 23 Oct 2026 10:15:00 +0200',
+        'Message-ID' => '<' . bin2hex(random_bytes(6)) . '@kb.cz>',
+        'MIME-Version' => '1.0',
+        'Content-Type' => 'text/plain; charset=iso-8859-2',
+        'Content-Transfer-Encoding' => 'quoted-printable',
+    ];
+    $head = implode("\r\n", array_map(static fn ($k, $v) => "{$k}: {$v}", array_keys($headers), $headers));
+    $encoded = str_contains($headers['Content-Type'], 'iso-8859-2')
+        ? quoted_printable_encode((string) iconv('UTF-8', 'ISO-8859-2', $body))
+        : $body;
+    return $head . "\r\n\r\n" . $encoded;
+}
+
+function kb_text(string $ss, string $amount = '600,00', string $vs = '3211'): string
+{
+    return "Vážená klientko, vážený kliente,\noznamujeme Vám, že na účet 19-2000145399/0800 byla připsána platba.\n"
+        . "Datum zaúčtování: 23.10.2026\nČástka: {$amount} CZK\nProtiúčet: 123-4567890/0300\nNázev protiúčtu: Jan Novák\n"
+        . "Variabilní symbol: {$vs}\nKonstantní symbol: 0308\nSpecifický symbol: {$ss}\nZpráva pro příjemce: vstupenky Novák\n"
+        . "Zůstatek po transakci: 12 345,67 CZK\nKomerční banka, a.s.";
+}
+
+test('bank notification e-mails: text read in any form, KB format variants, outgoing and unreadable ones', function (): void {
+    $mail = parse_mime_message(kb_mail(kb_text('12345')));
+    same('Pohyb na účtu', $mail['headers']['subject'][0], 'subject decoded');
+    same(['Pohyb na účtu', 'Platba přijata'], [
+        parse_mime_message("Subject: Pohyb na účtu\r\n\r\nx")['headers']['subject'][0],
+        parse_mime_message("Subject: " . iconv('UTF-8', 'WINDOWS-1250', 'Platba přijata') . "\r\n\r\nx")['headers']['subject'][0],
+    ], 'raw 8-bit subjects (UTF-8, Windows-1250)');
+    same([
+        'direction' => 'in',
+        'tx' => ['id' => '', 'date' => '2026-10-23', 'account' => '123-4567890/0300', 'name' => 'Jan Novák', 'cents' => 60000,
+            'vs' => '3211', 'ss' => '12345', 'message' => 'vstupenky Novák'],
+    ], parse_payment_notification($mail['text']), 'plain text, ISO-8859-2, quoted-printable');
+
+    // HTML only, Windows-1250, base64 inside multipart; table cells; signed amount and transaction id.
+    $html = '<html><head><style>td{color:red}</style></head><body><table>'
+        . '<tr><td>Typ</td><td>Příchozí úhrada</td></tr><tr><td>Částka</td><td>+1&nbsp;500,50 Kč</td></tr>'
+        . '<tr><th>SS</th><td>0012345</td></tr><tr><td>Identifikace transakce</td><td>KB-778899</td></tr></table></body></html>';
+    $raw = kb_mail(
+        "--b1\r\nContent-Type: text/html; charset=windows-1250\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+            . chunk_split(base64_encode((string) iconv('UTF-8', 'WINDOWS-1250', $html))) . "--b1\r\n"
+            . "Content-Type: application/pdf; name=x.pdf\r\nContent-Disposition: attachment\r\n\r\nJVBERi0=\r\n--b1--\r\n",
+        ['Content-Type' => 'multipart/mixed; boundary="b1"', 'Content-Transfer-Encoding' => '7bit']
+    );
+    $tx = parse_payment_notification(parse_mime_message($raw)['text']);
+    same(['in', 150050, '12345', 'KB-778899', ''], is_array($tx) ? [$tx['direction'], $tx['tx']['cents'], $tx['tx']['ss'], $tx['tx']['id'], $tx['tx']['vs']] : $tx, 'HTML table');
+
+    $sms = parse_payment_notification('KB: Prichozi platba na ucet 107-155830287/0100 dne 24.10.2026, castka 300,00 CZK, VS 3211, SS 777, z uctu 19-123/0800.');
+    same(['in', 30000, '3211', '777', '2026-10-24', '19-123/0800'], is_array($sms) ? [$sms['direction'], $sms['tx']['cents'], $sms['tx']['vs'], $sms['tx']['ss'], $sms['tx']['date'], $sms['tx']['account']] : $sms, 'short form without diacritics');
+    same('out', (parse_payment_notification(kb_text('1', '-250,00')) ?: [])['direction'] ?? null, 'outgoing by sign');
+    same('out', (parse_payment_notification("Odchozí úhrada\nČástka: 250,00 CZK") ?: [])['direction'] ?? null, 'outgoing by text');
+    same('V e-mailu není částka platby.', parse_payment_notification('Výpis z účtu za říjen je připraven.'), 'no amount');
+    contains('více částek', (string) json_encode(parse_payment_notification("Příchozí\nČástka: 100,00 CZK\nČástka: 200,00 CZK"), JSON_UNESCAPED_UNICODE), 'two movements');
+    same('Platba není v korunách (EUR).', parse_payment_notification("Příchozí platba\nČástka: 100,00 EUR"), 'foreign currency');
+    same('Z e-mailu nejde poznat, jestli jde o příchozí platbu.', parse_payment_notification('Částka: 100,00 CZK'), 'no direction');
+    same(30000, (parse_payment_notification("Připsána platba 300 Kč\nDisponibilní zůstatek 5 000 Kč") ?: [])['tx']['cents'] ?? null, 'unlabelled amount, balance skipped');
+
+    same([true, true, false, false], array_map('payment_mail_sender_allowed', ['info@kb.cz', 'notifikace@info.kb.cz', 'info@evilkb.cz', '']), 'senders');
+    $auth = static fn (string $results) => payment_mail_authentic(['authentication-results' => [$results]], 'info@kb.cz');
+    same([true, true, false, false, false], [
+        $auth('mx.google.com; dmarc=pass (p=REJECT) header.from=kb.cz'),
+        $auth('mx.google.com; dkim=pass header.i=@mail.kb.cz; dmarc=fail header.from=kb.cz'),
+        $auth('mx.google.com; dkim=pass header.i=@kb.cz.evil.com; dmarc=fail header.from=kb.cz'),
+        $auth('mx.google.com; dkim=fail header.i=@kb.cz; spf=pass smtp.mailfrom=kb.cz'),
+        $auth(''),
+    ], 'authentication results');
+});
+
+test('bank notification e-mails: recorded once, review, spoofed, foreign and unreadable ones wait or are skipped', function (): void {
+    $full = reservation(['PH-9-6', 'PH-9-7']);
+    $paid = reservation(['PH-9-8'], 'paid');
+    $ss = static fn (int $id) => row($id)['specific_symbol'];
+    $attention = payment_mails_attention();
+
+    $raw = kb_mail(kb_text($ss($full)));
+    $done = process_payment_mail('test:1', $raw);
+    same(['recorded', $full], [$done['status'], $done['reservation_id']], 'recorded');
+    contains('Přijato 600 Kč – zaplaceno.', $done['note'], 'note');
+    same(['paid', 600, null, 0], money($full), 'reservation paid');
+    same(PAYMENT_MAIL_BY, db_query("SELECT imported_by FROM bank_payments WHERE reservation_id = {$full}")->fetchColumn(), 'by the e-mail');
+    $again = process_payment_mail('test:2', $raw); // the same e-mail again (e.g. moved to another folder)
+    same('ignored', $again['status'], 'same e-mail not recorded twice');
+    contains('Už zapsáno', $again['note'], 'shown as recorded');
+    same(['paid', 600, null, 0], money($full), 'still paid once');
+
+    $review = process_payment_mail('test:3', kb_mail(kb_text($ss($paid), '300,00')));
+    same(['review', $paid, 'paid', 300], [$review['status'], $review['reservation_id'], ...array_slice(money($paid), 0, 2)], 'paid reservation waits for a person');
+    same(['ok' => false, 'message' => 'Platbu z tohoto e-mailu nelze zapsat.'], payment_mail_record($done['id'], 'ucetni@example.cz'), 'recorded e-mail not again');
+    same(true, payment_mail_record($review['id'], 'ucetni@example.cz')['ok'], 'recorded by the accountant');
+    $resolved = (array) payment_mail($review['id']);
+    same(['recorded', 'ucetni@example.cz'], [$resolved['status'] ?? null, $resolved['resolved_by'] ?? null], 'resolved');
+    same(['paid', 600, 300], array_slice(money($paid), 0, 3), 'extra payment due for refund');
+
+    $spoofed = process_payment_mail('test:4', kb_mail(kb_text($ss($full)), [
+        'Authentication-Results' => "mx.google.com; dkim=none; spf=softfail smtp.mailfrom=evil.example; dmarc=fail header.from=kb.cz\r\nAuthentication-Results: mx.google.com; dmarc=pass header.from=kb.cz",
+        'Message-ID' => '<spoof@evil.example>',
+    ]));
+    same(['rejected', null], [$spoofed['status'], $spoofed['tx']], 'spoofed sender rejected (forged header below the real one ignored)');
+    $foreign = process_payment_mail('test:5', kb_mail(kb_text($ss($full)), [], 'Někdo <podvod@example.com>'));
+    same(['ignored', null], [$foreign['status'], $foreign['excerpt']], 'other sender skipped, text not kept');
+    $unknown = process_payment_mail('test:6', kb_mail('Výpis z účtu za říjen je připraven v internetovém bankovnictví.'));
+    same('unrecognized', $unknown['status'], 'not a payment');
+    contains('Výpis z účtu', (string) $unknown['excerpt'], 'text kept for the admin');
+    same('ignored', process_payment_mail('test:7', kb_mail(kb_text('1', '-250,00')))['status'], 'outgoing skipped');
+    $none = process_payment_mail('test:8', kb_mail(kb_text('99999', '400,00', '321')));
+    same(['review', null], [$none['status'], $none['reservation_id']], 'unknown SS waits for a person');
+
+    same($attention + 3, payment_mails_attention(), 'spoofed, unreadable and unmatched wait');
+    same(true, payment_mail_resolve($unknown['id'], 'ucetni@example.cz'), 'resolved');
+    same(false, payment_mail_resolve($unknown['id'], 'ucetni@example.cz'), 'only once');
+    same($attention + 2, payment_mails_attention(), 'one less');
+});
+
+test('payment mailbox sync over IMAP: new e-mails once, state remembered, errors reported', function (): void {
+    $id = reservation(['PH-9-9']);
+    $file = tempnam(sys_get_temp_dir(), 'imap');
+    file_put_contents($file, json_encode(['user' => 'platby@example.cz', 'password' => 'tajne "heslo"', 'uidvalidity' => 7, 'messages' => [
+        '11' => kb_mail(kb_text(row($id)['specific_symbol'], '300,00')),
+        '12' => kb_mail('Výpis z účtu je připraven.'),
+    ]]));
+    $server = proc_open([PHP_BINARY, __DIR__ . '/fake_imap.php', $file], [1 => ['pipe', 'w']], $pipes);
+    if (!is_resource($server)) {
+        throw new TestFailure('fake IMAP server did not start');
+    }
+    try {
+        $port = (int) fgets($pipes[1]);
+        $sync = static function (string $password) use ($port): array {
+            // A separate process: config comes from the environment, like cron.php.
+            $env = ['PAYMENT_IMAP_HOST' => '127.0.0.1', 'PAYMENT_IMAP_PORT' => (string) $port, 'PAYMENT_IMAP_USER' => 'platby@example.cz',
+                'PAYMENT_IMAP_PASSWORD' => $password] + getenv();
+            $code = 'require ' . var_export(__DIR__ . '/../../api/lib/bootstrap.php', true) . '; echo json_encode(payment_sync("cron"));';
+            $child = proc_open([PHP_BINARY, '-r', $code], [1 => ['pipe', 'w']], $out, null, $env);
+            $json = is_resource($child) ? (string) stream_get_contents($out[1]) : '';
+            if (is_resource($child)) {
+                proc_close($child);
+            }
+            return (array) json_decode($json, true);
+        };
+        $first = $sync('tajne "heslo"');
+        same([true, 2, 1, 1], [$first['ok'] ?? null, $first['mails'] ?? null, $first['recorded'] ?? null, $first['review'] ?? null], 'first sync: ' . json_encode($first, JSON_UNESCAPED_UNICODE));
+        same('paid', row($id)['status'], 'payment recorded');
+        same(['imap:INBOX:7:11', 'imap:INBOX:7:12'], db_query("SELECT mail_key FROM payment_mails WHERE mail_key LIKE 'imap:%' ORDER BY mail_key")->fetchAll(PDO::FETCH_COLUMN), 'keys');
+        $second = $sync('tajne "heslo"');
+        same([true, 0], [$second['ok'] ?? null, $second['mails'] ?? null], 'nothing new the second time');
+        same('žádné nové e-maily', payment_sync_summary($second), 'summary');
+        $state = payment_sync_state();
+        same(['cron', true], [$state['auto']['by'] ?? null, $state['auto']['ok'] ?? null], 'automatic sync remembered');
+        $failed = $sync('spatne');
+        same(false, $failed['ok'] ?? null, 'wrong password');
+        contains('Invalid credentials', (string) ($failed['error'] ?? ''), 'error from the server');
+        contains('chyba: Schránka odmítla příkaz LOGIN', payment_sync_summary(payment_sync_state()['auto']), 'error remembered');
+        same(false, str_contains((string) json_encode(payment_sync_state()), 'spatne'), 'password not in the state');
+    } finally {
+        proc_terminate($server);
+        proc_close($server);
+        unlink($file);
+    }
+    $off = payment_sync('ucetni@example.cz');
+    same([false, 'Automatické načítání plateb není nastavené (PAYMENT_IMAP_HOST).'], [$off['ok'], $off['error']], 'off without a mailbox');
+});
+
 // ------------------------------------------------------------ cancellation
 
 test('admin cancellation of single seats refunds them in full and frees them', function (): void {
@@ -541,6 +709,7 @@ test('personal data is purged after the event except while money is still to ret
         db()->prepare('UPDATE reservations SET refunded_amount = refund_amount WHERE id = ?')->execute([$refund]);
         purge_personal_data();
         same('', row($refund)['email'], 'purged after refund');
+        same('0', (string) db_query('SELECT COUNT(*) FROM payment_mails WHERE tx IS NOT NULL OR excerpt IS NOT NULL OR resolved_at IS NULL')->fetchColumn(), 'bank e-mails emptied and resolved');
     } finally {
         db()->exec('UPDATE runs SET starts_at = starts_at + INTERVAL 400 DAY');
         runs(true);
@@ -587,7 +756,7 @@ test('the ticket calendar event covers the run with folded, escaped lines', func
     contains('SEQUENCE:' . $now->getTimestamp(), $ics, 'sequence');
     contains('ATTENDEE;CN="Test Nováková, Jana";', $unfolded, 'attendee');
     contains('SUMMARY:Těšín zpívá gospel · Budoucí – ' . str_replace(',', '\,', implode('; ', seat_labels(current_seat_ids($r)))), $unfolded, 'summary');
-    contains('QR kódy vstupenek z PDF v e-mailu', $unfolded, 'description');
+    contains('DESCRIPTION:Místa: ' . str_replace(',', '\\,', implode('; ', seat_labels(current_seat_ids($r)))), $unfolded, 'description');
     same(false, str_contains($unfolded, $r['specific_symbol']), 'no SS');
     contains('ORGANIZER;CN="' . config('MAIL_FROM_NAME') . '":mailto:', $unfolded, 'organizer = MAIL_FROM_NAME');
     same(true, str_ends_with($ics, "END:VCALENDAR\r\n"), 'CRLF');

@@ -99,6 +99,28 @@ CREATE TABLE IF NOT EXISTS reservation_seats (
     REFERENCES reservations (id, run_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
 
+-- Bank notification e-mails read from the payment mailbox (PAYMENT_IMAP_*), one row per e-mail,
+-- so none is processed twice; the ones waiting for a person are shown in the admin.
+CREATE TABLE IF NOT EXISTS payment_mails (
+  id             INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  mail_key       VARCHAR(190)  NOT NULL COMMENT 'imap:<folder>:<UIDVALIDITY>:<UID>',
+  received_at    DATETIME      NOT NULL COMMENT 'UTC, Date header of the e-mail',
+  sender         VARCHAR(190)  NOT NULL COMMENT 'From address',
+  subject        VARCHAR(250)  NOT NULL,
+  status         ENUM('recorded', 'review', 'unrecognized', 'rejected', 'ignored') NOT NULL,
+  note           VARCHAR(1000) NOT NULL COMMENT 'What happened, for the admin',
+  tx             TEXT          NULL COMMENT 'JSON of the recognised incoming transfer (a bank statement row)',
+  excerpt        TEXT          NULL COMMENT 'Text of the e-mail (shortened), for the admin',
+  reservation_id INT UNSIGNED  NULL,
+  processed_at   DATETIME      NOT NULL COMMENT 'UTC',
+  resolved_at    DATETIME      NULL COMMENT 'UTC, dealt with in the admin',
+  resolved_by    VARCHAR(190)  NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_mail_key (mail_key),
+  KEY idx_status (status, resolved_at),
+  CONSTRAINT fk_payment_mail_reservation FOREIGN KEY (reservation_id) REFERENCES reservations (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_czech_ci;
+
 -- Rate limiting for spam/bot protection (fixed time windows).
 CREATE TABLE IF NOT EXISTS rate_limits (
   bucket       CHAR(64)     NOT NULL COMMENT 'sha256 of the limited key (e.g. action + IP)',
@@ -108,7 +130,7 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   KEY idx_window (window_start)
 ) ENGINE=InnoDB DEFAULT CHARSET=ascii;
 
--- Admin-editable settings (JSON values): payment_deadlines.
+-- Settings (JSON values): payment_deadlines (admin-editable), payment_sync (last payment mailbox sync).
 CREATE TABLE IF NOT EXISTS settings (
   name  VARCHAR(64) NOT NULL,
   value TEXT        NOT NULL,
