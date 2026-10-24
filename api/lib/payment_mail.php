@@ -51,7 +51,7 @@ function payment_sync(string $by, #[\SensitiveParameter] ?array $mailbox = null)
     }
     $imap = null;
     try {
-        $imap = new ImapClient($mailbox['host'], $mailbox['port']);
+        $imap = new ImapClient($mailbox['host'], $mailbox['port'], 20, $mailbox['ipv4'] ?? false);
         try {
             $imap->login($mailbox['user'], $mailbox['password']);
             $folder = $mailbox['folder'];
@@ -94,7 +94,7 @@ function payment_sync(string $by, #[\SensitiveParameter] ?array $mailbox = null)
     return $result;
 }
 
-/** The PAYMENT_IMAP_* settings: host, port, user, password, folder. */
+/** The PAYMENT_IMAP_* settings: host, port, user, password, folder, ipv4. */
 function payment_mailbox(): array
 {
     return [
@@ -103,6 +103,7 @@ function payment_mailbox(): array
         'user' => (string) config('PAYMENT_IMAP_USER'),
         'password' => (string) config('PAYMENT_IMAP_PASSWORD'),
         'folder' => (string) config('PAYMENT_IMAP_FOLDER'),
+        'ipv4' => (bool) config('PAYMENT_IMAP_IPV4'),
     ];
 }
 
@@ -115,9 +116,10 @@ function payment_imap_diagnostics(#[\SensitiveParameter] array $mailbox): string
     ['user' => $user, 'password' => $password] = $mailbox;
     $padded = static fn (string $v) => $v !== trim($v) ? ' WITH WHITESPACE AROUND' : '';
     return sprintf(
-        'host %s, port %d, folder %s, user %s (%d chars%s), password %d chars%s sha256 %s…, PHP %s, %s, server %s',
+        'host %s, port %d%s, folder %s, user %s (%d chars%s), password %d chars%s sha256 %s…, PHP %s, %s, server %s',
         var_export($mailbox['host'], true),
         $mailbox['port'],
+        ($mailbox['ipv4'] ?? false) ? ' (IPv4 only)' : '',
         var_export($mailbox['folder'], true),
         var_export($user, true),
         strlen($user),

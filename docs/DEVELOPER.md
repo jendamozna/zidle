@@ -165,7 +165,11 @@ npm run build                # dist/index.html, dist/scanner.html
 Configuration comes from the `environment` of `app` in `compose.yaml` (DB,
 test bank account, dev-only `TICKET_SECRET` / `DEPLOY_TOKEN`, `MAIL_ENABLED` with
 `SMTP_HOST=mailpit`, `SMTP_AUTH=0`, `PUBLIC_URL` default
-`http://localhost:5180/`); `docker/config.local.php` (returns `[]`) is mounted
+`http://localhost:5180/`). `SMTP_SENDER`, `CONTACT_EMAIL`, `CONTACT_PHONE` and
+`PAYMENT_IMAP_HOST` / `_PORT` (default 993) / `_USER` / `_PASSWORD` / `_IPV4` (default 0) are taken from
+a git-ignored `.env` next to `compose.yaml` (empty when missing, so the payment
+mailbox is off); after changing it run `docker compose up -d app` to recreate the
+container. `docker/config.local.php` (returns `[]`) is mounted
 over `api/config.local.php` so a host config does not override it.
 
 ```bash
@@ -258,6 +262,7 @@ name override them (local file wins).
 | `PAYMENT_IMAP_HOST`                                        | `''`                                        | IMAP server of the mailbox with the bank's payment notifications (e.g. `imap.gmail.com`); `''` = automatic payments off (§9)                                                                                                      |
 | `PAYMENT_IMAP_PORT`                                        | 993                                         | 993 = implicit TLS; other ports use STARTTLS when the server offers it                                                                                                                                                            |
 | `PAYMENT_IMAP_USER`, `PAYMENT_IMAP_PASSWORD`               | `''`, `''`                                  | mailbox login (Gmail / Google Workspace: an app password, IMAP enabled)                                                                                                                                                           |
+| `PAYMENT_IMAP_IPV4`                                        | `false`                                     | connect to the IPv4 address of `PAYMENT_IMAP_HOST` (`gethostbyname()`; the TLS certificate is still checked for the host name) – Gmail may answer `AUTHENTICATIONFAILED` to correct credentials from a hosting's IPv6 range       |
 | `PAYMENT_IMAP_FOLDER`                                      | `INBOX`                                     | folder with the notifications (opened read-only)                                                                                                                                                                                  |
 | `PAYMENT_MAIL_SENDERS`                                     | `kb.cz`                                     | accepted senders of notifications: comma-separated domains (also their subdomains) or exact addresses; other e-mails are skipped                                                                                                  |
 | `PAYMENT_MAIL_VERIFY`                                      | `true`                                      | only e-mails whose first `Authentication-Results` header (added by the mailbox's server) has `dmarc=pass` for the sender's domain or `dkim=pass` for it (or a subdomain); turn off only for a server that does not add the header |
@@ -609,7 +614,7 @@ made from then on (existing ones keep their due date); `seats.php`
   rezervace obnovena – zaplaceno.“_, _„Přijato X – <reason>. K vrácení na účet
   plátce: Y.“_ + ticket/e-mail result.
 
-- **Bank statement** (`lib/bank.php`, admin tab _Výpis z banky_, Správce and
+- **Bank statement** (`lib/bank.php`, admin tab _Platby_, Správce and
   Účetní): instead of recording transfers one by one, upload the CSV export of
   the account (KB MojeBanka; Fio column names work too).
   `parse_bank_csv()`: max 2 MB (`BANK_CSV_MAX_BYTES`, _„Soubor je příliš velký
@@ -661,7 +666,9 @@ amount)` (all outcomes and e-mails as above); a refused payment or an
   `PAYMENT_IMAP_HOST` is `''`. One sync at a time (MariaDB `GET_LOCK
 ('zidle_payment_sync')`, else _„Synchronizace právě běží, zkuste to za
   chvíli.“_). `ImapClient` (own socket client, TLS verified; port 993 implicit
-  TLS, others STARTTLS when offered; 20 s timeout): `CAPABILITY`, `LOGIN`, `EXAMINE` of
+  TLS, others STARTTLS when offered; 20 s timeout; with `PAYMENT_IMAP_IPV4` to the
+  host's IPv4 address, refused with _„Nelze zjistit IPv4 adresu serveru schránky
+  <host>.“_ when there is none): `CAPABILITY`, `LOGIN`, `EXAMINE` of
   `PAYMENT_IMAP_FOLDER` (read-only – flags are never changed, the mailbox may be
   read by people too), `UID SEARCH SINCE` today − 7 days (`PAYMENT_MAIL_DAYS`),
   every UID not yet in `payment_mails` (key `imap:<folder>:<UIDVALIDITY>:<UID>`),
@@ -670,12 +677,12 @@ amount)` (all outcomes and e-mails as above); a refused payment or an
 raw)`. Server refusals become _„Schránka odmítla příkaz <COMMAND>: <answer>“_
   (never the password), connection problems _„Nelze se připojit ke schránce
   host:port (…)“_ / _„Spojení se schránkou bylo přerušeno…“_. A failure is logged
-  as `Payment sync failed (<by>): ` + `payment_imap_diagnostics()` (host, port,
-  folder, user with its length, password length and the first 8 hex digits of
+  as `Payment sync failed (<by>): ` + `payment_imap_diagnostics()` (host, port with
+  ` (IPv4 only)`, folder, user with its length, password length and the first 8 hex digits of
   its SHA-256 – to compare two machines without the password –, `WITH
 WHITESPACE AROUND` / `NON-ASCII` warnings, PHP and OpenSSL versions, host
   name), then `IMAP conversation:` = `ImapClient::transcript()` (last 40
-  lines, `C:` sent / `S:` received, ≤ 300 chars each, `LOGIN "<user>" ***`,
+  lines, first `connecting to <address>:<port>[ (IPv4 of <host>)]`, `C:` sent / `S:` received, ≤ 300 chars each, `LOGIN "<user>" ***`,
   literals only as `(N bytes)`, `(no answer – timeout / connection closed)`),
   then the exception. Password parameters are `#[\SensitiveParameter]`, so
   stack traces never show them.
@@ -949,7 +956,7 @@ have several; `user_can(me, what)`):
 | Role        | `roles`      | May                                                                                                                                       | `user_can`                       |
 | ----------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
 | Správce     | `admin`      | everything: all admin tabs and the scanner                                                                                                | `manage`, `reservations`, `scan` |
-| Účetní      | `accountant` | admin tabs _Rezervace_ (reservations and payments, all its actions) and _Výpis z banky_                                                   | `reservations`                   |
+| Účetní      | `accountant` | admin tabs _Rezervace_ (reservations and payments, all its actions) and _Platby_                                                          | `reservations`                   |
 | Odbavovatel | `scanner`    | only the scanner (check-in, on-site sale), only the runs assigned to the account (`user_runs`, 0..n; a run can have several Odbavovatelé) | `scan`                           |
 
 - **Deploy** (`POST api/deploy.php {token, email, password}`, JSON or
@@ -1075,7 +1082,7 @@ the header is too narrow); the seat plan keeps its width (720 px) and scrolls si
 
 Tabs:
 
-- **Výpis z banky** (`view=bank`, Správce and Účetní, §9; the tab shows a red
+- **Platby** (`view=bank`, Správce and Účetní, §9; the tab shows a red
   badge with `payment_mails_attention()`, tooltip _E-maily z banky ke kontrole_) –
   first the card _Platby z e-mailu banky_: without `PAYMENT_IMAP_HOST` only
   _„Automatické načítání plateb je vypnuté – v konfiguraci chybí schránka s
@@ -1514,12 +1521,12 @@ Tests:
   picker, opened by `/?termin=3` the form shows _· TEST_, no code field,
   **Rezervovat (test)** → _Zaplaceno_ with one ticket QR code.
 - `admin.spec.js` – bank e-mails (`payment-mails.php`: a second payment for a
-  paid reservation and an unreadable e-mail): badge _2_ on _Výpis z banky_, _Automatické
-  načítání plateb je vypnuté_, the payment _Ke kontrole_ with the payer and the
+  paid reservation and an unreadable e-mail): badge _2_ on _Platby_, the card _Platby z
+  e-mailu banky_, the payment _Ke kontrole_ with the payer and the
   note → **Zapsat platbu** → _„Přijato 300 Kč – rezervace už byla zaplacená, jde
   o platbu navíc.“_, _Zapsáno_ without buttons; the unreadable one shows its text,
   **Vyřízeno** → _vyřízeno (spravce@example.cz)_, no badge; record 200 Kč (_zbývá doplatit 400 Kč_, input prefilled
-  400), then the rest → _Zaplaceno_; _Výpis z banky_: an uploaded CSV with a
+  400), then the rest → _Zaplaceno_; _Platby_: an uploaded CSV with a
   transfer of 600 Kč with the seeded SS (pre-checked, _Celá částka →
   Zaplaceno_) and one without SS (_Platba nemá SS_) → **Zapsat vybrané
   platby** → _Zapsáno plateb: 1 z 1._, _Přijato 600 Kč – zaplaceno._, the row
@@ -1535,7 +1542,7 @@ Tests:
   deadline rule (_Nyní platí: 24 hodin_, `seats.php` `deadlineHours`, removed
   again); invite an Účetní (role checkbox, link shown in the tab, _Nepřijata_),
   in another browser context the link → mismatched passwords error → password
-  set and signed in (_Vítejte_, the e-mail in the header), the menu shows only _Rezervace_ and _Výpis z banky_
+  set and signed in (_Vítejte_, the e-mail in the header), the menu shows only _Rezervace_ and _Platby_
   (also for `view=users`), the admin sees _Přijata_, sign out and in with
   e-mail + password, the used link is invalid, the admin disables the account
   → signed out on the next load; _Zapomněl jsem heslo_ → the same answer for

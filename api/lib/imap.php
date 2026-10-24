@@ -11,13 +11,25 @@ final class ImapClient
     /** @var list<string> Last lines of the conversation for the error log ("C:" sent, "S:" received). */
     private array $transcript = [];
 
-    /** Port 993 = implicit TLS; other ports switch to TLS by STARTTLS when the server offers it. */
-    public function __construct(string $host, int $port, int $timeout = 20)
+    /**
+     * Port 993 = implicit TLS; other ports switch to TLS by STARTTLS when the server offers it.
+     * $ipv4 connects to the host's IPv4 address (e.g. when the server's IPv6 range is refused);
+     * the TLS certificate is still checked against $host.
+     */
+    public function __construct(string $host, int $port, int $timeout = 20, bool $ipv4 = false)
     {
         $implicit = $port === 993;
+        $address = $host;
+        if ($ipv4) {
+            $address = gethostbyname($host);
+            if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+                throw new RuntimeException("Nelze zjistit IPv4 adresu serveru schránky {$host}.");
+            }
+        }
+        $this->note("connecting to {$address}:{$port}" . ($ipv4 ? " (IPv4 of {$host})" : ''));
         $context = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $host]]);
         $stream = @stream_socket_client(
-            ($implicit ? 'ssl://' : 'tcp://') . $host . ':' . $port,
+            ($implicit ? 'ssl://' : 'tcp://') . $address . ':' . $port,
             $errno,
             $error,
             $timeout,

@@ -403,6 +403,9 @@ test('payment mailbox sync over IMAP: new e-mails once, state remembered, errors
         contains('C: A2 LOGIN "platby@example.cz" ***', $log, 'login in the transcript');
         contains('S: A2 NO [AUTHENTICATIONFAILED] Invalid credentials', $log, 'answer in the transcript');
         contains('S: * CAPABILITY IMAP4rev1', $log, 'capabilities in the transcript');
+        $v4 = new ImapClient('localhost', $port, 5, true); // the fake server listens on 127.0.0.1 only
+        $v4->logout();
+        contains("connecting to 127.0.0.1:{$port} (IPv4 of localhost)", $v4->transcript(), 'IPv4 address used');
         same(false, str_contains($log, 'spatne'), 'password not in the transcript');
         $diagnostics = payment_imap_diagnostics(['host' => 'imap.example.cz', 'port' => 993, 'user' => 'u ', 'password' => 'heslo', 'folder' => 'INBOX']);
         contains("host 'imap.example.cz', port 993, folder 'INBOX', user 'u ' (2 chars WITH WHITESPACE AROUND), password 5 chars, sha256 " . substr(hash('sha256', 'heslo'), 0, 8), $diagnostics, 'diagnostics');

@@ -28,6 +28,7 @@ return [
     // Automatic payments: mailbox with the bank's notifications of account movements (IMAP, read-only)
     'PAYMENT_IMAP_HOST' => 'imap.example.com',  // '' = off
     'PAYMENT_IMAP_PORT' => 993,
+    // 'PAYMENT_IMAP_IPV4' => true,  // when Gmail refuses the login from the server's IPv6 address
     'PAYMENT_IMAP_USER' => 'platby@example.com',
     'PAYMENT_IMAP_PASSWORD' => 'change-me',
 

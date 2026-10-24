@@ -41,9 +41,14 @@ services:
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'
       SMTP_AUTH: '0'
-      SMTP_SENDER: rezervace@example.com
-      CONTACT_EMAIL: farnost@example.com
-      CONTACT_PHONE: +420 123 456 789
+      SMTP_SENDER: ${SMTP_SENDER:-}
+      PAYMENT_IMAP_HOST: ${PAYMENT_IMAP_HOST:-}
+      PAYMENT_IMAP_PORT: ${PAYMENT_IMAP_PORT:-993}
+      PAYMENT_IMAP_IPV4: ${PAYMENT_IMAP_IPV4:-0}
+      PAYMENT_IMAP_USER: ${PAYMENT_IMAP_USER:-}
+      PAYMENT_IMAP_PASSWORD: ${PAYMENT_IMAP_PASSWORD:-}
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      CONTACT_PHONE: ${CONTACT_PHONE:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:5180/}
     command: sh -c "[ -d api/vendor ] || composer install -d api; exec apache2-foreground"
 

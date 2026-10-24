@@ -58,7 +58,8 @@ test('bank e-mails waiting for review are recorded or marked resolved', async ({
   const tab = page.getByRole('link', { name: /Platby/ });
   await expect(tab.locator('.tab-alert')).toHaveText('2');
   await tab.click();
-  await expect(page.locator('.sync')).toContainText('Automatické načítání plateb je vypnuté');
+  // Mailbox on or off depends on the local configuration; the card is there either way.
+  await expect(page.locator('.sync')).toContainText('Platby z e-mailu banky');
 
   const payment = page.locator('.mails tr', { hasText: `SS ${ss}` });
   await expect(payment).toContainText('Ke kontrole');

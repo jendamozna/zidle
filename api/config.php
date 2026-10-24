@@ -72,6 +72,7 @@ return (static function (): array {
         'PAYMENT_IMAP_USER' => '',
         'PAYMENT_IMAP_PASSWORD' => '',   // Gmail / Google Workspace: an app password
         'PAYMENT_IMAP_FOLDER' => 'INBOX',
+        'PAYMENT_IMAP_IPV4' => false,    // connect over IPv4 only (Gmail may refuse logins from a hosting's IPv6 range)
         'PAYMENT_MAIL_SENDERS' => 'kb.cz', // accepted senders: comma-separated domains (with subdomains) or exact addresses
         'PAYMENT_MAIL_VERIFY' => true,   // only e-mails the mailbox server verified (DKIM/DMARC pass in Authentication-Results)
 
