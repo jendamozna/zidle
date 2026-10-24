@@ -50,8 +50,8 @@ npm run test:e2e
 step 'Production build'
 npm run build
 rm -rf build && mkdir -p build/api
-cp -R dist build/
+cp -R dist/. build/ # the web root: index.html, scanner.html, sw.js, .htaccess, assets/
 tar -C api --exclude=./vendor --exclude=./config.local.php --exclude='./logs/*.log' -cf - . | tar -C build/api -xf -
 composer install -d build/api --no-dev --optimize-autoloader --no-interaction --no-progress
 
-printf '\n\033[1;32mAll checks passed – build/ (dist/ + api/ with production vendor/) is ready to deploy.\033[0m\n'
+printf '\n\033[1;32mAll checks passed – build/ (the contents of dist/ + api/ with production vendor/) is ready to deploy as the web root.\033[0m\n'

@@ -179,9 +179,10 @@ docker compose exec -e DB_NAME=zidle_test -e MAIL_ENABLED=0 -e SMTP_HOST= app ph
 docker compose down -v   # also deletes the database (schema change → recreate)
 ```
 
-Deployment: upload `dist/` and `api/` (including `api/vendor/`) side by side
-(`./prepare.sh` prepares both in `build/`, §21; add `api/config.local.php` on the server),
-so the apps reach the API at `./api/`. HTTPS is required (camera access).
+Deployment: upload the contents of `dist/` (`index.html`, `scanner.html`, `sw.js`,
+`.htaccess`, `assets/`) and `api/` (including `api/vendor/`) into the web root
+(`./prepare.sh` prepares exactly that in `build/`, §21 – upload the contents of `build/`;
+add `api/config.local.php` on the server), so the apps reach the API at `./api/`. HTTPS is required (camera access).
 `.htaccess` files deny `config*.php`, `cron*.php`, `composer.*`, `api/lib/`,
 `api/vendor/`, `api/logs/`. Caching (Apache `mod_headers`; Vite copies both files from
 `public/`): `index.html`, `scanner.html` and `sw.js` get `Cache-Control: no-cache` (revalidated on
@@ -1384,7 +1385,7 @@ single quotes, 120 columns; `.prettierignore`: `package-lock.json`, `api/vendor`
 `api/composer.*`, `build`; PHP is not formatted), `eslint --fix`, `npm audit` + `composer audit`,
 `php -l`, PHPStan, `db/schema.sql` applied to an empty `zidle_schema` (dropped again), PHP
 integration tests, consistency, Playwright, then the production build: `npm run build`, a fresh
-`build/` with `dist/` and a copy of `api/` (without `vendor/`, `config.local.php`, `logs/*.log`)
+`build/` with the contents of `dist/` (no `dist` folder) and a copy of `api/` (without `vendor/`, `config.local.php`, `logs/*.log`)
 and `composer install -d build/api --no-dev --optimize-autoloader`. `build/` is the deploy package
 (git-ignored); the development `api/vendor/` is left untouched.
 
